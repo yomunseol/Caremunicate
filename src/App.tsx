@@ -1,0 +1,775 @@
+import { useEffect, useState, type FormEvent } from 'react';
+
+type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
+type AuthMode = 'signup' | 'login';
+type AuthRole = 'patient' | 'doctor';
+
+interface Plan {
+  name: string;
+  price: string;
+  subtitle: string;
+  description: string;
+  bullets: string[];
+  badge?: string;
+  cta: string;
+}
+
+const featureCards = [
+  {
+    title: 'Emergency doctors by region',
+    description:
+      'A local emergency doctor layer helps patients reach fast support in every region without losing time.',
+    accent: 'Regional coverage',
+  },
+  {
+    title: 'Hospital-informed care',
+    description:
+      'Hospital updates, patient context, and care routing remain visible in a clear, simple care dashboard.',
+    accent: 'Hospital sync',
+  },
+  {
+    title: 'Assigned doctor options',
+    description:
+      'Every patient can optionally choose an assigned physician for continuity, follow-ups, and faster routing.',
+    accent: 'Continuity',
+  },
+  {
+    title: 'Independent calling concept',
+    description:
+      'Caremunicate supports an abstract independent platform concept for customers who want their own calling flow.',
+    accent: 'Flexible access',
+  },
+  {
+    title: 'Wishlist doctor saving',
+    description:
+      'Patients can save doctors to a wishlist for quick assistance, long-term care, and faster follow-ups.',
+    accent: 'Quick assist',
+  },
+  {
+    title: 'Certified and non-certified doctors',
+    description:
+      'The experience highlights both certified and non-certified provider paths for a broad care ecosystem.',
+    accent: 'Flexible care',
+  },
+];
+
+const plans: Plan[] = [
+  {
+    name: 'Patient Basic',
+    price: '$9/month',
+    subtitle: 'Essential access for occasional care needs.',
+    description: 'Simple access for lighter use and everyday care discovery.',
+    bullets: [
+      'Up to 3 voice consultations / month',
+      'Up to 1 short video consultation / month',
+      'Basic doctor discovery',
+      'Save up to 3 doctors to wishlist',
+      'Standard queue routing',
+    ],
+    cta: 'Choose Basic',
+  },
+  {
+    name: 'Patient + Assigned Doctor',
+    price: '$29/month',
+    subtitle: 'A dedicated physician who knows your history and prioritizes your calls.',
+    description: 'A strong middle tier for continuity, priority routing, and follow-up care.',
+    bullets: [
+      'Up to 10 high-quality voice & video consultations',
+      'Dedicated assigned doctor',
+      'Priority routing & emergency line',
+      'Unlimited wishlist',
+      'Follow-up scheduling',
+    ],
+    badge: 'Most chosen',
+    cta: 'Choose Assigned Doctor',
+  },
+  {
+    name: 'Patient Pro',
+    price: '$49/month',
+    subtitle: 'For those who seek very often consultations.',
+    description: 'A premium patient plan for frequent communication and rapid support.',
+    bullets: [
+      'Unlimited voice & video consultations per month (1 per day)',
+      '2-3 assigned doctors',
+      'Fastest priority routing',
+      'Emergency line',
+      'Automatic scheduling with AI',
+    ],
+    cta: 'Choose Pro',
+  },
+  {
+    name: 'Independent Doctor',
+    price: '$69/month',
+    subtitle: 'For independent physicians who want to see patients directly on Caremunicate.',
+    description: 'A doctor-focused plan for personal patient lists and direct care access.',
+    bullets: [
+      'Verified public doctor profile',
+      'Accept voice & video consultations',
+      'Personal patient list & notes',
+      'Own scheduling & availability',
+      'Direct payouts, no hospital required',
+    ],
+    cta: 'Join as doctor',
+  },
+  {
+    name: 'Department Plan',
+    price: '$149/month',
+    subtitle: 'For hospital departments — onboard your team and patients together.',
+    description: 'A department-level plan for internal care coordination and patient sync.',
+    bullets: [
+      'Up to 5 doctor accounts / department',
+      'Department-wide patient sync',
+      'Emergency dispatch tools',
+      'Analytics & compliance dashboard',
+    ],
+    cta: 'Talk to sales',
+  },
+  {
+    name: 'Hospital Plan',
+    price: '$399/month',
+    subtitle: 'For hospital-wide oversight and high-volume communication.',
+    description: 'A large-scale plan for full hospital orchestration and AI-integrated workflows.',
+    bullets: [
+      'Up to 5 underlying departments',
+      'Hospital-wide patient syncing',
+      'Emergency dispatch tools',
+      'Direct payouts and systematic tools with AI integration',
+    ],
+    cta: 'Talk to sales',
+  },
+];
+
+const getInitialRoute = (): RouteKey => {
+  if (typeof window === 'undefined') return 'home';
+  const hash = window.location.hash.replace('#', '');
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
+  return validRoutes.includes(hash as RouteKey) ? (hash as RouteKey) : 'home';
+};
+
+type SignupFormValues = {
+  fullName: string;
+  email: string;
+  password: string;
+  specialty: string;
+  clinic: string;
+  role: string;
+};
+
+type LoginFormValues = {
+  email: string;
+  password: string;
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+function App() {
+  const [route, setRoute] = useState<RouteKey>(getInitialRoute);
+  const [authMode, setAuthMode] = useState<AuthMode>('signup');
+  const [authRole, setAuthRole] = useState<AuthRole>('patient');
+  const [signupValues, setSignupValues] = useState<SignupFormValues>({
+    fullName: '',
+    email: '',
+    password: '',
+    specialty: '',
+    clinic: '',
+    role: '',
+  });
+  const [loginValues, setLoginValues] = useState<LoginFormValues>({
+    email: '',
+    password: '',
+  });
+  const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const syncRoute = () => {
+      const nextRoute = getInitialRoute();
+      setRoute(nextRoute);
+      setAuthMode(nextRoute === 'login' ? 'login' : 'signup');
+    };
+
+    window.addEventListener('hashchange', syncRoute);
+    return () => window.removeEventListener('hashchange', syncRoute);
+  }, []);
+
+  const navigate = (nextRoute: RouteKey) => {
+    setRoute(nextRoute);
+    const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
+    window.history.pushState({}, '', `${window.location.pathname}${hash}`);
+  };
+
+  const openAuth = (mode: AuthMode, role: AuthRole = 'patient') => {
+    setAuthMode(mode);
+    setAuthRole(role);
+    setRoute(mode === 'login' ? 'login' : 'signup');
+    setSignupErrors({});
+    setLoginErrors({});
+    const hash = mode === 'login' ? '#login' : '#signup';
+    window.history.pushState({}, '', `${window.location.pathname}${hash}`);
+  };
+
+  const getEmailError = (value: string) => {
+    if (!value.trim()) return 'Email is required.';
+    if (!emailPattern.test(value.trim())) return 'Enter a valid email address.';
+    return '';
+  };
+
+  const getPasswordError = (value: string) => {
+    if (!value.trim()) return 'Password is required.';
+    if (value.length < 8) return 'Password must be at least 8 characters long.';
+    if (!passwordPattern.test(value)) return 'Use upper, lower, and a number in the password.';
+    return '';
+  };
+
+  const validateSignupForm = () => {
+    const nextErrors: Record<string, string> = {};
+
+    if (!signupValues.fullName.trim()) {
+      nextErrors.fullName = 'Full name is required.';
+    }
+
+    const emailError = getEmailError(signupValues.email);
+    if (emailError) {
+      nextErrors.email = emailError;
+    }
+
+    if (authRole === 'doctor' && !signupValues.specialty.trim()) {
+      nextErrors.specialty = 'Medical specialty is required.';
+    }
+
+    if (authRole === 'doctor' && !signupValues.clinic.trim()) {
+      nextErrors.clinic = 'Clinic or license is required.';
+    }
+
+    const passwordError = getPasswordError(signupValues.password);
+    if (passwordError) {
+      nextErrors.password = passwordError;
+    }
+
+    if (!signupValues.role) {
+      nextErrors.role = 'Please select a role.';
+    }
+
+    return nextErrors;
+  };
+
+  const validateLoginForm = () => {
+    const nextErrors: Record<string, string> = {};
+
+    const emailError = getEmailError(loginValues.email);
+    if (emailError) {
+      nextErrors.email = emailError;
+    }
+
+    const passwordError = getPasswordError(loginValues.password);
+    if (passwordError) {
+      nextErrors.password = passwordError;
+    }
+
+    return nextErrors;
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (authMode === 'signup') {
+      const nextErrors = validateSignupForm();
+      setSignupErrors(nextErrors);
+      if (Object.keys(nextErrors).length > 0) return;
+    } else {
+      const nextErrors = validateLoginForm();
+      setLoginErrors(nextErrors);
+      if (Object.keys(nextErrors).length > 0) return;
+    }
+
+    navigate('profile');
+  };
+
+  return (
+    <div className="app-shell">
+      <header className="topbar">
+        <button className="brand" type="button" onClick={() => navigate('home')}>
+          <img src="/Caremunicate_bgremoved.png" alt="Caremunicate logo" className="brand-logo" />
+          <span>Caremunicate</span>
+        </button>
+
+        <div className="nav-actions">
+          <button className="ghost-button" type="button" onClick={() => navigate('login')}>
+            Log in
+          </button>
+          <button className="primary-button" type="button" onClick={() => navigate('signup')}>
+            Sign up
+          </button>
+        </div>
+      </header>
+
+      <main className="main-content">
+        {route === 'home' && (
+          <>
+            <section className="section hero-section">
+              <div className="hero-card">
+                <div className="eyebrow">Medical communication • modern care</div>
+                <h1 className="hero-title">
+                  Caremunicate brings calm care conversations to patients, doctors, and hospitals.
+                </h1>
+                <p className="hero-copy">
+                  A lifestyle-ready medical communication platform for emergencies, hospital updates, assigned doctors,
+                  and flexible care access. The experience stays simple, modern, and approachable.
+                </p>
+
+                <div className="pill-row" style={{ marginBottom: '1.5rem' }}>
+                  <span className="pill">24/7 emergency routing</span>
+                  <span className="pill">Cloud-based monthly plans</span>
+                  <span className="pill">Certified & community doctors</span>
+                </div>
+
+                <div className="cta-row">
+                  <button className="primary-button" type="button" onClick={() => navigate('signup')}>
+                    Create account
+                  </button>
+                  <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
+                    View pricing
+                  </button>
+                </div>
+              </div>
+
+              <div className="hero-visual">
+                <img src="/Caremunicate_carousel_photo.jpg" alt="Caremunicate medical communication dashboard" />
+              </div>
+            </section>
+
+            <section className="section">
+              <div className="section-heading">
+                <div className="eyebrow">Core features</div>
+                <h2>Care-focused features built for front-end interaction and product storytelling.</h2>
+                <p>
+                  The page includes core care communication ideas such as emergency routing, assigned physician support,
+                  hospital updates, and flexible doctor access.
+                </p>
+              </div>
+
+              <div className="feature-grid">
+                {featureCards.map((card) => (
+                  <article className="feature-card" key={card.title}>
+                    <div className="feature-accent">{card.accent}</div>
+                    <h3>{card.title}</h3>
+                    <p>{card.description}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="section care-network">
+              <div className="care-grid">
+                <img src="/Caremunicate_Paragraph_photo.jpg" alt="Caremunicate care network" className="care-image" />
+                <div className="care-content">
+                  <div className="eyebrow">Care network at a glance</div>
+                  <h2>Simple communication layers for hospitals, doctors, and patients.</h2>
+                  <p className="hero-copy">
+                    Customers can sign in, browse care options, and save doctors to their wishlist. Doctors can join as
+                    independent professionals or take part in a department plan.
+                  </p>
+                  <div className="stack-list">
+                    <div className="stack-item">
+                      <strong>Emergency line</strong>
+                      <span>Fast, calm access to care support when a patient needs help immediately.</span>
+                    </div>
+                    <div className="stack-item">
+                      <strong>Hospital info</strong>
+                      <span>Hospitals can share care notes, procedural notes, and relevant service information.</span>
+                    </div>
+                    <div className="stack-item">
+                      <strong>Assigned doctors</strong>
+                      <span>Patients can be paired with a personal doctor when they choose that option.</span>
+                    </div>
+                  </div>
+                  <div className="pill-row" style={{ marginTop: '1.2rem' }}>
+                    <span className="pill">Customer registration</span>
+                    <span className="pill">Doctor registration</span>
+                    <span className="pill">Wishlist saving</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="section">
+              <div className="section-heading">
+                <div className="eyebrow">Pricing</div>
+                <h2>Fair monthly plans for patients, doctors, and hospitals.</h2>
+                <p>No per-call surcharges and no hidden costs.</p>
+              </div>
+
+              <div className="pricing-grid">
+                {plans.map((plan) => (
+                  <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.name}>
+                    {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
+                    <h3 className="plan-name">{plan.name}</h3>
+                    <div className="plan-price">{plan.price}</div>
+                    <p className="plan-subtitle">{plan.subtitle}</p>
+                    <p className="plan-description">{plan.description}</p>
+                    <ul>
+                      {plan.bullets.map((bullet) => (
+                        <li key={bullet}>{bullet}</li>
+                      ))}
+                    </ul>
+                    <button className="primary-button cta-button" type="button" onClick={() => navigate('pricing')}>
+                      {plan.cta}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="section">
+              <div className="cta-banner">
+                <div className="cta-banner-copy">
+                  <div className="eyebrow">Ready when you are</div>
+                  <h2>Bring calmer care communication to patients, teams, and hospitals.</h2>
+                </div>
+
+                <div className="cta-row">
+                  <button className="primary-button" type="button" onClick={() => openAuth('signup')}>
+                    Create account
+                  </button>
+                  <button className="secondary-button" type="button" onClick={() => openAuth('signup', 'doctor')}>
+                    I&apos;m a doctor
+                  </button>
+                </div>
+              </div>
+            </section>
+          </>
+        )}
+
+        {(route === 'signup' || route === 'login') && (
+          <section className="section form-grid auth-combined-layout">
+            <div className="auth-side auth-visual-panel">
+              <img src="/HealthcareTeamCollab.jpg" alt="Healthcare team collaboration" />
+            </div>
+
+            <div className="auth-card auth-panel-shell">
+              <div className="auth-mode-toggle" aria-label="Authentication mode selector">
+                <button
+                  type="button"
+                  className={authMode === 'signup' ? 'mode-button active' : 'mode-button'}
+                  onClick={() => openAuth('signup', authRole)}
+                >
+                  Sign up
+                </button>
+                <button
+                  type="button"
+                  className={authMode === 'login' ? 'mode-button active' : 'mode-button'}
+                  onClick={() => openAuth('login', authRole)}
+                >
+                  Log in
+                </button>
+              </div>
+
+              <div className="auth-form-shell" key={authMode}>
+                <div className="eyebrow">{authMode === 'signup' ? 'Accessible registration' : 'Secure access'}</div>
+                <h2>
+                  {authMode === 'signup'
+                    ? authRole === 'doctor'
+                      ? 'Create your doctor profile'
+                      : 'Create your Caremunicate account'
+                    : 'Welcome back to Caremunicate'}
+                </h2>
+                <p className="auth-copy">
+                  {authMode === 'signup'
+                    ? authRole === 'doctor'
+                      ? 'Join Caremunicate as a physician, manage your availability, and welcome patients with a calmer, clearer care experience.'
+                      : 'Join as a patient, doctor, or care team member and bring clearer communication into everyday healthcare.'
+                    : 'Access your dashboard, hospital updates, planned consultations, and saved doctor preferences in one secure place.'}
+                </p>
+
+                <div className="role-toggle" aria-label="Account type selector">
+                  <button
+                    type="button"
+                    className={authRole === 'patient' ? 'role-button active' : 'role-button'}
+                    onClick={() => setAuthRole('patient')}
+                  >
+                    Patient
+                  </button>
+                  <button
+                    type="button"
+                    className={authRole === 'doctor' ? 'role-button active' : 'role-button'}
+                    onClick={() => setAuthRole('doctor')}
+                  >
+                    Doctor
+                  </button>
+                </div>
+
+                <form onSubmit={handleSubmit}>
+                  {authMode === 'signup' ? (
+                    <>
+                      <div className="form-row">
+                        <div className="field-wrap">
+                          <input
+                            className="input"
+                            placeholder="Full name"
+                            aria-label="Full name"
+                            value={signupValues.fullName}
+                            onChange={(event) => {
+                              setSignupValues((previous) => ({ ...previous, fullName: event.target.value }));
+                              setSignupErrors((previous) => ({ ...previous, fullName: '' }));
+                            }}
+                            aria-invalid={Boolean(signupErrors.fullName)}
+                          />
+                          {signupErrors.fullName ? <span className="field-error">{signupErrors.fullName}</span> : null}
+                        </div>
+                        <div className="field-wrap">
+                          <input
+                            className="input"
+                            placeholder="Email address"
+                            aria-label="Email address"
+                            value={signupValues.email}
+                            onChange={(event) => {
+                              setSignupValues((previous) => ({ ...previous, email: event.target.value }));
+                              setSignupErrors((previous) => ({ ...previous, email: '' }));
+                            }}
+                            aria-invalid={Boolean(signupErrors.email)}
+                          />
+                          {signupErrors.email ? <span className="field-error">{signupErrors.email}</span> : null}
+                        </div>
+                      </div>
+
+                      {authRole === 'doctor' ? (
+                        <div className="form-row">
+                          <div className="field-wrap">
+                            <input
+                              className="input"
+                              placeholder="Medical specialty"
+                              aria-label="Medical specialty"
+                              value={signupValues.specialty}
+                              onChange={(event) => {
+                                setSignupValues((previous) => ({ ...previous, specialty: event.target.value }));
+                                setSignupErrors((previous) => ({ ...previous, specialty: '' }));
+                              }}
+                              aria-invalid={Boolean(signupErrors.specialty)}
+                            />
+                            {signupErrors.specialty ? <span className="field-error">{signupErrors.specialty}</span> : null}
+                          </div>
+                          <div className="field-wrap">
+                            <input
+                              className="input"
+                              placeholder="License or clinic"
+                              aria-label="License or clinic"
+                              value={signupValues.clinic}
+                              onChange={(event) => {
+                                setSignupValues((previous) => ({ ...previous, clinic: event.target.value }));
+                                setSignupErrors((previous) => ({ ...previous, clinic: '' }));
+                              }}
+                              aria-invalid={Boolean(signupErrors.clinic)}
+                            />
+                            {signupErrors.clinic ? <span className="field-error">{signupErrors.clinic}</span> : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="Password"
+                          type="password"
+                          aria-label="Password"
+                          value={signupValues.password}
+                          onChange={(event) => {
+                            setSignupValues((previous) => ({ ...previous, password: event.target.value }));
+                            setSignupErrors((previous) => ({ ...previous, password: '' }));
+                          }}
+                          aria-invalid={Boolean(signupErrors.password)}
+                        />
+                        {signupErrors.password ? <span className="field-error">{signupErrors.password}</span> : null}
+                      </div>
+
+                      <div className="field-wrap">
+                        <select
+                          className="select"
+                          value={signupValues.role}
+                          aria-label="Select role"
+                          onChange={(event) => {
+                            setSignupValues((previous) => ({ ...previous, role: event.target.value }));
+                            setSignupErrors((previous) => ({ ...previous, role: '' }));
+                          }}
+                          aria-invalid={Boolean(signupErrors.role)}
+                        >
+                          <option value="" disabled>
+                            {authRole === 'doctor' ? 'Professional type' : 'Select your role'}
+                          </option>
+                          <option value="patient">Patient</option>
+                          <option value="doctor">Doctor</option>
+                          <option value="hospital">Hospital</option>
+                        </select>
+                        {signupErrors.role ? <span className="field-error">{signupErrors.role}</span> : null}
+                      </div>
+
+                      <button className="primary-button" type="submit">
+                        {authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="Email address"
+                          aria-label="Email address"
+                          value={loginValues.email}
+                          onChange={(event) => {
+                            setLoginValues((previous) => ({ ...previous, email: event.target.value }));
+                            setLoginErrors((previous) => ({ ...previous, email: '' }));
+                          }}
+                          aria-invalid={Boolean(loginErrors.email)}
+                        />
+                        {loginErrors.email ? <span className="field-error">{loginErrors.email}</span> : null}
+                      </div>
+
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="Password"
+                          type="password"
+                          aria-label="Password"
+                          value={loginValues.password}
+                          onChange={(event) => {
+                            setLoginValues((previous) => ({ ...previous, password: event.target.value }));
+                            setLoginErrors((previous) => ({ ...previous, password: '' }));
+                          }}
+                          aria-invalid={Boolean(loginErrors.password)}
+                        />
+                        {loginErrors.password ? <span className="field-error">{loginErrors.password}</span> : null}
+                      </div>
+
+                      <button className="primary-button" type="submit">
+                        Continue to dashboard
+                      </button>
+                    </>
+                  )}
+                </form>
+
+                <div className="auth-benefits">
+                  <div className="eyebrow">{authMode === 'signup' ? 'What you unlock' : 'Helpful recovery tools'}</div>
+                  <ul className="thin-list">
+                    {(authMode === 'signup'
+                      ? authRole === 'doctor'
+                        ? [
+                            'Professional profile and availability setup',
+                            'Patient routing and care follow-up tools',
+                            'Hospital and department collaboration workflows',
+                          ]
+                        : [
+                            'Emergency routing and communication support',
+                            'Doctor wishlist and assigned care tools',
+                            'Hospital updates and monthly plan access',
+                          ]
+                      : [
+                          'Fast profile access',
+                          'Saved doctors for quick follow-up',
+                          'Emergency support and dashboard tools',
+                        ])
+                      .map((item) => (
+                        <li key={item}>{item}</li>
+                      ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {route === 'profile' && (
+          <section className="section profile-grid">
+            <div className="profile-card">
+              <div className="eyebrow">Your care dashboard</div>
+              <h2>Welcome back, Alex Carter</h2>
+              <p className="hero-copy">
+                Your care profile is connected to hospital updates, your wishlist, and your ongoing care
+                preferences.
+              </p>
+
+              <div className="pill-row">
+                <span className="pill">Assigned doctor enabled</span>
+                <span className="pill">Emergency line active</span>
+                <span className="pill">Hospital sync ready</span>
+              </div>
+
+              <div className="profile-grid">
+                <div className="panel">
+                  <h3>Assigned doctor</h3>
+                  <p>Dr. Mina Patel • Cardiology • Priority routing</p>
+                  <ul className="mini-list">
+                    <li>Handles your follow-up care</li>
+                    <li>Prioritizes emergency calls</li>
+                    <li>Supports your care history</li>
+                  </ul>
+                </div>
+
+                <div className="panel">
+                  <h3>Wishlist</h3>
+                  <ul className="mini-list">
+                    <li>Dr. Helena Flores</li>
+                    <li>Dr. Omar Shah</li>
+                    <li>Dr. Sarah Kim</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <div className="profile-sidebar">
+              <div className="panel">
+                <div className="eyebrow">Emergency line</div>
+                <h3>Need immediate support?</h3>
+                <p>Access urgent medical support quickly from your dashboard with a single reassuring action.</p>
+                <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }}>
+                  Call emergency line
+                </button>
+              </div>
+
+              <div className="panel">
+                <div className="eyebrow">Hospital updates</div>
+                <h3>Latest care notes</h3>
+                <p>Fresh hospital information, case notes, and follow-up updates are ready for review whenever you need them.</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {route === 'pricing' && (
+          <section className="section">
+            <div className="section-heading">
+              <div className="eyebrow">Pricing</div>
+              <h2>Fair fees for patients, doctors, and hospitals.</h2>
+              <p>Simple monthly plans. No per-call surcharges, no hidden costs.</p>
+            </div>
+
+            <div className="pricing-grid">
+              {plans.map((plan) => (
+                <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.name}>
+                  {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
+                  <h3 className="plan-name">{plan.name}</h3>
+                  <div className="plan-price">{plan.price}</div>
+                  <p className="plan-subtitle">{plan.subtitle}</p>
+                  <p className="plan-description">{plan.description}</p>
+                  <ul>
+                    {plan.bullets.map((bullet) => (
+                      <li key={bullet}>{bullet}</li>
+                    ))}
+                  </ul>
+                  <button className="primary-button" type="button">
+                    {plan.cta}
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+
+      <footer className="footer">
+        <p>Caremunicate • A calm, postmodern medical communication experience.</p>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
