@@ -290,7 +290,7 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" type="button" onClick={() => navigate('home')}>
-          <img src="/Caremunicate_bgremoved.png" alt="Caremunicate logo" className="brand-logo" />
+          <img src="/Caremunicate.png" alt="Caremunicate logo" className="brand-logo" />
           <span>Caremunicate</span>
         </button>
 
