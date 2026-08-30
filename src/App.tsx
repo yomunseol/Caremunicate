@@ -21,38 +21,38 @@ const featureCards = [
   {
     title: 'Emergency doctors in every region',
     description:
-      'Find rapid medical support closer to home through a region-aware network built to help patients reach care without delay.',
+      'Access emergency doctors across every local region, helping patients move from urgent need to medical support without unnecessary delay.',
     accent: 'Local emergency access',
   },
   {
     title: 'Hospital-informed care',
     description:
-      'Keep relevant hospital updates and customer information connected, so care conversations begin with the context that matters.',
+      'Bring hospital-provided customer information and care updates into the conversation, giving providers the context needed to act faster.',
     accent: 'Connected information',
   },
   {
     title: 'Your choice of assigned doctor',
     description:
-      'Choose an assigned doctor for more consistent follow-ups, familiar care conversations, and faster access when you need it.',
+      'Choose an assigned doctor when you want ongoing care, familiar follow-ups, and a more personal route to medical support.',
     accent: 'Continuity of care',
   },
   {
     title: 'Direct online calls and sessions',
     description:
-      'Arrange online consultations and direct calls between patients, doctors, and hospitals through one accessible platform.',
+      'Use one independent platform to arrange direct calls and online meeting sessions between customers, doctors, and hospitals.',
     accent: 'Flexible connection',
   },
   {
     title: 'Save doctors for quick assistance',
     description:
-      'Build a personal doctor wishlist for quicker follow-ups, easier access to preferred providers, and support when time matters.',
+      'Save trusted doctors to a personal wishlist for faster follow-ups, easier access, and quick assistance when time matters.',
     accent: 'Quick assistance',
   },
   {
-    title: 'Flexible plans and accessible registration',
+    title: 'Plans, provider choice, and easy registration',
     description:
-      'Simple monthly cloud plans for customers and hospitals, with straightforward registration paths for both patients and doctors.',
-    accent: 'Built to join',
+      'Choose monthly cloud plans for customers or hospitals, register with ease, and connect with certified or non-certified doctors.',
+    accent: 'Accessible care network',
   },
 ];
 
@@ -411,18 +411,18 @@ function App() {
               <div className="hero-card">
                 <div className="eyebrow">Medical communication • modern care</div>
                 <h1 className="hero-title">
-                  Faster, more accessible care starts with one direct connection.
+                  Direct access to care, exactly when it matters.
                 </h1>
                 <p className="hero-copy">
-                  Caremunicate connects patients with doctors and hospitals through direct online calls and meeting sessions.
-                  From regional emergency access to hospital-informed conversations and optional assigned doctors, we make
-                  critical care support easier to reach.
+                  Caremunicate helps people facing medical-access barriers connect directly with hospitals and doctors through
+                  online calls and meeting sessions. Get regional emergency support, hospital-informed care conversations,
+                  an optional assigned doctor, and an emergency calling system from one accessible platform.
                 </p>
 
                 <div className="pill-row" style={{ marginBottom: '1.5rem' }}>
-                  <span className="pill">Emergency calling support</span>
-                  <span className="pill">Monthly cloud plans</span>
-                  <span className="pill">Patient & doctor registration</span>
+                  <span className="pill">Emergency calls, regional support</span>
+                  <span className="pill">Monthly customer & hospital plans</span>
+                  <span className="pill">Certified & non-certified doctors</span>
                 </div>
 
                 <div className="cta-row">
@@ -443,9 +443,10 @@ function App() {
             <section className="section">
               <div className="section-heading">
                 <div className="eyebrow">Core features</div>
-                <h2>Everything you need to reach care quickly, clearly, and confidently.</h2>
+                <h2>One clear path from urgent need to connected care.</h2>
                 <p>
-                  Caremunicate gives patients, doctors, and hospitals a clearer path from urgent need to connected care.
+                  Accessible registration and direct communication give customers, doctors, and hospitals the tools to respond
+                  faster and keep care moving forward.
                 </p>
               </div>
 
