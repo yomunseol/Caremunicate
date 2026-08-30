@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, isFirebaseConfigured } from './firebase';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
 type AuthMode = 'signup' | 'login';
@@ -19,40 +19,40 @@ interface Plan {
 
 const featureCards = [
   {
-    title: 'Emergency doctors by region',
+    title: 'Emergency doctors in every region',
     description:
-      'A local emergency doctor layer helps patients reach fast support in every region without losing time.',
-    accent: 'Regional coverage',
+      'Find rapid medical support closer to home through a region-aware network built to help patients reach care without delay.',
+    accent: 'Local emergency access',
   },
   {
     title: 'Hospital-informed care',
     description:
-      'Hospital updates, patient context, and care routing remain visible in a clear, simple care dashboard.',
-    accent: 'Hospital sync',
+      'Keep relevant hospital updates and customer information connected, so care conversations begin with the context that matters.',
+    accent: 'Connected information',
   },
   {
-    title: 'Assigned doctor options',
+    title: 'Your choice of assigned doctor',
     description:
-      'Every patient can optionally choose an assigned physician for continuity, follow-ups, and faster routing.',
-    accent: 'Continuity',
+      'Choose an assigned doctor for more consistent follow-ups, familiar care conversations, and faster access when you need it.',
+    accent: 'Continuity of care',
   },
   {
-    title: 'Independent calling concept',
+    title: 'Direct online calls and sessions',
     description:
-      'Caremunicate supports an abstract independent platform concept for customers who want their own calling flow.',
-    accent: 'Flexible access',
+      'Arrange online consultations and direct calls between patients, doctors, and hospitals through one accessible platform.',
+    accent: 'Flexible connection',
   },
   {
-    title: 'Wishlist doctor saving',
+    title: 'Save doctors for quick assistance',
     description:
-      'Patients can save doctors to a wishlist for quick assistance, long-term care, and faster follow-ups.',
-    accent: 'Quick assist',
+      'Build a personal doctor wishlist for quicker follow-ups, easier access to preferred providers, and support when time matters.',
+    accent: 'Quick assistance',
   },
   {
-    title: 'Certified and non-certified doctors',
+    title: 'Flexible plans and accessible registration',
     description:
-      'The experience highlights both certified and non-certified provider paths for a broad care ecosystem.',
-    accent: 'Flexible care',
+      'Simple monthly cloud plans for customers and hospitals, with straightforward registration paths for both patients and doctors.',
+    accent: 'Built to join',
   },
 ];
 
@@ -208,7 +208,11 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (!auth || !db) return;
+
+    const firebaseAuth = auth;
+    const firestore = db;
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
       setCurrentUser(user);
 
       if (!user) {
@@ -216,7 +220,7 @@ function App() {
         return;
       }
 
-      const profileSnapshot = await getDoc(doc(db, 'users', user.uid));
+      const profileSnapshot = await getDoc(doc(firestore, 'users', user.uid));
       setUserProfile(profileSnapshot.exists() ? (profileSnapshot.data() as UserProfile) : null);
     });
 
@@ -316,6 +320,16 @@ function App() {
       if (Object.keys(nextErrors).length > 0) return;
     }
 
+    if (!auth || !db) {
+      const error = 'Account access is not configured yet. Add the Firebase values to .env and restart the app.';
+      if (authMode === 'signup') {
+        setSignupErrors({ form: error });
+      } else {
+        setLoginErrors({ form: error });
+      }
+      return;
+    }
+
     setIsAuthLoading(true);
 
     try {
@@ -354,6 +368,7 @@ function App() {
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     await signOut(auth);
     navigate('home');
   };
@@ -396,17 +411,18 @@ function App() {
               <div className="hero-card">
                 <div className="eyebrow">Medical communication • modern care</div>
                 <h1 className="hero-title">
-                  Caremunicate brings calm care conversations to patients, doctors, and hospitals.
+                  Faster, more accessible care starts with one direct connection.
                 </h1>
                 <p className="hero-copy">
-                  A lifestyle-ready medical communication platform for emergencies, hospital updates, assigned doctors,
-                  and flexible care access. The experience stays simple, modern, and approachable.
+                  Caremunicate connects patients with doctors and hospitals through direct online calls and meeting sessions.
+                  From regional emergency access to hospital-informed conversations and optional assigned doctors, we make
+                  critical care support easier to reach.
                 </p>
 
                 <div className="pill-row" style={{ marginBottom: '1.5rem' }}>
-                  <span className="pill">24/7 emergency routing</span>
-                  <span className="pill">Cloud-based monthly plans</span>
-                  <span className="pill">Certified & community doctors</span>
+                  <span className="pill">Emergency calling support</span>
+                  <span className="pill">Monthly cloud plans</span>
+                  <span className="pill">Patient & doctor registration</span>
                 </div>
 
                 <div className="cta-row">
@@ -427,10 +443,9 @@ function App() {
             <section className="section">
               <div className="section-heading">
                 <div className="eyebrow">Core features</div>
-                <h2>Care-focused features built for front-end interaction and product storytelling.</h2>
+                <h2>Everything you need to reach care quickly, clearly, and confidently.</h2>
                 <p>
-                  The page includes core care communication ideas such as emergency routing, assigned physician support,
-                  hospital updates, and flexible doctor access.
+                  Caremunicate gives patients, doctors, and hospitals a clearer path from urgent need to connected care.
                 </p>
               </div>
 
