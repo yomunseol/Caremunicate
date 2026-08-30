@@ -1,4 +1,4 @@
-ㅊ# Caremunicate
+# Caremunicate
 
 Caremunicate is a React application built with TypeScript, designed to provide a platform for emergency doctor listings, service fees, and customer registrations. The project emphasizes a postmodern aesthetic and is optimized for mobile devices.
 
