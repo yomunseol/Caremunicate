@@ -1,4 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
 type AuthMode = 'signup' | 'login';
@@ -160,6 +163,14 @@ type LoginFormValues = {
   password: string;
 };
 
+type UserProfile = {
+  fullName: string;
+  email: string;
+  role: string;
+  specialty?: string;
+  clinic?: string;
+};
+
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
@@ -181,6 +192,9 @@ function App() {
   });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
   const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -193,7 +207,26 @@ function App() {
     return () => window.removeEventListener('hashchange', syncRoute);
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+
+      if (!user) {
+        setUserProfile(null);
+        return;
+      }
+
+      const profileSnapshot = await getDoc(doc(db, 'users', user.uid));
+      setUserProfile(profileSnapshot.exists() ? (profileSnapshot.data() as UserProfile) : null);
+    });
+
+    return unsubscribe;
+  }, []);
+
   const navigate = (nextRoute: RouteKey) => {
+    if (nextRoute === 'profile' && !currentUser) {
+      nextRoute = 'login';
+    }
     setRoute(nextRoute);
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
@@ -270,7 +303,7 @@ function App() {
     return nextErrors;
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (authMode === 'signup') {
@@ -283,7 +316,46 @@ function App() {
       if (Object.keys(nextErrors).length > 0) return;
     }
 
-    navigate('profile');
+    setIsAuthLoading(true);
+
+    try {
+      if (authMode === 'signup') {
+        const credential = await createUserWithEmailAndPassword(auth, signupValues.email.trim(), signupValues.password);
+        const profile: UserProfile = {
+          fullName: signupValues.fullName.trim(),
+          email: credential.user.email ?? signupValues.email.trim(),
+          role: signupValues.role,
+          ...(authRole === 'doctor' ? {
+            specialty: signupValues.specialty.trim(),
+            clinic: signupValues.clinic.trim(),
+          } : {}),
+        };
+
+        await setDoc(doc(db, 'users', credential.user.uid), {
+          ...profile,
+          createdAt: serverTimestamp(),
+        });
+        setUserProfile(profile);
+      } else {
+        await signInWithEmailAndPassword(auth, loginValues.email.trim(), loginValues.password);
+      }
+
+      navigate('profile');
+    } catch (error) {
+      const message = error instanceof Error ? error.message.replace('Firebase: ', '') : 'Unable to authenticate. Please try again.';
+      if (authMode === 'signup') {
+        setSignupErrors({ form: message });
+      } else {
+        setLoginErrors({ form: message });
+      }
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    navigate('home');
   };
 
   return (
@@ -295,12 +367,25 @@ function App() {
         </button>
 
         <div className="nav-actions">
-          <button className="ghost-button" type="button" onClick={() => navigate('login')}>
-            Log in
-          </button>
-          <button className="primary-button" type="button" onClick={() => navigate('signup')}>
-            Sign up
-          </button>
+          {currentUser ? (
+            <>
+              <button className="ghost-button" type="button" onClick={() => navigate('profile')}>
+                Profile
+              </button>
+              <button className="primary-button" type="button" onClick={handleLogout}>
+                Log out
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="ghost-button" type="button" onClick={() => navigate('login')}>
+                Log in
+              </button>
+              <button className="primary-button" type="button" onClick={() => navigate('signup')}>
+                Sign up
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -500,6 +585,8 @@ function App() {
                 </div>
 
                 <form onSubmit={handleSubmit}>
+                  {authMode === 'signup' && signupErrors.form ? <p className="field-error">{signupErrors.form}</p> : null}
+                  {authMode === 'login' && loginErrors.form ? <p className="field-error">{loginErrors.form}</p> : null}
                   {authMode === 'signup' ? (
                     <>
                       <div className="form-row">
@@ -603,8 +690,8 @@ function App() {
                         {signupErrors.role ? <span className="field-error">{signupErrors.role}</span> : null}
                       </div>
 
-                      <button className="primary-button" type="submit">
-                        {authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
+                      <button className="primary-button" type="submit" disabled={isAuthLoading}>
+                        {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
                       </button>
                     </>
                   ) : (
@@ -640,8 +727,8 @@ function App() {
                         {loginErrors.password ? <span className="field-error">{loginErrors.password}</span> : null}
                       </div>
 
-                      <button className="primary-button" type="submit">
-                        Continue to dashboard
+                      <button className="primary-button" type="submit" disabled={isAuthLoading}>
+                        {isAuthLoading ? 'Logging in...' : 'Continue to dashboard'}
                       </button>
                     </>
                   )}
@@ -681,10 +768,10 @@ function App() {
           <section className="section profile-grid">
             <div className="profile-card">
               <div className="eyebrow">Your care dashboard</div>
-              <h2>Welcome back, Alex Carter</h2>
+              <h2>Welcome back, {userProfile?.fullName ?? currentUser?.email ?? 'there'}</h2>
               <p className="hero-copy">
-                Your care profile is connected to hospital updates, your wishlist, and your ongoing care
-                preferences.
+                Your {userProfile?.role ?? 'care'} profile is connected to hospital updates, your wishlist, and your
+                ongoing care preferences.
               </p>
 
               <div className="pill-row">
