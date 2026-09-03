@@ -203,6 +203,14 @@ function App() {
   const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState('');
+  const [preferred2faMethod, setPreferred2faMethod] = useState<'authenticator' | 'email'>('authenticator');
+  const [twoFactorPreferenceLoading, setTwoFactorPreferenceLoading] = useState(false);
+  const [twoFactorPreferenceMessage, setTwoFactorPreferenceMessage] = useState('');
+  const [twoFactorPreferenceError, setTwoFactorPreferenceError] = useState('');
+  const [pendingTwoFactor, setPendingTwoFactor] = useState(false);
+  const [loginVerificationMethod, setLoginVerificationMethod] = useState<'authenticator' | 'email'>('authenticator');
+  const [loginVerificationCode, setLoginVerificationCode] = useState('');
+  const [emailOtpSent, setEmailOtpSent] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -220,12 +228,14 @@ function App() {
       const user = session?.user ?? null;
       setCurrentUser(user);
       setUserProfile(user ? (user.user_metadata as UserProfile) : null);
+      if (user && route !== 'profile') return;
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user ?? null;
       setCurrentUser(user);
       setUserProfile(user ? (user.user_metadata as UserProfile) : null);
+      if (user && route !== 'profile') return;
     });
 
     return () => subscription.unsubscribe();
@@ -254,6 +264,8 @@ function App() {
         setProfileData(null);
       } else {
         setProfileData(data);
+        const savedPreference = data.preferred_2fa_method === 'email' ? 'email' : 'authenticator';
+        setPreferred2faMethod(savedPreference);
       }
     };
 
@@ -263,6 +275,27 @@ function App() {
       cancelled = true;
     };
   }, [authUser]);
+
+  const saveTwoFactorPreference = async () => {
+    if (!authUser) return;
+
+    setTwoFactorPreferenceLoading(true);
+    setTwoFactorPreferenceMessage('');
+    setTwoFactorPreferenceError('');
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferred_2fa_method: preferred2faMethod })
+      .eq('user_id', authUser.id);
+
+    if (error) {
+      setTwoFactorPreferenceError(error.message);
+    } else {
+      setTwoFactorPreferenceMessage('Two-factor preference saved.');
+    }
+
+    setTwoFactorPreferenceLoading(false);
+  };
 
   const navigate = (nextRoute: RouteKey) => {
     if (nextRoute === 'profile' && !currentUser) {
@@ -283,6 +316,9 @@ function App() {
     setSignupErrors({});
     setLoginErrors({});
     setAuthMessage('');
+    setPendingTwoFactor(false);
+    setLoginVerificationCode('');
+    setEmailOtpSent(false);
     const hash = mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -395,15 +431,103 @@ function App() {
           password: loginValues.password,
         });
         error = loginError;
+
+        if (!error) {
+          setPendingTwoFactor(true);
+          setLoginVerificationCode('');
+          setEmailOtpSent(false);
+          setLoginVerificationMethod('authenticator');
+          setAuthMessageType('success');
+          setAuthMessage('Password accepted. Choose how you want to verify your identity.');
+          return;
+        }
       }
 
       if (error) throw error;
       setAuthMessageType('success');
-      setAuthMessage(authMode === 'signup' ? 'Your account is ready.' : 'You are now logged in.');
+      setAuthMessage('Your account is ready.');
       navigate('profile');
     } catch (error) {
       setAuthMessageType('error');
       setAuthMessage(error instanceof Error ? error.message : 'Unable to authenticate. Please try again.');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const selectLoginVerificationMethod = async (method: 'authenticator' | 'email') => {
+    setLoginVerificationMethod(method);
+    setLoginVerificationCode('');
+    setAuthMessage('');
+
+    if (method !== 'email' || emailOtpSent) return;
+
+    setIsAuthLoading(true);
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: loginValues.email.trim(),
+      options: { shouldCreateUser: false },
+    });
+
+    if (error) {
+      setAuthMessageType('error');
+      setAuthMessage(error.message);
+    } else {
+      setEmailOtpSent(true);
+      setAuthMessageType('success');
+      setAuthMessage('A 6-digit code has been sent to your email.');
+    }
+
+    setIsAuthLoading(false);
+  };
+
+  const verifyLoginCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!loginVerificationCode.trim()) {
+      setAuthMessageType('error');
+      setAuthMessage('Enter the 6-digit verification code.');
+      return;
+    }
+
+    setIsAuthLoading(true);
+    setAuthMessage('');
+
+    try {
+      if (loginVerificationMethod === 'email') {
+        const { error } = await supabase.auth.verifyOtp({
+          email: loginValues.email.trim(),
+          token: loginVerificationCode.trim(),
+          type: 'email',
+        });
+
+        if (error) throw error;
+      } else {
+        const { data: factorData, error: listError } = await supabase.auth.mfa.listFactors();
+        if (listError) throw listError;
+
+        const totpFactor = factorData.all.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified');
+        if (!totpFactor) throw new Error('Authenticator app verification is not set up for this account.');
+
+        const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: totpFactor.id });
+        if (challengeError) throw challengeError;
+
+        const { error: verifyError } = await supabase.auth.mfa.verify({
+          factorId: totpFactor.id,
+          challengeId: challengeData.id,
+          code: loginVerificationCode.trim(),
+        });
+
+        if (verifyError) throw verifyError;
+      }
+
+      setPendingTwoFactor(false);
+      setAuthMessageType('success');
+      setAuthMessage('Verification complete. You are now logged in.');
+      navigate('profile');
+    } catch (error) {
+      setAuthMessageType('error');
+      setAuthMessage(error instanceof Error ? error.message : 'Unable to verify the code. Please try again.');
     } finally {
       setIsAuthLoading(false);
     }
@@ -808,6 +932,59 @@ function App() {
                         {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
                       </button>
                     </>
+                  ) : pendingTwoFactor ? (
+                    <>
+                      <div className="two-factor-options" role="radiogroup" aria-label="Choose verification method">
+                        <label className="two-factor-option">
+                          <input
+                            type="radio"
+                            name="login-verification-method"
+                            checked={loginVerificationMethod === 'authenticator'}
+                            onChange={() => void selectLoginVerificationMethod('authenticator')}
+                          />
+                          <span>
+                            <strong>Authenticator App</strong>
+                            <small>Use the rotating 6-digit code from your authenticator app.</small>
+                          </span>
+                        </label>
+
+                        <label className="two-factor-option">
+                          <input
+                            type="radio"
+                            name="login-verification-method"
+                            checked={loginVerificationMethod === 'email'}
+                            onChange={() => void selectLoginVerificationMethod('email')}
+                          />
+                          <span>
+                            <strong>Email Code</strong>
+                            <small>Send a one-time 6-digit code to your inbox.</small>
+                          </span>
+                        </label>
+                      </div>
+
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="6-digit verification code"
+                          aria-label="6-digit verification code"
+                          inputMode="numeric"
+                          maxLength={6}
+                          pattern="[0-9]{6}"
+                          value={loginVerificationCode}
+                          onChange={(event) => setLoginVerificationCode(event.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={isAuthLoading || (loginVerificationMethod === 'email' && !emailOtpSent)}
+                        onClick={(event) => void verifyLoginCode(event as unknown as FormEvent<HTMLFormElement>)}
+                      >
+                        {isAuthLoading ? 'Verifying...' : 'Verify and continue'}
+                      </button>
+                    </>
                   ) : (
                     <>
                       <div className="field-wrap">
@@ -842,7 +1019,7 @@ function App() {
                       </div>
 
                       <button className="primary-button" type="submit" disabled={isAuthLoading}>
-                        {isAuthLoading ? 'Logging in...' : 'Continue to dashboard'}
+                        {isAuthLoading ? 'Logging in...' : 'Continue to verification'}
                       </button>
                     </>
                   )}
@@ -915,6 +1092,63 @@ function App() {
                 <p>The emergency calling service is not available right now. Please check back later for updates.</p>
                 <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }} disabled>
                   Service unavailable
+                </button>
+              </div>
+
+              <div className="panel">
+                <div className="eyebrow">Security preference</div>
+                <h3>Preferred 2FA method</h3>
+                <p>Choose how you want to verify your account when extra security is required.</p>
+
+                <div className="two-factor-options" role="radiogroup" aria-label="Preferred two-factor method">
+                  <label className="two-factor-option">
+                    <input
+                      type="radio"
+                      name="preferred-2fa-method"
+                      value="authenticator"
+                      checked={preferred2faMethod === 'authenticator'}
+                      onChange={() => {
+                        setPreferred2faMethod('authenticator');
+                        setTwoFactorPreferenceMessage('');
+                        setTwoFactorPreferenceError('');
+                      }}
+                    />
+                    <span>
+                      <strong>Authenticator App</strong>
+                      <small>Use a rotating 6-digit code from your authenticator app.</small>
+                    </span>
+                  </label>
+
+                  <label className="two-factor-option">
+                    <input
+                      type="radio"
+                      name="preferred-2fa-method"
+                      value="email"
+                      checked={preferred2faMethod === 'email'}
+                      onChange={() => {
+                        setPreferred2faMethod('email');
+                        setTwoFactorPreferenceMessage('');
+                        setTwoFactorPreferenceError('');
+                      }}
+                    />
+                    <span>
+                      <strong>Email Code</strong>
+                      <small>Receive a one-time security code by email.</small>
+                    </span>
+                  </label>
+                </div>
+
+                {twoFactorPreferenceError ? <p className="field-error">{twoFactorPreferenceError}</p> : null}
+                {twoFactorPreferenceMessage ? <p className="auth-success">{twoFactorPreferenceMessage}</p> : null}
+
+                <button
+                  className="secondary-button"
+                  type="button"
+                  style={{ marginTop: '0.9rem' }}
+                  onClick={saveTwoFactorPreference}
+                  disabled={twoFactorPreferenceLoading}
+                >
+                  {twoFactorPreferenceLoading ? 'Saving...' : 'Save Preference'}
                 </button>
               </div>
 

@@ -242,7 +242,8 @@ export default function TwoFactorSetup() {
             <div style={qrCardStyle}>
               <QRCodeSVG value={totpUri} size={180} />
               <p style={{ margin: 0, color: '#557b76', fontSize: '0.9rem', textAlign: 'center' }}>
-                Scan this QR code with your authenticator app, then enter the 6-digit code.
+                Open an authenticator app such as Google Authenticator, Microsoft Authenticator, Authy, or 1Password.
+                Choose “Add account,” scan this QR code with your phone camera, then type the 6-digit code it shows.
               </p>
             </div>
 
@@ -253,7 +254,7 @@ export default function TwoFactorSetup() {
               inputMode="numeric"
               maxLength={6}
               pattern="[0-9]{6}"
-              placeholder="000000"
+              placeholder="Enter 6-digit code"
               aria-label="Six-digit authentication code"
               required
             />
