@@ -897,12 +897,7 @@ function App() {
               <div className="profile-grid">
                 <div className="panel">
                   <h3>Assigned doctor</h3>
-                  <p>Dr. Mina Patel • Cardiology • Priority routing</p>
-                  <ul className="mini-list">
-                    <li>Handles your follow-up care</li>
-                    <li>Prioritizes emergency calls</li>
-                    <li>Supports your care history</li>
-                  </ul>
+                  <p>No assigned doctors yet. Choose an assigned doctor when you are ready for ongoing care and follow-up support.</p>
                 </div>
 
                 <div className="panel">
@@ -915,10 +910,10 @@ function App() {
             <div className="profile-sidebar">
               <div className="panel">
                 <div className="eyebrow">Emergency line</div>
-                <h3>Need immediate support?</h3>
-                <p>Access urgent medical support quickly from your dashboard with a single reassuring action.</p>
-                <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }}>
-                  Call emergency line
+                <h3>Emergency service unavailable</h3>
+                <p>The emergency calling service is not available right now. Please check back later for updates.</p>
+                <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }} disabled>
+                  Service unavailable
                 </button>
               </div>
 
