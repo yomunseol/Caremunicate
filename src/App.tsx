@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db, isFirebaseConfigured } from './firebase';
+import type { User } from '@supabase/supabase-js';
+import { supabase } from './lib/supabase';
+import ProtectedRoute from './components/ProtectedRoute';
+import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
 type AuthMode = 'signup' | 'login';
@@ -175,6 +176,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 function App() {
+  const { user: authUser } = useAuth();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
@@ -195,6 +197,15 @@ function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState('');
+  const [authMessageType, setAuthMessageType] = useState<'success' | 'error'>('error');
+  const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileFormVisible, setProfileFormVisible] = useState(false);
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profileBio, setProfileBio] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -208,24 +219,103 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth || !db) return;
-
-    const firebaseAuth = auth;
-    const firestore = db;
-    const unsubscribe = onAuthStateChanged(firebaseAuth, async (user) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user ?? null;
       setCurrentUser(user);
+      setUserProfile(user ? (user.user_metadata as UserProfile) : null);
+    });
 
-      if (!user) {
-        setUserProfile(null);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user ?? null;
+      setCurrentUser(user);
+      setUserProfile(user ? (user.user_metadata as UserProfile) : null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchProfile = async () => {
+      if (!authUser) {
+        setProfileData(null);
+        setProfileError('');
+        setProfileFormVisible(false);
+        setProfileLoading(false);
         return;
       }
 
-      const profileSnapshot = await getDoc(doc(firestore, 'users', user.uid));
-      setUserProfile(profileSnapshot.exists() ? (profileSnapshot.data() as UserProfile) : null);
-    });
+      setProfileLoading(true);
+      setProfileError('');
 
-    return unsubscribe;
-  }, []);
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', authUser.id)
+        .single();
+
+      if (cancelled) return;
+
+      if (error?.code === 'PGRST116') {
+        setProfileData(null);
+        setProfileFormVisible(true);
+      } else if (error) {
+        setProfileData(null);
+        setProfileError(error.message);
+        setProfileFormVisible(false);
+      } else {
+        setProfileData(data);
+        setProfileUsername(String(data.username ?? ''));
+        setProfileBio(String(data.bio ?? ''));
+        setProfileFormVisible(false);
+      }
+
+      setProfileLoading(false);
+    };
+
+    void fetchProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUser]);
+
+  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!authUser || !profileUsername.trim()) {
+      setProfileError('Username is required.');
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileError('');
+
+    const profileValues = {
+      user_id: authUser.id,
+      username: profileUsername.trim(),
+      bio: profileBio.trim(),
+    };
+
+    const response = profileData
+      ? await supabase
+          .from('profiles')
+          .update({ username: profileValues.username, bio: profileValues.bio })
+          .eq('user_id', authUser.id)
+          .select('*')
+          .single()
+      : await supabase.from('profiles').insert(profileValues).select('*').single();
+
+    if (response.error) {
+      setProfileError(response.error.message);
+    } else {
+      setProfileData(response.data);
+      setProfileFormVisible(false);
+    }
+
+    setProfileSaving(false);
+  };
 
   const navigate = (nextRoute: RouteKey) => {
     if (nextRoute === 'profile' && !currentUser) {
@@ -242,6 +332,7 @@ function App() {
     setRoute(mode === 'login' ? 'login' : 'signup');
     setSignupErrors({});
     setLoginErrors({});
+    setAuthMessage('');
     const hash = mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -320,56 +411,56 @@ function App() {
       if (Object.keys(nextErrors).length > 0) return;
     }
 
-    if (!auth || !db) {
-      const error = 'Account access is not configured yet. Add the Firebase values to .env and restart the app.';
-      if (authMode === 'signup') {
-        setSignupErrors({ form: error });
-      } else {
-        setLoginErrors({ form: error });
-      }
-      return;
-    }
-
     setIsAuthLoading(true);
+    setAuthMessage('');
 
     try {
-      if (authMode === 'signup') {
-        const credential = await createUserWithEmailAndPassword(auth, signupValues.email.trim(), signupValues.password);
-        const profile: UserProfile = {
-          fullName: signupValues.fullName.trim(),
-          email: credential.user.email ?? signupValues.email.trim(),
-          role: signupValues.role,
-          ...(authRole === 'doctor' ? {
-            specialty: signupValues.specialty.trim(),
-            clinic: signupValues.clinic.trim(),
-          } : {}),
-        };
+      let error;
 
-        await setDoc(doc(db, 'users', credential.user.uid), {
-          ...profile,
-          createdAt: serverTimestamp(),
+      if (authMode === 'signup') {
+        const { data, error: signupError } = await supabase.auth.signUp({
+          email: signupValues.email.trim(),
+          password: signupValues.password,
+          options: {
+            data: {
+              fullName: signupValues.fullName.trim(),
+              role: signupValues.role,
+              ...(authRole === 'doctor' ? {
+                specialty: signupValues.specialty.trim(),
+                clinic: signupValues.clinic.trim(),
+              } : {}),
+            },
+          },
         });
-        setUserProfile(profile);
+        error = signupError;
+
+        if (!error && !data.session) {
+          setAuthMessageType('success');
+          setAuthMessage('Account created. Check your email to confirm your account before logging in.');
+          return;
+        }
       } else {
-        await signInWithEmailAndPassword(auth, loginValues.email.trim(), loginValues.password);
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: loginValues.email.trim(),
+          password: loginValues.password,
+        });
+        error = loginError;
       }
 
+      if (error) throw error;
+      setAuthMessageType('success');
+      setAuthMessage(authMode === 'signup' ? 'Your account is ready.' : 'You are now logged in.');
       navigate('profile');
     } catch (error) {
-      const message = error instanceof Error ? error.message.replace('Firebase: ', '') : 'Unable to authenticate. Please try again.';
-      if (authMode === 'signup') {
-        setSignupErrors({ form: message });
-      } else {
-        setLoginErrors({ form: message });
-      }
+      setAuthMessageType('error');
+      setAuthMessage(error instanceof Error ? error.message : 'Unable to authenticate. Please try again.');
     } finally {
       setIsAuthLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    if (!auth) return;
-    await signOut(auth);
+    await supabase.auth.signOut();
     navigate('home');
   };
 
@@ -601,8 +692,7 @@ function App() {
                 </div>
 
                 <form onSubmit={handleSubmit}>
-                  {authMode === 'signup' && signupErrors.form ? <p className="field-error">{signupErrors.form}</p> : null}
-                  {authMode === 'login' && loginErrors.form ? <p className="field-error">{loginErrors.form}</p> : null}
+                  {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                   {authMode === 'signup' ? (
                     <>
                       <div className="form-row">
@@ -781,7 +871,8 @@ function App() {
         )}
 
         {route === 'profile' && (
-          <section className="section profile-grid">
+          <ProtectedRoute>
+            <section className="section profile-grid">
             <div className="profile-card">
               <div className="eyebrow">Your care dashboard</div>
               <h2>Welcome back, {userProfile?.fullName ?? currentUser?.email ?? 'there'}</h2>
@@ -815,6 +906,48 @@ function App() {
                     <li>Dr. Sarah Kim</li>
                   </ul>
                 </div>
+
+                <div className="panel">
+                  <h3>Profile information</h3>
+                  {profileLoading ? <p>Loading your profile...</p> : null}
+                  {profileError ? <p className="field-error">{profileError}</p> : null}
+                  {!profileLoading && profileData && !profileFormVisible ? (
+                    <>
+                      <p><strong>Username:</strong> {String(profileData.username ?? '')}</p>
+                      <p><strong>Bio:</strong> {String(profileData.bio ?? 'No bio added yet.')}</p>
+                      <button className="secondary-button" type="button" onClick={() => setProfileFormVisible(true)}>
+                        Edit
+                      </button>
+                    </>
+                  ) : null}
+                  {!profileLoading && profileFormVisible ? (
+                    <form onSubmit={saveProfile}>
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="Username"
+                          aria-label="Username"
+                          value={profileUsername}
+                          onChange={(event) => setProfileUsername(event.target.value)}
+                          required
+                        />
+                      </div>
+                      <div className="field-wrap">
+                        <textarea
+                          className="input"
+                          placeholder="Bio"
+                          aria-label="Bio"
+                          value={profileBio}
+                          onChange={(event) => setProfileBio(event.target.value)}
+                          rows={4}
+                        />
+                      </div>
+                      <button className="primary-button" type="submit" disabled={profileSaving}>
+                        {profileSaving ? 'Saving...' : profileData ? 'Update Profile' : 'Create Profile'}
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -834,7 +967,8 @@ function App() {
                 <p>Fresh hospital information, case notes, and follow-up updates are ready for review whenever you need them.</p>
               </div>
             </div>
-          </section>
+            </section>
+          </ProtectedRoute>
         )}
 
         {route === 'pricing' && (
