@@ -206,6 +206,8 @@ function App() {
   const [profileUsername, setProfileUsername] = useState('');
   const [profileBio, setProfileBio] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const [upgradeMessage, setUpgradeMessage] = useState('');
 
   useEffect(() => {
     const syncRoute = () => {
@@ -461,8 +463,11 @@ function App() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    setProfileMenuOpen(false);
     navigate('home');
   };
+
+  const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
 
   return (
     <div className="app-shell">
@@ -475,9 +480,64 @@ function App() {
         <div className="nav-actions">
           {currentUser ? (
             <>
-              <button className="ghost-button" type="button" onClick={() => navigate('profile')}>
-                Profile
-              </button>
+              <div className="profile-menu">
+                <button
+                  className="profile-trigger"
+                  type="button"
+                  aria-expanded={profileMenuOpen}
+                  aria-haspopup="true"
+                  onClick={() => {
+                    setProfileMenuOpen((open) => !open);
+                    setUpgradeMessage('');
+                  }}
+                >
+                  <span className="profile-avatar" aria-hidden="true">{profileDisplayName.charAt(0).toUpperCase()}</span>
+                  <span className="profile-trigger-copy">
+                    <strong>{profileDisplayName}</strong>
+                    <small>Free plan</small>
+                  </span>
+                  <span className="profile-chevron" aria-hidden="true">{profileMenuOpen ? '▲' : '▼'}</span>
+                </button>
+
+                {profileMenuOpen ? (
+                  <div className="profile-popover" role="dialog" aria-label="Profile menu">
+                    <div className="profile-popover-header">
+                      <div>
+                        <span className="profile-kicker">Caremunicate account</span>
+                        <h3>{profileDisplayName}</h3>
+                        <p>{currentUser.email}</p>
+                      </div>
+                      <span className="plan-status">Free</span>
+                    </div>
+
+                    <div className="plan-summary">
+                      <div className="plan-summary-heading">
+                        <span>Current plan</span>
+                        <strong>Free plan</strong>
+                      </div>
+                      <p>Essential access to your profile and Caremunicate care network.</p>
+                      <div className="plan-meter" aria-hidden="true"><span /></div>
+                    </div>
+
+                    <button
+                      className="upgrade-button"
+                      type="button"
+                      onClick={() => setUpgradeMessage('Payment service currently unavailable')}
+                    >
+                      <span>Upgrade to other plans</span>
+                      <span aria-hidden="true">→</span>
+                    </button>
+                    {upgradeMessage ? <p className="upgrade-message">{upgradeMessage}</p> : null}
+
+                    <button className="popover-profile-link" type="button" onClick={() => {
+                      setProfileMenuOpen(false);
+                      navigate('profile');
+                    }}>
+                      View full profile
+                    </button>
+                  </div>
+                ) : null}
+              </div>
               <button className="primary-button" type="button" onClick={handleLogout}>
                 Log out
               </button>
