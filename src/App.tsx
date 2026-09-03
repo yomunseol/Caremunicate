@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
+import TwoFactorSetup from './components/TwoFactorSetup';
 import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
@@ -916,6 +917,8 @@ function App() {
                   Service unavailable
                 </button>
               </div>
+
+              <TwoFactorSetup />
 
               <div className="panel">
                 <div className="eyebrow">Hospital updates</div>

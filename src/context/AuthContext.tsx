@@ -22,11 +22,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+    const restoreSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+
       if (!mounted) return;
-      setSession(initialSession);
+
+      if (!error) {
+        setSession(data.session);
+      }
+
       setLoading(false);
-    });
+    };
+
+    void restoreSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
       if (!mounted) return;
