@@ -200,12 +200,6 @@ function App() {
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState<'success' | 'error'>('error');
   const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState('');
-  const [profileFormVisible, setProfileFormVisible] = useState(false);
-  const [profileUsername, setProfileUsername] = useState('');
-  const [profileBio, setProfileBio] = useState('');
-  const [profileSaving, setProfileSaving] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState('');
 
@@ -242,14 +236,8 @@ function App() {
     const fetchProfile = async () => {
       if (!authUser) {
         setProfileData(null);
-        setProfileError('');
-        setProfileFormVisible(false);
-        setProfileLoading(false);
         return;
       }
-
-      setProfileLoading(true);
-      setProfileError('');
 
       const { data, error } = await supabase
         .from('profiles')
@@ -261,19 +249,11 @@ function App() {
 
       if (error?.code === 'PGRST116') {
         setProfileData(null);
-        setProfileFormVisible(true);
       } else if (error) {
         setProfileData(null);
-        setProfileError(error.message);
-        setProfileFormVisible(false);
       } else {
         setProfileData(data);
-        setProfileUsername(String(data.username ?? ''));
-        setProfileBio(String(data.bio ?? ''));
-        setProfileFormVisible(false);
       }
-
-      setProfileLoading(false);
     };
 
     void fetchProfile();
@@ -282,42 +262,6 @@ function App() {
       cancelled = true;
     };
   }, [authUser]);
-
-  const saveProfile = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!authUser || !profileUsername.trim()) {
-      setProfileError('Username is required.');
-      return;
-    }
-
-    setProfileSaving(true);
-    setProfileError('');
-
-    const profileValues = {
-      user_id: authUser.id,
-      username: profileUsername.trim(),
-      bio: profileBio.trim(),
-    };
-
-    const response = profileData
-      ? await supabase
-          .from('profiles')
-          .update({ username: profileValues.username, bio: profileValues.bio })
-          .eq('user_id', authUser.id)
-          .select('*')
-          .single()
-      : await supabase.from('profiles').insert(profileValues).select('*').single();
-
-    if (response.error) {
-      setProfileError(response.error.message);
-    } else {
-      setProfileData(response.data);
-      setProfileFormVisible(false);
-    }
-
-    setProfileSaving(false);
-  };
 
   const navigate = (nextRoute: RouteKey) => {
     if (nextRoute === 'profile' && !currentUser) {
@@ -963,53 +907,7 @@ function App() {
 
                 <div className="panel">
                   <h3>Wishlist</h3>
-                  <ul className="mini-list">
-                    <li>Dr. Helena Flores</li>
-                    <li>Dr. Omar Shah</li>
-                    <li>Dr. Sarah Kim</li>
-                  </ul>
-                </div>
-
-                <div className="panel">
-                  <h3>Profile information</h3>
-                  {profileLoading ? <p>Loading your profile...</p> : null}
-                  {profileError ? <p className="field-error">{profileError}</p> : null}
-                  {!profileLoading && profileData && !profileFormVisible ? (
-                    <>
-                      <p><strong>Username:</strong> {String(profileData.username ?? '')}</p>
-                      <p><strong>Bio:</strong> {String(profileData.bio ?? 'No bio added yet.')}</p>
-                      <button className="secondary-button" type="button" onClick={() => setProfileFormVisible(true)}>
-                        Edit
-                      </button>
-                    </>
-                  ) : null}
-                  {!profileLoading && profileFormVisible ? (
-                    <form onSubmit={saveProfile}>
-                      <div className="field-wrap">
-                        <input
-                          className="input"
-                          placeholder="Username"
-                          aria-label="Username"
-                          value={profileUsername}
-                          onChange={(event) => setProfileUsername(event.target.value)}
-                          required
-                        />
-                      </div>
-                      <div className="field-wrap">
-                        <textarea
-                          className="input"
-                          placeholder="Bio"
-                          aria-label="Bio"
-                          value={profileBio}
-                          onChange={(event) => setProfileBio(event.target.value)}
-                          rows={4}
-                        />
-                      </div>
-                      <button className="primary-button" type="submit" disabled={profileSaving}>
-                        {profileSaving ? 'Saving...' : profileData ? 'Update Profile' : 'Create Profile'}
-                      </button>
-                    </form>
-                  ) : null}
+                  <p>No doctors saved yet. Add trusted doctors to your wishlist for quick access later.</p>
                 </div>
               </div>
             </div>
