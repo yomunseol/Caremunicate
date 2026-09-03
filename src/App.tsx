@@ -323,6 +323,9 @@ function App() {
     if (nextRoute === 'profile' && !currentUser) {
       nextRoute = 'login';
     }
+    if (nextRoute === 'login' || nextRoute === 'signup') {
+      setAuthMode(nextRoute);
+    }
     setRoute(nextRoute);
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
