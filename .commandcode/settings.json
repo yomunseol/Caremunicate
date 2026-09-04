@@ -3,7 +3,9 @@
     "allow": [
       "Shell(wc -l src/styles/globals.css src/App.tsx src/pages/HomePage.tsx src/components/TwoFactorSetup.jsx 2>/dev/null; echo \"---\"; ls -la src/assets public 2>/dev/null; echo \"---env keys---\"; sed 's/=.*/=<set>/' .env.local)",
       "Shell(cat:*)",
-      "Shell(ls:*)"
+      "Shell(ls:*)",
+      "Shell(npm:*)",
+      "Shell(echo \"--- env files ---\"; ls -la .env* 2>/dev/null; echo \"--- supabase vars present? ---\"; grep -l \"VITE_SUPABASE\" .env* 2>/dev/null || echo \"none in .env files\"; echo \"--- shell env ---\"; env | grep -c VITE_SUPABASE || true; echo \"--- tracked .env? ---\"; git ls-files | grep -E '\\.env' || echo \"no env files tracked\")"
     ],
     "deny": [],
     "defaultMode": "default"

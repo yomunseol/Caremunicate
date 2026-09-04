@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
+import Auth from './components/Auth';
 import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
@@ -160,11 +161,6 @@ type SignupFormValues = {
   role: string;
 };
 
-type LoginFormValues = {
-  email: string;
-  password: string;
-};
-
 type UserProfile = {
   fullName: string;
   email: string;
@@ -189,12 +185,7 @@ function App() {
     clinic: '',
     role: '',
   });
-  const [loginValues, setLoginValues] = useState<LoginFormValues>({
-    email: '',
-    password: '',
-  });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
-  const [loginErrors, setLoginErrors] = useState<Record<string, string>>({});
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(false);
@@ -207,10 +198,6 @@ function App() {
   const [twoFactorPreferenceLoading, setTwoFactorPreferenceLoading] = useState(false);
   const [twoFactorPreferenceMessage, setTwoFactorPreferenceMessage] = useState('');
   const [twoFactorPreferenceError, setTwoFactorPreferenceError] = useState('');
-  const [pendingTwoFactor, setPendingTwoFactor] = useState(false);
-  const [loginVerificationMethod, setLoginVerificationMethod] = useState<'authenticator' | 'email'>('authenticator');
-  const [loginVerificationCode, setLoginVerificationCode] = useState('');
-  const [emailOtpSent, setEmailOtpSent] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -314,11 +301,7 @@ function App() {
     setAuthRole(role);
     setRoute(mode === 'login' ? 'login' : 'signup');
     setSignupErrors({});
-    setLoginErrors({});
     setAuthMessage('');
-    setPendingTwoFactor(false);
-    setLoginVerificationCode('');
-    setEmailOtpSent(false);
     const hash = mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -368,121 +351,46 @@ function App() {
     return nextErrors;
   };
 
-  const validateLoginForm = () => {
-    const nextErrors: Record<string, string> = {};
-
-    const emailError = getEmailError(loginValues.email);
-    if (emailError) {
-      nextErrors.email = emailError;
-    }
-
-    const passwordError = getPasswordError(loginValues.password);
-    if (passwordError) {
-      nextErrors.password = passwordError;
-    }
-
-    return nextErrors;
-  };
-
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (authMode === 'signup') {
-      const nextErrors = validateSignupForm();
-      setSignupErrors(nextErrors);
-      if (Object.keys(nextErrors).length > 0) return;
-    } else if (!pendingTwoFactor) {
-      const emailError = getEmailError(loginValues.email);
-      setLoginErrors(emailError ? { email: emailError } : {});
-      if (emailError) return;
-    }
+    const nextErrors = validateSignupForm();
+    setSignupErrors(nextErrors);
+    if (Object.keys(nextErrors).length > 0) return;
 
     setIsAuthLoading(true);
     setAuthMessage('');
 
     try {
-      let error;
-
-      if (authMode === 'signup') {
-        const { data, error: signupError } = await supabase.auth.signUp({
-          email: signupValues.email.trim(),
-          password: signupValues.password,
-          options: {
-            data: {
-              fullName: signupValues.fullName.trim(),
-              role: signupValues.role,
-              ...(authRole === 'doctor' ? {
-                specialty: signupValues.specialty.trim(),
-                clinic: signupValues.clinic.trim(),
-              } : {}),
-            },
+      const { data, error } = await supabase.auth.signUp({
+        email: signupValues.email.trim(),
+        password: signupValues.password,
+        options: {
+          data: {
+            fullName: signupValues.fullName.trim(),
+            role: signupValues.role,
+            ...(authRole === 'doctor' ? {
+              specialty: signupValues.specialty.trim(),
+              clinic: signupValues.clinic.trim(),
+            } : {}),
           },
-        });
-        error = signupError;
-
-        if (!error && !data.session) {
-          setAuthMessageType('success');
-          setAuthMessage('Account created. Check your email to confirm your account before logging in.');
-          return;
-        }
-      } else {
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-          email: loginValues.email.trim(),
-          options: { shouldCreateUser: false },
-        });
-        error = otpError;
-
-        if (!error) {
-          setPendingTwoFactor(true);
-          setEmailOtpSent(true);
-          setLoginVerificationMethod('email');
-          setLoginVerificationCode('');
-          setAuthMessageType('success');
-          setAuthMessage('A 6-digit code has been sent to your email.');
-          return;
-        }
-      }
+        },
+      });
 
       if (error) throw error;
+
+      if (!data.session) {
+        setAuthMessageType('success');
+        setAuthMessage('Account created. Check your email to confirm your account before logging in.');
+        return;
+      }
+
       setAuthMessageType('success');
       setAuthMessage('Your account is ready.');
       navigate('profile');
     } catch (error) {
       setAuthMessageType('error');
       setAuthMessage(error instanceof Error ? error.message : 'Unable to authenticate. Please try again.');
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const verifyEmailCode = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    if (!loginVerificationCode.trim()) {
-      setAuthMessageType('error');
-      setAuthMessage('Enter the 6-digit code from your email.');
-      return;
-    }
-
-    setIsAuthLoading(true);
-    setAuthMessage('');
-
-    try {
-      const { error } = await supabase.auth.verifyOtp({
-        email: loginValues.email.trim(),
-        token: loginVerificationCode.trim(),
-        type: 'email',
-      });
-
-      if (error) throw error;
-
-      setPendingTwoFactor(false);
-      setAuthMessageType('success');
-      setAuthMessage('Verification complete. You are now logged in.');
-      navigate('profile');
-    } catch (error) {
-      setAuthMessageType('error');
-      setAuthMessage(error instanceof Error ? error.message : 'Unable to verify the code. Please try again.');
     } finally {
       setIsAuthLoading(false);
     }
@@ -887,57 +795,8 @@ function App() {
                         {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
                       </button>
                     </>
-                  ) : pendingTwoFactor ? (
-                    <>
-                      <p className="auth-copy">
-                        We sent a 6-digit sign-in code to <strong>{loginValues.email.trim()}</strong>. Enter it below to
-                        complete your login.
-                      </p>
-
-                      <div className="field-wrap">
-                        <input
-                          className="input"
-                          placeholder="6-digit code"
-                          aria-label="6-digit code"
-                          inputMode="numeric"
-                          maxLength={6}
-                          pattern="[0-9]{6}"
-                          value={loginVerificationCode}
-                          onChange={(event) => setLoginVerificationCode(event.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <button
-                        className="primary-button"
-                        type="button"
-                        disabled={isAuthLoading || !emailOtpSent}
-                        onClick={(event) => void verifyEmailCode(event as unknown as FormEvent<HTMLFormElement>)}
-                      >
-                        {isAuthLoading ? 'Verifying...' : 'Verify 6-digit code'}
-                      </button>
-                    </>
                   ) : (
-                    <>
-                      <div className="field-wrap">
-                        <input
-                          className="input"
-                          placeholder="Email address"
-                          aria-label="Email address"
-                          value={loginValues.email}
-                          onChange={(event) => {
-                            setLoginValues((previous) => ({ ...previous, email: event.target.value }));
-                            setLoginErrors((previous) => ({ ...previous, email: '' }));
-                          }}
-                          aria-invalid={Boolean(loginErrors.email)}
-                        />
-                        {loginErrors.email ? <span className="field-error">{loginErrors.email}</span> : null}
-                      </div>
-
-                      <button className="primary-button" type="submit" disabled={isAuthLoading}>
-                        {isAuthLoading ? 'Sending code...' : 'Email me a 6-digit code'}
-                      </button>
-                    </>
+                    <Auth />
                   )}
                 </form>
 
