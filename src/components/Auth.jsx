@@ -14,7 +14,7 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [code, setCode] = useState('');
-  const [stage, setStage] = useState<'email' | 'loading' | 'code'>('email');
+  const [stage, setStage] = useState('email');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
