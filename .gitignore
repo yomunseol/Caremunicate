@@ -6,6 +6,7 @@ dist/
 .env.example
 .vercel
 .env*
+.commandcode
 
 # Build artifacts
 *.tsbuildinfo
