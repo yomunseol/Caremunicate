@@ -3,7 +3,6 @@ import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
-import Auth from './components/Auth';
 import PasswordAuth from './components/PasswordAuth';
 import { useAuth } from './context/AuthContext';
 
@@ -178,7 +177,6 @@ function App() {
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
-  const [usePasswordAuth, setUsePasswordAuth] = useState(false);
   const [signupValues, setSignupValues] = useState<SignupFormValues>({
     fullName: '',
     email: '',
@@ -772,25 +770,7 @@ function App() {
                     </>
                   </form>
                 ) : (
-                  <div style={{ display: 'grid', gap: '0.9rem' }}>
-                    <div className="mode-toggle" role="group" aria-label="Login method">
-                      <button
-                        type="button"
-                        className={!usePasswordAuth ? 'mode-button active' : 'mode-button'}
-                        onClick={() => setUsePasswordAuth(false)}
-                      >
-                        Email code
-                      </button>
-                      <button
-                        type="button"
-                        className={usePasswordAuth ? 'mode-button active' : 'mode-button'}
-                        onClick={() => setUsePasswordAuth(true)}
-                      >
-                        Password
-                      </button>
-                    </div>
-                    {usePasswordAuth ? <PasswordAuth /> : <Auth />}
-                  </div>
+                  <PasswordAuth />
                 )}
 
                 <div className="auth-benefits">
