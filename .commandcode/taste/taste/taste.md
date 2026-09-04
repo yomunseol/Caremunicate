@@ -5,3 +5,9 @@
 - Asks whether a feature was verified end-to-end against the real environment (live Supabase project / deployed site), not just that it compiles or builds. Confidence: 0.6
 - Wants explicit loading states during async operations in forms (e.g., "Sending code...", "Verifying...") rather than silent waits. Confidence: 0.7
 - Prefers multi-stage form flows (collect email -> confirm code) with the ability to go back and change input, over single monolithic submit handlers. Confidence: 0.6
+- Values efficiency above all: wants concise, direct answers and minimal unnecessary steps, since time and credits are limited. Confidence: 0.9
+- Prefers the agent to proceed and do the work directly rather than asking lots of clarifying questions or offering multiple options. Confidence: 0.95
+- When the user grants broad autonomy ("do everything for me"), wants the agent to also clean up adjacent pre-existing issues discovered along the way (e.g., committed `node_modules`, junk build artifacts, `.gitignore` gaps) rather than fixing only the reported bug and leaving extra cleanup steps for the user. Confidence: 0.7
+- When a feature is reported broken, wants the agent to double-check and trace the root cause through the relevant code paths ("analyze strands for the code itself") rather than assuming a likely cause or patching only the symptom — then fix and explain the real cause. Confidence: 0.7
+- When the user pushes back on a diagnosis (e.g., "I ALREADY HAVE THAT"), wants the agent to immediately drop the rejected theory and re-investigate the actual symptom instead of insisting on it or repeating steps the user already did. Confidence: 0.85
+- When the user pushes back on a diagnosis (e.g., "I ALREADY HAVE THAT"), wants the agent to immediately drop the theory and re-investigate the actual symptom instead of insisting on it or re-explaining steps the user has already done — repeating a rejected diagnosis frustrates them. Confidence: 0.85
