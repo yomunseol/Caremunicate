@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react';
+import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 
-type Stage = 'email' | 'loading' | 'code';
+type Stage = 'email' | 'loading' | 'code' | 'totp';
 
 function getEmailError(value: string): string {
   const email = value.trim();
@@ -12,10 +13,15 @@ function getEmailError(value: string): string {
   return '';
 }
 
+function findTotpFactor(factors: Factor[] | undefined): Factor | null {
+  return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
+}
+
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [code, setCode] = useState('');
+  const [totpCode, setTotpCode] = useState('');
   const [stage, setStage] = useState<Stage>('email');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -30,17 +36,22 @@ export default function Auth() {
 
     setStage('loading');
 
-    const { error } = await supabase.auth.signInWithOtp({
+    console.log('[Auth] Sending OTP email to:', email.trim());
+    const { data, error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { shouldCreateUser: false },
     });
 
+    console.log('[Auth] signInWithOtp response:', { data, error });
+
     if (error) {
+      console.error('[Auth] signInWithOtp error:', error.message);
       setStage('email');
       setErrorMessage(error.message);
       return;
     }
 
+    console.log('[Auth] OTP email sent successfully. Switching to code entry.');
     setCode('');
     setSuccessMessage(`A 6-digit code has been sent to ${email.trim()}.`);
     setStage('code');
@@ -58,20 +69,87 @@ export default function Auth() {
     setErrorMessage('');
     setStage('loading');
 
-    const { error } = await supabase.auth.verifyOtp({
+    console.log('[Auth] Verifying OTP code for:', email.trim());
+    const { data, error } = await supabase.auth.verifyOtp({
       email: email.trim(),
       token,
       type: 'email',
     });
 
+    console.log('[Auth] verifyOtp response:', { data, error });
+
     if (error) {
+      console.error('[Auth] verifyOtp error:', error.message);
       setStage('code');
       setErrorMessage(error.message);
       return;
     }
 
-    // Supabase persists the session to localStorage, so the user
-    // stays logged in after a refresh. Send them to their profile.
+    // A session now exists. Check whether the account has a verified TOTP
+    // factor (authenticator-app 2FA). If so, enforce it before granting access.
+    const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+    console.log('[Auth] listFactors response:', { data: factors, error: listError });
+    const factor = listError ? null : findTotpFactor(factors?.all ?? []);
+
+    if (factor) {
+      console.log('[Auth] TOTP factor found; requiring authenticator code.');
+      setSuccessMessage('Email verified. Now enter the code from your authenticator app.');
+      setTotpCode('');
+      setStage('totp');
+      return;
+    }
+
+    console.log('[Auth] No TOTP factor. Session established:', Boolean(data.session));
+    window.location.hash = 'profile';
+  };
+
+  const handleVerifyTotp = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const token = totpCode.trim();
+    if (!token) {
+      setErrorMessage('Enter the 6-digit code from your authenticator app.');
+      return;
+    }
+
+    setErrorMessage('');
+    setStage('loading');
+
+    const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+    const factor = listError ? null : findTotpFactor(factors?.all ?? []);
+
+    if (listError || !factor) {
+      console.error('[Auth] No TOTP factor found before verify.', { listError, factor });
+      setStage('email');
+      setErrorMessage(listError?.message ?? 'No authenticator factor found. Please sign in again.');
+      return;
+    }
+
+    const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+      factorId: factor.id,
+    });
+    console.log('[Auth] TOTP challenge response:', { data: challengeData, error: challengeError });
+
+    if (challengeError) {
+      setStage('totp');
+      setErrorMessage(challengeError.message);
+      return;
+    }
+
+    const { error: verifyError } = await supabase.auth.mfa.verify({
+      factorId: factor.id,
+      challengeId: challengeData.id,
+      code: token,
+    });
+    console.log('[Auth] TOTP verify response:', { error: verifyError });
+
+    if (verifyError) {
+      setStage('totp');
+      setErrorMessage(verifyError.message);
+      return;
+    }
+
+    console.log('[Auth] Authenticator code verified. Access granted.');
     window.location.hash = 'profile';
   };
 
@@ -84,7 +162,11 @@ export default function Auth() {
   const isSending = stage === 'loading';
 
   return (
-    <form onSubmit={stage === 'code' ? handleVerifyCode : handleSendCode}>
+    <form
+      onSubmit={
+        stage === 'totp' ? handleVerifyTotp : stage === 'code' ? handleVerifyCode : handleSendCode
+      }
+    >
       {successMessage ? <p className="auth-success">{successMessage}</p> : null}
       {errorMessage ? (
         <p className="field-error" role="alert">
@@ -125,6 +207,32 @@ export default function Auth() {
             onClick={handleBackToEmail}
           >
             Use a different email
+          </button>
+        </>
+      ) : stage === 'totp' ? (
+        <>
+          <p className="auth-copy">
+            For your security, enter the 6-digit code from your authenticator app for <strong>{email.trim()}</strong>.
+          </p>
+
+          <div className="field-wrap">
+            <input
+              className="input"
+              placeholder="Authenticator code"
+              aria-label="Authenticator code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              value={totpCode}
+              onChange={(event) => setTotpCode(event.target.value)}
+              disabled={isSending}
+              required
+            />
+          </div>
+
+          <button className="primary-button" type="submit" disabled={isSending}>
+            {isSending ? 'Verifying...' : 'Verify authenticator code'}
           </button>
         </>
       ) : (

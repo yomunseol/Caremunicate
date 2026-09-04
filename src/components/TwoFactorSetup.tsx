@@ -3,6 +3,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
+type TwoFactorMethod = 'none' | 'email' | 'authenticator';
+
 const settingsCardStyle = {
   width: '100%',
   padding: '1.4rem',
@@ -89,55 +91,184 @@ const qrCardStyle = {
   background: '#fff',
 };
 
+const methodRowStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'auto 1fr auto',
+  gap: '0.7rem',
+  alignItems: 'center',
+  padding: '0.8rem 1rem',
+  border: '1px solid rgba(15, 58, 50, 0.12)',
+  borderRadius: '0.9rem',
+  background: '#fff',
+  cursor: 'pointer',
+};
+
+const methodRadioStyle = {
+  width: '1.05rem',
+  height: '1.05rem',
+  accentColor: '#3ea985',
+  margin: 0,
+};
+
+const badgeStyle = {
+  fontSize: '0.68rem',
+  fontWeight: 800,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  padding: '0.2rem 0.5rem',
+  borderRadius: '999px',
+  whiteSpace: 'nowrap' as const,
+};
+
 function findTotpFactor(factors: Factor[] | undefined): Factor | null {
   return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
 }
 
+async function getUserId(): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  return data.user?.id ?? '';
+}
+
 export default function TwoFactorSetup() {
-  const [isMfaEnabled, setIsMfaEnabled] = useState(false);
+  const [method, setMethod] = useState<TwoFactorMethod>('none');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [factorId, setFactorId] = useState('');
   const [totpUri, setTotpUri] = useState('');
-  const [verificationCode, setVerificationCode] = useState('');
   const [enrolling, setEnrolling] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
 
-  const refreshFactors = async () => {
-    setLoading(true);
-    setError('');
-
-    const { data, error: listError } = await supabase.auth.mfa.listFactors();
-
-    if (listError) {
-      setError(listError.message);
-    } else {
-      const factor = findTotpFactor(data?.all ?? []);
-      setIsMfaEnabled(Boolean(factor));
-      setFactorId(factor?.id ?? '');
-    }
-
-    setLoading(false);
-  };
-
+  // Load the real state once: a TOTP factor from Supabase MFA, plus the
+  // saved profile preference ('email' | 'authenticator' | 'none').
   useEffect(() => {
-    void refreshFactors();
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
+      setError('');
+
+      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+      console.log('[2FA] listFactors response:', { data: factors, error: listError });
+      const factor = listError ? null : findTotpFactor(factors?.all ?? []);
+      console.log('[2FA] TOTP factor found:', factor ? factor.id : 'none');
+
+      const userId = await getUserId();
+      let savedMethod: TwoFactorMethod = 'none';
+      if (userId) {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('preferred_2fa_method')
+          .eq('user_id', userId)
+          .maybeSingle();
+        void profileError;
+        if (profile) {
+          const m = profile.preferred_2fa_method as TwoFactorMethod;
+          savedMethod = m === 'email' || m === 'authenticator' ? m : 'none';
+        }
+      }
+
+      if (cancelled) return;
+
+      // A real TOTP factor always wins the display state.
+      if (factor) {
+        setFactorId(factor.id);
+        setMethod('authenticator');
+        if (userId) {
+          await supabase
+            .from('profiles')
+            .update({ preferred_2fa_method: 'authenticator' })
+            .eq('user_id', userId)
+            .maybeSingle();
+        }
+      } else {
+        setFactorId('');
+        setMethod(savedMethod);
+      }
+
+      if (listError) setError(listError.message);
+      setLoading(false);
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleEnable = async () => {
-    setLoading(true);
-    setError('');
+  const savePreference = async (value: TwoFactorMethod) => {
+    const userId = await getUserId();
+    if (!userId) return;
+    const { error } = await supabase
+      .from('profiles')
+      .update({ preferred_2fa_method: value })
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (error) {
+      console.error('[2FA] savePreference error:', error.message);
+      setError(error.message);
+    }
+  };
+
+  const unenrollTotp = async (): Promise<boolean> => {
+    if (!factorId) return true;
+    console.log('[2FA] Unenrolling factor:', factorId);
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    console.log('[2FA] unenroll response:', { error });
+    if (error) {
+      setError(error.message);
+      return false;
+    }
+    setFactorId('');
+    setTotpUri('');
+    setEnrolling(false);
     setVerificationCode('');
+    return true;
+  };
 
-    const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+  const handleMethodChange = async (next: TwoFactorMethod) => {
+    if (loading || next === method) return;
+    setError('');
+    setMessage('');
+    setLoading(true);
 
-    if (enrollError) {
-      setError(enrollError.message);
-    } else if (data?.totp?.uri) {
-      setEnrolling(true);
-      setFactorId(data.id);
-      setTotpUri(data.totp.uri);
+    // Leaving authenticator: unenroll the live TOTP factor first.
+    if (method === 'authenticator' && next !== 'authenticator') {
+      const ok = await unenrollTotp();
+      if (!ok) {
+        setLoading(false);
+        return;
+      }
+    }
+
+    if (next === 'none') {
+      setMethod('none');
+      await savePreference('none');
+      setMessage('Two-factor authentication is off.');
+    } else if (next === 'email') {
+      setMethod('email');
+      await savePreference('email');
+      setMessage('Email codes are now your two-factor method.');
     } else {
-      setError('Unable to start two-factor setup.');
+      // 'authenticator': kick off the TOTP enrollment wizard.
+      const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
+      console.log('[2FA] enroll response:', { data, error: enrollError });
+      if (enrollError) {
+        setError(enrollError.message);
+        setLoading(false);
+        return;
+      }
+      if (data?.totp?.uri) {
+        setFactorId(data.id);
+        setTotpUri(data.totp.uri);
+        setVerificationCode('');
+        setMethod('none'); // selection is provisional until the code verifies.
+        setEnrolling(true);
+        console.log('[2FA] Enrollment started. Factor id:', data.id);
+      } else {
+        setError('Unable to start two-factor setup.');
+      }
     }
 
     setLoading(false);
@@ -155,6 +286,7 @@ export default function TwoFactorSetup() {
     setError('');
 
     const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId });
+    console.log('[2FA] challenge response:', { data: challengeData, error: challengeError });
 
     if (challengeError) {
       setError(challengeError.message);
@@ -167,45 +299,40 @@ export default function TwoFactorSetup() {
       challengeId: challengeData.id,
       code: verificationCode.trim(),
     });
+    console.log('[2FA] verify response:', { error: verifyError });
 
     if (verifyError) {
       setError(verifyError.message);
-    } else {
-      setIsMfaEnabled(true);
-      setEnrolling(false);
-      setTotpUri('');
-      setVerificationCode('');
-    }
-
-    setLoading(false);
-  };
-
-  const handleDisable = async () => {
-    setLoading(true);
-    setError('');
-
-    const { data, error: listError } = await supabase.auth.mfa.listFactors();
-    const factor = listError ? null : findTotpFactor(data?.all ?? []);
-
-    if (listError || !factor) {
-      setError(listError?.message ?? 'No TOTP factor found.');
       setLoading(false);
       return;
     }
 
-    const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
-
-    if (unenrollError) {
-      setError(unenrollError.message);
-    } else {
-      setIsMfaEnabled(false);
-      setFactorId('');
-      setTotpUri('');
-      setEnrolling(false);
-    }
-
+    console.log('[2FA] Factor verified. 2FA is now active.');
+    setTotpUri('');
+    setVerificationCode('');
+    setEnrolling(false);
+    setMethod('authenticator');
+    await savePreference('authenticator');
+    setMessage('2FA is Active using your authenticator app.');
     setLoading(false);
   };
+
+  const handleCancelEnroll = () => {
+    setEnrolling(false);
+    setTotpUri('');
+    setVerificationCode('');
+    setError('');
+    // The unverified factor may still exist server-side; reconcile.
+    void (async () => {
+      const { data, error: listError } = await supabase.auth.mfa.listFactors();
+      const factor = listError ? null : findTotpFactor(data?.all ?? []);
+      console.log('[2FA] After cancel, TOTP factor found:', factor ? factor.id : 'none');
+      setFactorId(factor?.id ?? '');
+      setMethod(factor ? 'authenticator' : 'none');
+    })();
+  };
+
+  const active = method !== 'none';
 
   return (
     <section style={settingsCardStyle} aria-labelledby="two-factor-heading">
@@ -216,29 +343,76 @@ export default function TwoFactorSetup() {
             Two-Factor Authentication
           </h2>
           <p style={descriptionStyle}>
-            Protect your account with a 6-digit authentication code from an authenticator app.
+            Add an extra verification step when you sign in. Email codes are the default; you can use an authenticator app instead.
           </p>
         </div>
 
         {loading && <p style={statusStyle}>Checking two-factor status...</p>}
         {error && <p style={errorStyle} role="alert">{error}</p>}
+        {message && <p style={statusStyle}>{message}</p>}
 
-        {!loading && isMfaEnabled ? (
+        {!enrolling ? (
           <>
-            <p style={statusStyle}>2FA is Active</p>
-            <button type="button" style={secondaryButtonStyle} onClick={handleDisable} disabled={loading}>
-              Disable 2FA
-            </button>
+            <label style={methodRowStyle}>
+              <input
+                type="radio"
+                name="two-factor-method"
+                checked={method === 'none'}
+                onChange={() => void handleMethodChange('none')}
+                disabled={loading}
+                style={methodRadioStyle}
+              />
+              <span>
+                <strong>No 2FA</strong>
+                <br />
+                <small style={{ color: '#557b76' }}>Sign in with just your email.</small>
+              </span>
+              {method === 'none' ? (
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Current</span>
+              ) : null}
+            </label>
+
+            <label style={methodRowStyle}>
+              <input
+                type="radio"
+                name="two-factor-method"
+                checked={method === 'email'}
+                onChange={() => void handleMethodChange('email')}
+                disabled={loading}
+                style={methodRadioStyle}
+              />
+              <span>
+                <strong>Email code</strong>
+                <br />
+                <small style={{ color: '#557b76' }}>Receive a one-time 6-digit code at your email. Recommended.</small>
+              </span>
+              {method === 'email' ? (
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Active</span>
+              ) : null}
+            </label>
+
+            <label style={methodRowStyle}>
+              <input
+                type="radio"
+                name="two-factor-method"
+                checked={method === 'authenticator'}
+                onChange={() => void handleMethodChange('authenticator')}
+                disabled={loading}
+                style={methodRadioStyle}
+              />
+              <span>
+                <strong>Authenticator app</strong>
+                <br />
+                <small style={{ color: '#557b76' }}>Use a rotating 6-digit code from an app like Google Authenticator.</small>
+              </span>
+              {method === 'authenticator' ? (
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Active</span>
+              ) : null}
+            </label>
           </>
         ) : null}
 
-        {!loading && !isMfaEnabled && !enrolling ? (
-          <button type="button" style={buttonStyle} onClick={handleEnable} disabled={loading}>
-            Enable 2FA
-          </button>
-        ) : null}
-
-        {enrolling && !isMfaEnabled ? (
+        {enrolling ? (
           <form onSubmit={handleVerify} style={{ display: 'grid', gap: '0.9rem' }}>
             <div style={qrCardStyle}>
               <QRCodeSVG value={totpUri} size={180} />
@@ -253,15 +427,21 @@ export default function TwoFactorSetup() {
               value={verificationCode}
               onChange={(event) => setVerificationCode(event.target.value)}
               inputMode="numeric"
+              autoComplete="one-time-code"
               maxLength={6}
               pattern="[0-9]{6}"
               placeholder="Enter 6-digit code"
               aria-label="Six-digit authentication code"
+              disabled={loading}
               required
             />
 
             <button type="submit" style={buttonStyle} disabled={loading}>
-              Verify and enable 2FA
+              {loading ? 'Verifying...' : 'Verify and enable 2FA'}
+            </button>
+
+            <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
+              Cancel
             </button>
           </form>
         ) : null}

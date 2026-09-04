@@ -194,10 +194,6 @@ function App() {
   const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [upgradeMessage, setUpgradeMessage] = useState('');
-  const [preferred2faMethod, setPreferred2faMethod] = useState<'authenticator' | 'email'>('authenticator');
-  const [twoFactorPreferenceLoading, setTwoFactorPreferenceLoading] = useState(false);
-  const [twoFactorPreferenceMessage, setTwoFactorPreferenceMessage] = useState('');
-  const [twoFactorPreferenceError, setTwoFactorPreferenceError] = useState('');
 
   useEffect(() => {
     const syncRoute = () => {
@@ -251,8 +247,6 @@ function App() {
         setProfileData(null);
       } else {
         setProfileData(data);
-        const savedPreference = data.preferred_2fa_method === 'email' ? 'email' : 'authenticator';
-        setPreferred2faMethod(savedPreference);
       }
     };
 
@@ -262,27 +256,6 @@ function App() {
       cancelled = true;
     };
   }, [authUser]);
-
-  const saveTwoFactorPreference = async () => {
-    if (!authUser) return;
-
-    setTwoFactorPreferenceLoading(true);
-    setTwoFactorPreferenceMessage('');
-    setTwoFactorPreferenceError('');
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ preferred_2fa_method: preferred2faMethod })
-      .eq('user_id', authUser.id);
-
-    if (error) {
-      setTwoFactorPreferenceError(error.message);
-    } else {
-      setTwoFactorPreferenceMessage('Two-factor preference saved.');
-    }
-
-    setTwoFactorPreferenceLoading(false);
-  };
 
   const navigate = (nextRoute: RouteKey) => {
     if (nextRoute === 'profile' && !currentUser) {
@@ -686,9 +659,9 @@ function App() {
                   </button>
                 </div>
 
-                <form onSubmit={handleSubmit}>
-                  {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
-                  {authMode === 'signup' ? (
+                {authMode === 'signup' ? (
+                  <form onSubmit={handleSubmit}>
+                    {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                     <>
                       <div className="form-row">
                         <div className="field-wrap">
@@ -795,10 +768,10 @@ function App() {
                         {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
                       </button>
                     </>
-                  ) : (
-                    <Auth />
-                  )}
-                </form>
+                  </form>
+                ) : (
+                  <Auth />
+                )}
 
                 <div className="auth-benefits">
                   <div className="eyebrow">{authMode === 'signup' ? 'What you unlock' : 'Helpful recovery tools'}</div>
@@ -867,63 +840,6 @@ function App() {
                 <p>The emergency calling service is not available right now. Please check back later for updates.</p>
                 <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }} disabled>
                   Service unavailable
-                </button>
-              </div>
-
-              <div className="panel">
-                <div className="eyebrow">Security preference</div>
-                <h3>Preferred 2FA method</h3>
-                <p>Choose how you want to verify your account when extra security is required.</p>
-
-                <div className="two-factor-options" role="radiogroup" aria-label="Preferred two-factor method">
-                  <label className="two-factor-option">
-                    <input
-                      type="radio"
-                      name="preferred-2fa-method"
-                      value="authenticator"
-                      checked={preferred2faMethod === 'authenticator'}
-                      onChange={() => {
-                        setPreferred2faMethod('authenticator');
-                        setTwoFactorPreferenceMessage('');
-                        setTwoFactorPreferenceError('');
-                      }}
-                    />
-                    <span>
-                      <strong>Authenticator App</strong>
-                      <small>Use a rotating 6-digit code from your authenticator app.</small>
-                    </span>
-                  </label>
-
-                  <label className="two-factor-option">
-                    <input
-                      type="radio"
-                      name="preferred-2fa-method"
-                      value="email"
-                      checked={preferred2faMethod === 'email'}
-                      onChange={() => {
-                        setPreferred2faMethod('email');
-                        setTwoFactorPreferenceMessage('');
-                        setTwoFactorPreferenceError('');
-                      }}
-                    />
-                    <span>
-                      <strong>Email Code</strong>
-                      <small>Receive a one-time security code by email.</small>
-                    </span>
-                  </label>
-                </div>
-
-                {twoFactorPreferenceError ? <p className="field-error">{twoFactorPreferenceError}</p> : null}
-                {twoFactorPreferenceMessage ? <p className="auth-success">{twoFactorPreferenceMessage}</p> : null}
-
-                <button
-                  className="secondary-button"
-                  type="button"
-                  style={{ marginTop: '0.9rem' }}
-                  onClick={saveTwoFactorPreference}
-                  disabled={twoFactorPreferenceLoading}
-                >
-                  {twoFactorPreferenceLoading ? 'Saving...' : 'Save Preference'}
                 </button>
               </div>
 
