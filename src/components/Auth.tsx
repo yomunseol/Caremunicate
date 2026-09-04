@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 
-function getEmailError(value) {
+type Stage = 'email' | 'loading' | 'code';
+
+function getEmailError(value: string): string {
   const email = value.trim();
   if (!email) return 'Email is required.';
   if (!emailPattern.test(email)) return 'Enter a valid email address.';
@@ -14,11 +16,11 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState('');
   const [code, setCode] = useState('');
-  const [stage, setStage] = useState('email');
+  const [stage, setStage] = useState<Stage>('email');
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  const handleSendCode = async (event) => {
+  const handleSendCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextError = getEmailError(email);
@@ -44,7 +46,7 @@ export default function Auth() {
     setStage('code');
   };
 
-  const handleVerifyCode = async (event) => {
+  const handleVerifyCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const token = code.trim();

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
 const settingsCardStyle = {
@@ -88,6 +89,10 @@ const qrCardStyle = {
   background: '#fff',
 };
 
+function findTotpFactor(factors: Factor[] | undefined): Factor | null {
+  return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
+}
+
 export default function TwoFactorSetup() {
   const [isMfaEnabled, setIsMfaEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -96,10 +101,6 @@ export default function TwoFactorSetup() {
   const [totpUri, setTotpUri] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [enrolling, setEnrolling] = useState(false);
-
-  const findTotpFactor = (factors) => {
-    return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
-  };
 
   const refreshFactors = async () => {
     setLoading(true);
@@ -142,7 +143,7 @@ export default function TwoFactorSetup() {
     setLoading(false);
   };
 
-  const handleVerify = async (event) => {
+  const handleVerify = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!factorId || !verificationCode.trim()) {
