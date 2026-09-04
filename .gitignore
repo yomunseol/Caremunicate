@@ -6,3 +6,11 @@ dist/
 .env.example
 .vercel
 .env*
+
+# Build artifacts
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# macOS junk
+.DS_Store
