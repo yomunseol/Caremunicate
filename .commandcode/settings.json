@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(wc -l src/styles/globals.css src/App.tsx src/pages/HomePage.tsx src/components/TwoFactorSetup.jsx 2>/dev/null; echo \"---\"; ls -la src/assets public 2>/dev/null; echo \"---env keys---\"; sed 's/=.*/=<set>/' .env.local)",
+      "Shell(cat:*)",
+      "Shell(ls:*)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

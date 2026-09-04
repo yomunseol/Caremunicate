@@ -391,10 +391,10 @@ function App() {
       const nextErrors = validateSignupForm();
       setSignupErrors(nextErrors);
       if (Object.keys(nextErrors).length > 0) return;
-    } else {
-      const nextErrors = validateLoginForm();
-      setLoginErrors(nextErrors);
-      if (Object.keys(nextErrors).length > 0) return;
+    } else if (!pendingTwoFactor) {
+      const emailError = getEmailError(loginValues.email);
+      setLoginErrors(emailError ? { email: emailError } : {});
+      if (emailError) return;
     }
 
     setIsAuthLoading(true);
@@ -426,19 +426,19 @@ function App() {
           return;
         }
       } else {
-        const { error: loginError } = await supabase.auth.signInWithPassword({
+        const { error: otpError } = await supabase.auth.signInWithOtp({
           email: loginValues.email.trim(),
-          password: loginValues.password,
+          options: { shouldCreateUser: false },
         });
-        error = loginError;
+        error = otpError;
 
         if (!error) {
           setPendingTwoFactor(true);
+          setEmailOtpSent(true);
+          setLoginVerificationMethod('email');
           setLoginVerificationCode('');
-          setEmailOtpSent(false);
-          setLoginVerificationMethod('authenticator');
           setAuthMessageType('success');
-          setAuthMessage('Password accepted. Choose how you want to verify your identity.');
+          setAuthMessage('A 6-digit code has been sent to your email.');
           return;
         }
       }
@@ -455,38 +455,12 @@ function App() {
     }
   };
 
-  const selectLoginVerificationMethod = async (method: 'authenticator' | 'email') => {
-    setLoginVerificationMethod(method);
-    setLoginVerificationCode('');
-    setAuthMessage('');
-
-    if (method !== 'email' || emailOtpSent) return;
-
-    setIsAuthLoading(true);
-
-    const { error } = await supabase.auth.signInWithOtp({
-      email: loginValues.email.trim(),
-      options: { shouldCreateUser: false },
-    });
-
-    if (error) {
-      setAuthMessageType('error');
-      setAuthMessage(error.message);
-    } else {
-      setEmailOtpSent(true);
-      setAuthMessageType('success');
-      setAuthMessage('A 6-digit code has been sent to your email.');
-    }
-
-    setIsAuthLoading(false);
-  };
-
-  const verifyLoginCode = async (event: FormEvent<HTMLFormElement>) => {
+  const verifyEmailCode = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (!loginVerificationCode.trim()) {
       setAuthMessageType('error');
-      setAuthMessage('Enter the 6-digit verification code.');
+      setAuthMessage('Enter the 6-digit code from your email.');
       return;
     }
 
@@ -494,32 +468,13 @@ function App() {
     setAuthMessage('');
 
     try {
-      if (loginVerificationMethod === 'email') {
-        const { error } = await supabase.auth.verifyOtp({
-          email: loginValues.email.trim(),
-          token: loginVerificationCode.trim(),
-          type: 'email',
-        });
+      const { error } = await supabase.auth.verifyOtp({
+        email: loginValues.email.trim(),
+        token: loginVerificationCode.trim(),
+        type: 'email',
+      });
 
-        if (error) throw error;
-      } else {
-        const { data: factorData, error: listError } = await supabase.auth.mfa.listFactors();
-        if (listError) throw listError;
-
-        const totpFactor = factorData.all.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified');
-        if (!totpFactor) throw new Error('Authenticator app verification is not set up for this account.');
-
-        const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({ factorId: totpFactor.id });
-        if (challengeError) throw challengeError;
-
-        const { error: verifyError } = await supabase.auth.mfa.verify({
-          factorId: totpFactor.id,
-          challengeId: challengeData.id,
-          code: loginVerificationCode.trim(),
-        });
-
-        if (verifyError) throw verifyError;
-      }
+      if (error) throw error;
 
       setPendingTwoFactor(false);
       setAuthMessageType('success');
@@ -934,39 +889,16 @@ function App() {
                     </>
                   ) : pendingTwoFactor ? (
                     <>
-                      <div className="two-factor-options" role="radiogroup" aria-label="Choose verification method">
-                        <label className="two-factor-option">
-                          <input
-                            type="radio"
-                            name="login-verification-method"
-                            checked={loginVerificationMethod === 'authenticator'}
-                            onChange={() => void selectLoginVerificationMethod('authenticator')}
-                          />
-                          <span>
-                            <strong>Authenticator App</strong>
-                            <small>Use the rotating 6-digit code from your authenticator app.</small>
-                          </span>
-                        </label>
-
-                        <label className="two-factor-option">
-                          <input
-                            type="radio"
-                            name="login-verification-method"
-                            checked={loginVerificationMethod === 'email'}
-                            onChange={() => void selectLoginVerificationMethod('email')}
-                          />
-                          <span>
-                            <strong>Email Code</strong>
-                            <small>Send a one-time 6-digit code to your inbox.</small>
-                          </span>
-                        </label>
-                      </div>
+                      <p className="auth-copy">
+                        We sent a 6-digit sign-in code to <strong>{loginValues.email.trim()}</strong>. Enter it below to
+                        complete your login.
+                      </p>
 
                       <div className="field-wrap">
                         <input
                           className="input"
-                          placeholder="6-digit verification code"
-                          aria-label="6-digit verification code"
+                          placeholder="6-digit code"
+                          aria-label="6-digit code"
                           inputMode="numeric"
                           maxLength={6}
                           pattern="[0-9]{6}"
@@ -979,10 +911,10 @@ function App() {
                       <button
                         className="primary-button"
                         type="button"
-                        disabled={isAuthLoading || (loginVerificationMethod === 'email' && !emailOtpSent)}
-                        onClick={(event) => void verifyLoginCode(event as unknown as FormEvent<HTMLFormElement>)}
+                        disabled={isAuthLoading || !emailOtpSent}
+                        onClick={(event) => void verifyEmailCode(event as unknown as FormEvent<HTMLFormElement>)}
                       >
-                        {isAuthLoading ? 'Verifying...' : 'Verify and continue'}
+                        {isAuthLoading ? 'Verifying...' : 'Verify 6-digit code'}
                       </button>
                     </>
                   ) : (
@@ -1002,24 +934,8 @@ function App() {
                         {loginErrors.email ? <span className="field-error">{loginErrors.email}</span> : null}
                       </div>
 
-                      <div className="field-wrap">
-                        <input
-                          className="input"
-                          placeholder="Password"
-                          type="password"
-                          aria-label="Password"
-                          value={loginValues.password}
-                          onChange={(event) => {
-                            setLoginValues((previous) => ({ ...previous, password: event.target.value }));
-                            setLoginErrors((previous) => ({ ...previous, password: '' }));
-                          }}
-                          aria-invalid={Boolean(loginErrors.password)}
-                        />
-                        {loginErrors.password ? <span className="field-error">{loginErrors.password}</span> : null}
-                      </div>
-
                       <button className="primary-button" type="submit" disabled={isAuthLoading}>
-                        {isAuthLoading ? 'Logging in...' : 'Continue to verification'}
+                        {isAuthLoading ? 'Sending code...' : 'Email me a 6-digit code'}
                       </button>
                     </>
                   )}
