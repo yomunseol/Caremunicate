@@ -5,11 +5,15 @@ import { supabase } from '../lib/supabase';
 type View = 'password' | 'app_code' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
 
+interface PasswordAuthProps {
+  onAuthenticated?: () => void;
+}
+
 function findTotpFactor(factors: Factor[] | undefined): Factor | null {
   return factors?.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? null;
 }
 
-export default function PasswordAuth() {
+export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [view, setView] = useState<View>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -18,6 +22,18 @@ export default function PasswordAuth() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Central navigation used after every successful auth step. Prefer the
+  // parent-provided callback (App's navigate uses pushState + setRoute
+  // together), and fall back to a hash change otherwise.
+  const goToProfile = () => {
+    if (onAuthenticated) {
+      onAuthenticated();
+      return;
+    }
+    window.location.hash = 'profile';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  };
 
   const handlePasswordSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,7 +78,7 @@ export default function PasswordAuth() {
     // Branch A: no 2FA.
     if (preference === 'none') {
       console.log('Branch A (none): redirecting to profile.');
-      window.location.hash = 'profile';
+      goToProfile();
       return;
     }
 
@@ -95,7 +111,7 @@ export default function PasswordAuth() {
       // Preference says 'app' but no verified factor exists — allow sign-in
       // rather than locking the user out of a stale preference.
       console.log('Branch B (app): no verified totp factor despite preference. Logging in.');
-      window.location.hash = 'profile';
+      goToProfile();
       return;
     }
 
@@ -122,7 +138,7 @@ export default function PasswordAuth() {
 
     // Unknown preference value — default to allowing sign-in.
     console.log('Unknown 2FA preference. Logging in.');
-    window.location.hash = 'profile';
+    goToProfile();
   };
 
   const handleAppCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -164,7 +180,7 @@ export default function PasswordAuth() {
     }
 
     console.log('Branch B (app): 2FA verified. Logging in.');
-    window.location.hash = 'profile';
+    goToProfile();
   };
 
   const handleEmailCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -195,7 +211,10 @@ export default function PasswordAuth() {
     }
 
     console.log('Branch C (email): email code verified. Logging in.');
-    window.location.hash = 'profile';
+    // Explicitly navigate to the profile. This is the ONLY place the user
+    // should leave the login screen after email 2FA — never redirect on the
+    // auth session event alone.
+    goToProfile();
   };
 
   const goBackToPassword = () => {

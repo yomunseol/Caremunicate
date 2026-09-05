@@ -770,7 +770,7 @@ function App() {
                     </>
                   </form>
                 ) : (
-                  <PasswordAuth />
+                  <PasswordAuth onAuthenticated={() => navigate('profile')} />
                 )}
 
                 <div className="auth-benefits">
