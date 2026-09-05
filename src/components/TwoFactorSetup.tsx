@@ -199,15 +199,45 @@ export default function TwoFactorSetup() {
 
   const savePreference = async (value: TwoFactorMethod) => {
     const userId = await getUserId();
-    if (!userId) return;
-    const { error } = await supabase
+    if (!userId) {
+      console.log('[2FA] savePreference skipped: no user id.');
+      return;
+    }
+
+    // Does the profile row already exist?
+    const { data: existing, error: findError } = await supabase
       .from('profiles')
-      .update({ preferred_2fa_method: value })
+      .select('user_id')
       .eq('user_id', userId)
       .maybeSingle();
-    if (error) {
-      console.error('[2FA] savePreference error:', error.message);
-      setError(error.message);
+    console.log('[2FA] find existing profile:', { existing, error: findError });
+
+    let result;
+    if (findError) {
+      console.error('[2FA] Could not check for profile:', findError.message);
+      setError(findError.message);
+      return;
+    }
+
+    if (existing) {
+      result = await supabase
+        .from('profiles')
+        .update({ preferred_2fa_method: value })
+        .eq('user_id', userId)
+        .maybeSingle();
+      console.log('Update Result:', result);
+    } else {
+      // No profile yet — insert one with the user_id.
+      result = await supabase
+        .from('profiles')
+        .insert({ user_id: userId, preferred_2fa_method: value })
+        .maybeSingle();
+      console.log('Insert Result:', result);
+    }
+
+    if (result.error) {
+      console.error('[2FA] savePreference error:', result.error.message);
+      setError(result.error.message);
     }
   };
 

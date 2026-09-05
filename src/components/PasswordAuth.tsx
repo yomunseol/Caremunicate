@@ -53,8 +53,15 @@ export default function PasswordAuth() {
     console.log('MFA Factors:', factors);
     console.log('MFA Factors (error):', listError);
 
+    // The response exposes the factor list as `all`; mirror the requested
+    // shape check for clarity and log both views.
+    const hasMFA = Boolean(
+      factors?.all?.some((factor) => factor.factor_type === 'totp' && factor.status === 'verified'),
+    );
+    console.log('hasMFA (from data.factors/all):', hasMFA, factors?.all);
+
     const factor = listError ? null : findTotpFactor(factors?.all ?? []);
-    console.log('MFA Factors (totp):', factor);
+    console.log('MFA Factors (matched totp factor):', factor);
 
     if (listError) {
       // Treat a listing error as "can't confirm 2FA" — fail closed.
@@ -64,7 +71,7 @@ export default function PasswordAuth() {
       return;
     }
 
-    if (factor) {
+    if (hasMFA && factor) {
       // Case B: user has 2FA. Store the factorId and ask for the code.
       console.log('2FA required. Factor id:', factor.id);
       setFactorId(factor.id);
