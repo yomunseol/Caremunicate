@@ -6,13 +6,15 @@ type ProtectedRouteProps = {
 };
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  const { user, loading } = useAuth();
+  const { user, loading, pending2FA } = useAuth();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (loading) return;
+
+    if (!user || pending2FA) {
       window.location.hash = 'login';
     }
-  }, [loading, user]);
+  }, [loading, pending2FA, user]);
 
   if (loading) {
     return <p className="auth-loading">Checking your account...</p>;
@@ -20,6 +22,10 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   if (!user) {
     return <p className="auth-loading">Redirecting to login...</p>;
+  }
+
+  if (pending2FA) {
+    return <p className="auth-loading">Complete two-factor verification to continue...</p>;
   }
 
   return <>{children}</>;

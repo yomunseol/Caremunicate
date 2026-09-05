@@ -6,6 +6,8 @@ type AuthContextValue = {
   session: Session | null;
   user: User | null;
   loading: boolean;
+  pending2FA: boolean;
+  setPending2FA: (pending: boolean) => void;
   signOut: () => Promise<void>;
 };
 
@@ -17,7 +19,18 @@ type AuthProviderProps = {
 
 export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
+  const [pending2FA, setPending2FAState] = useState(() => sessionStorage.getItem('caremunicate:pending2fa') === 'true');
   const [loading, setLoading] = useState(true);
+
+  const setPending2FA = (pending: boolean) => {
+    setPending2FAState(pending);
+
+    if (pending) {
+      sessionStorage.setItem('caremunicate:pending2fa', 'true');
+    } else {
+      sessionStorage.removeItem('caremunicate:pending2fa');
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -49,6 +62,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   const signOut = async () => {
+    setPending2FA(false);
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
   };
@@ -57,6 +71,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
     session,
     user: session?.user ?? null,
     loading,
+    pending2FA,
+    setPending2FA,
     signOut,
   };
 

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import type { AuthResponse, Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 type View = 'password' | 'app_code' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
@@ -14,6 +15,7 @@ function findTotpFactor(factors: Factor[] | undefined): Factor | null {
 }
 
 export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
+  const { setPending2FA } = useAuth();
   const [view, setView] = useState<View>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,10 +29,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   // parent-provided callback (App's navigate uses pushState + setRoute
   // together), and fall back to a hash change otherwise.
   const goToProfile = () => {
+    setPending2FA(false);
+
     if (onAuthenticated) {
       onAuthenticated();
       return;
     }
+
     window.location.hash = 'profile';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
   };
@@ -82,6 +87,8 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       return;
     }
 
+    setPending2FA(true);
+
     // Branch B: authenticator app 2FA.
     if (preference === 'app') {
       const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
@@ -93,6 +100,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       if (listError) {
         // Fail closed — cannot confirm the factor, so block sign-in.
+        setPending2FA(false);
         setError(listError.message);
         setLoading(false);
         return;
@@ -124,6 +132,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       console.log('Branch C (email): signInWithOtp response:', { data: otpData, error: otpError });
 
       if (otpError) {
+        setPending2FA(false);
         setError(otpError.message);
         setLoading(false);
         return;
@@ -218,6 +227,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   };
 
   const goBackToPassword = () => {
+    setPending2FA(false);
     setView('password');
     setError('');
     setMessage('');
