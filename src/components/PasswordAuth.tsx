@@ -48,32 +48,29 @@ export default function PasswordAuth() {
 
     console.log('Auth Response (session):', data.session);
 
-    // Detect 2FA: check whether the user has a verified TOTP factor.
+    // THE INTERCEPT: after a successful password sign-in, check for 2FA.
     const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
-    console.log('MFA Factors:', factors);
+    console.log('Intercepted Factors:', factors);
     console.log('MFA Factors (error):', listError);
 
-    // The response exposes the factor list as `all`; mirror the requested
-    // shape check for clarity and log both views.
-    const hasMFA = Boolean(
-      factors?.all?.some((factor) => factor.factor_type === 'totp' && factor.status === 'verified'),
-    );
-    console.log('hasMFA (from data.factors/all):', hasMFA, factors?.all);
+    // Supabase native MFA is TOTP — check the `totp` list specifically.
+    const hasTotp = Boolean(factors?.totp?.some((f) => f.status === 'verified'));
+    console.log('hasTotp (data.totp):', hasTotp, factors?.totp);
 
     const factor = listError ? null : findTotpFactor(factors?.all ?? []);
-    console.log('MFA Factors (matched totp factor):', factor);
+    console.log('MFA matched totp factor:', factor);
 
     if (listError) {
-      // Treat a listing error as "can't confirm 2FA" — fail closed.
+      // Fail closed — can't confirm 2FA status, so block sign-in.
       setView('error');
       setError(listError.message);
       setLoading(false);
       return;
     }
 
-    if (hasMFA && factor) {
-      // Case B: user has 2FA. Store the factorId and ask for the code.
-      console.log('2FA required. Factor id:', factor.id);
+    if (hasTotp && factor) {
+      // DO NOT redirect: save the factor id and show the 2FA screen.
+      console.log('2FA intercept: requiring authenticator code. Factor id:', factor.id);
       setFactorId(factor.id);
       setCode('');
       setView('2fa_code');
@@ -81,8 +78,8 @@ export default function PasswordAuth() {
       return;
     }
 
-    // Case A: no 2FA — the password session is already valid.
-    console.log('No 2FA. Logging in.');
+    // No verified TOTP factor — straight to the dashboard.
+    console.log('No 2FA intercept. Logging in.');
     window.location.hash = 'profile';
   };
 
