@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-type TwoFactorMethod = 'none' | 'email' | 'authenticator';
+type TwoFactorMethod = 'none' | 'email' | 'app';
 
 const settingsCardStyle = {
   width: '100%',
@@ -138,9 +138,11 @@ export default function TwoFactorSetup() {
   const [totpUri, setTotpUri] = useState('');
   const [enrolling, setEnrolling] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
+  const [emailEnrolling, setEmailEnrolling] = useState(false);
+  const [emailCode, setEmailCode] = useState('');
 
   // Load the real state once: a TOTP factor from Supabase MFA, plus the
-  // saved profile preference ('email' | 'authenticator' | 'none').
+  // saved profile preference ('email' | 'app' | 'none').
   useEffect(() => {
     let cancelled = false;
 
@@ -164,7 +166,7 @@ export default function TwoFactorSetup() {
         void profileError;
         if (profile) {
           const m = profile.preferred_2fa_method as TwoFactorMethod;
-          savedMethod = m === 'email' || m === 'authenticator' ? m : 'none';
+          savedMethod = m === 'email' || m === 'app' ? m : 'none';
         }
       }
 
@@ -173,11 +175,11 @@ export default function TwoFactorSetup() {
       // A real TOTP factor always wins the display state.
       if (factor) {
         setFactorId(factor.id);
-        setMethod('authenticator');
+        setMethod('app');
         if (userId) {
           await supabase
             .from('profiles')
-            .update({ preferred_2fa_method: 'authenticator' })
+            .update({ preferred_2fa_method: 'app' })
             .eq('user_id', userId)
             .maybeSingle();
         }
@@ -263,8 +265,8 @@ export default function TwoFactorSetup() {
     setMessage('');
     setLoading(true);
 
-    // Leaving authenticator: unenroll the live TOTP factor first.
-    if (method === 'authenticator' && next !== 'authenticator') {
+    // Leaving app (authenticator): unenroll the live TOTP factor first.
+    if (method === 'app' && next !== 'app') {
       const ok = await unenrollTotp();
       if (!ok) {
         setLoading(false);
@@ -277,11 +279,23 @@ export default function TwoFactorSetup() {
       await savePreference('none');
       setMessage('Two-factor authentication is off.');
     } else if (next === 'email') {
-      setMethod('email');
-      await savePreference('email');
-      setMessage('Email codes are now your two-factor method.');
+      // Trigger a native email OTP so the user can prove inbox access.
+      const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
+      const { data: otpData, error: otpError } = await supabase.auth.signInWithOtp({
+        email: userEmail,
+        options: { shouldCreateUser: false },
+      });
+      console.log('[2FA] email OTP send response:', { data: otpData, error: otpError });
+      if (otpError) {
+        setError(otpError.message);
+        setLoading(false);
+        return;
+      }
+      setEmailCode('');
+      setMessage('2FA Code Sent. Check your email for the 6-digit code.');
+      setEmailEnrolling(true);
     } else {
-      // 'authenticator': kick off the TOTP enrollment wizard.
+      // 'app': kick off the TOTP enrollment wizard.
       const { data, error: enrollError } = await supabase.auth.mfa.enroll({ factorType: 'totp' });
       console.log('[2FA] enroll response:', { data, error: enrollError });
       if (enrollError) {
@@ -341,9 +355,44 @@ export default function TwoFactorSetup() {
     setTotpUri('');
     setVerificationCode('');
     setEnrolling(false);
-    setMethod('authenticator');
-    await savePreference('authenticator');
+    setMethod('app');
+    await savePreference('app');
     setMessage('2FA is Active using your authenticator app.');
+    setLoading(false);
+  };
+
+  const handleEmailVerify = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const token = emailCode.trim();
+    if (!token) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: userEmail,
+      token,
+      type: 'email',
+    });
+    console.log('[2FA] email OTP verify response:', { data, error });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    console.log('[2FA] Email code verified. Saving email preference.');
+    setEmailCode('');
+    setEmailEnrolling(false);
+    setMethod('email');
+    await savePreference('email');
+    setMessage('2FA is Active using email codes.');
     setLoading(false);
   };
 
@@ -351,6 +400,8 @@ export default function TwoFactorSetup() {
     setEnrolling(false);
     setTotpUri('');
     setVerificationCode('');
+    setEmailEnrolling(false);
+    setEmailCode('');
     setError('');
     // The unverified factor may still exist server-side; reconcile.
     void (async () => {
@@ -358,7 +409,7 @@ export default function TwoFactorSetup() {
       const factor = listError ? null : findTotpFactor(data?.all ?? []);
       console.log('[2FA] After cancel, TOTP factor found:', factor ? factor.id : 'none');
       setFactorId(factor?.id ?? '');
-      setMethod(factor ? 'authenticator' : 'none');
+      setMethod(factor ? 'app' : 'none');
     })();
   };
 
@@ -381,7 +432,7 @@ export default function TwoFactorSetup() {
         {error && <p style={errorStyle} role="alert">{error}</p>}
         {message && <p style={statusStyle}>{message}</p>}
 
-        {!enrolling ? (
+        {!enrolling && !emailEnrolling ? (
           <>
             <label style={methodRowStyle}>
               <input
@@ -425,8 +476,8 @@ export default function TwoFactorSetup() {
               <input
                 type="radio"
                 name="two-factor-method"
-                checked={method === 'authenticator'}
-                onChange={() => void handleMethodChange('authenticator')}
+                checked={method === 'app'}
+                onChange={() => void handleMethodChange('app')}
                 disabled={loading}
                 style={methodRadioStyle}
               />
@@ -435,7 +486,7 @@ export default function TwoFactorSetup() {
                 <br />
                 <small style={{ color: '#557b76' }}>Use a rotating 6-digit code from an app like Google Authenticator.</small>
               </span>
-              {method === 'authenticator' ? (
+              {method === 'app' ? (
                 <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Active</span>
               ) : null}
             </label>
@@ -468,6 +519,35 @@ export default function TwoFactorSetup() {
 
             <button type="submit" style={buttonStyle} disabled={loading}>
               {loading ? 'Verifying...' : 'Verify and enable 2FA'}
+            </button>
+
+            <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
+              Cancel
+            </button>
+          </form>
+        ) : null}
+
+        {emailEnrolling ? (
+          <form onSubmit={handleEmailVerify} style={{ display: 'grid', gap: '0.9rem' }}>
+            <p style={descriptionStyle}>
+              We sent a 6-digit code to your email. Enter it below to confirm email-code 2FA.
+            </p>
+            <input
+              style={inputStyle}
+              value={emailCode}
+              onChange={(event) => setEmailCode(event.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              placeholder="Enter 6-digit code"
+              aria-label="Six-digit email code"
+              disabled={loading}
+              required
+            />
+
+            <button type="submit" style={buttonStyle} disabled={loading}>
+              {loading ? 'Verifying...' : 'Verify and enable email 2FA'}
             </button>
 
             <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>

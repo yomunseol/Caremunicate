@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react';
 import type { AuthResponse, Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-type View = 'password' | '2fa_code' | 'error';
+type View = 'password' | 'app_code' | 'email_code';
+type TwoFactorMethod = 'none' | 'email' | 'app';
 
 function findTotpFactor(factors: Factor[] | undefined): Factor | null {
   return factors?.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? null;
@@ -22,7 +23,6 @@ export default function PasswordAuth() {
     event.preventDefault();
 
     if (!email.trim() || !password) {
-      setView('error');
       setError('Please enter both email and password.');
       return;
     }
@@ -35,60 +35,101 @@ export default function PasswordAuth() {
       email: email.trim(),
       password,
     });
-    console.log('Auth Response:', response);
+    console.log('Password Response:', response);
     const { data, error: signInError } = response;
 
     if (signInError) {
-      console.log('Auth Response (error):', signInError);
-      setView('error');
-      setError('Invalid email or password');
+      console.log('Password Response (error):', signInError);
+      setError('Invalid credentials');
       setLoading(false);
       return;
     }
 
-    console.log('Auth Response (session):', data.session);
+    console.log('Password Response (session):', data.session?.user);
 
-    // THE INTERCEPT: after a successful password sign-in, check for 2FA.
-    const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
-    console.log('Intercepted Factors:', factors);
-    console.log('MFA Factors (error):', listError);
+    // Fetch this user's saved 2FA preference from the profiles table.
+    const userId = data.session?.user.id ?? '';
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('preferred_2fa_method')
+      .eq('user_id', userId)
+      .maybeSingle();
+    console.log('Profile Fetch:', { profile, error: profileError });
 
-    // Supabase native MFA is TOTP — check the `totp` list specifically.
-    const hasTotp = Boolean(factors?.totp?.some((f) => f.status === 'verified'));
-    console.log('hasTotp (data.totp):', hasTotp, factors?.totp);
+    const preference = (profile?.preferred_2fa_method as TwoFactorMethod | undefined) ?? 'none';
+    console.log('2FA preference:', preference);
 
-    const factor = listError ? null : findTotpFactor(factors?.all ?? []);
-    console.log('MFA matched totp factor:', factor);
-
-    if (listError) {
-      // Fail closed — can't confirm 2FA status, so block sign-in.
-      setView('error');
-      setError(listError.message);
-      setLoading(false);
+    // Branch A: no 2FA.
+    if (preference === 'none') {
+      console.log('Branch A (none): redirecting to profile.');
+      window.location.hash = 'profile';
       return;
     }
 
-    if (hasTotp && factor) {
-      // DO NOT redirect: save the factor id and show the 2FA screen.
-      console.log('2FA intercept: requiring authenticator code. Factor id:', factor.id);
-      setFactorId(factor.id);
+    // Branch B: authenticator app 2FA.
+    if (preference === 'app') {
+      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+      console.log('Intercepted Factors:', factors);
+      console.log('MFA Factors (error):', listError);
+
+      const factor = listError ? null : findTotpFactor(factors?.all ?? []);
+      console.log('Branch B (app): matched totp factor:', factor);
+
+      if (listError) {
+        // Fail closed — cannot confirm the factor, so block sign-in.
+        setError(listError.message);
+        setLoading(false);
+        return;
+      }
+
+      if (factor) {
+        // Hold the factor id and show the authenticator code screen.
+        console.log('Branch B (app): requiring authenticator code. Factor id:', factor.id);
+        setFactorId(factor.id);
+        setCode('');
+        setView('app_code');
+        setLoading(false);
+        return;
+      }
+
+      // Preference says 'app' but no verified factor exists — allow sign-in
+      // rather than locking the user out of a stale preference.
+      console.log('Branch B (app): no verified totp factor despite preference. Logging in.');
+      window.location.hash = 'profile';
+      return;
+    }
+
+    // Branch C: email 2FA. Trigger a native email OTP code.
+    if (preference === 'email') {
+      const { data: otpData, error: otpError } = await supabase.auth.signInWithOtp({
+        email: email.trim(),
+        options: { shouldCreateUser: false },
+      });
+      console.log('Branch C (email): signInWithOtp response:', { data: otpData, error: otpError });
+
+      if (otpError) {
+        setError(otpError.message);
+        setLoading(false);
+        return;
+      }
+
+      console.log('Branch C (email): email code sent. Switching to email_code view.');
       setCode('');
-      setView('2fa_code');
+      setView('email_code');
       setLoading(false);
       return;
     }
 
-    // No verified TOTP factor — straight to the dashboard.
-    console.log('No 2FA intercept. Logging in.');
+    // Unknown preference value — default to allowing sign-in.
+    console.log('Unknown 2FA preference. Logging in.');
     window.location.hash = 'profile';
   };
 
-  const handleCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleAppCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const token = code.trim();
     if (!token) {
-      setView('2fa_code');
       setError('Enter the 6-digit code from your authenticator app.');
       return;
     }
@@ -103,7 +144,6 @@ export default function PasswordAuth() {
     console.log('Challenge Response:', { data: challengeData, error: challengeError });
 
     if (challengeError || !challengeData) {
-      setView('2fa_code');
       setError(challengeError?.message ?? 'Unable to start verification.');
       setLoading(false);
       return;
@@ -117,14 +157,44 @@ export default function PasswordAuth() {
     console.log('Verify Response:', { data: verifyData, error: verifyError });
 
     if (verifyError) {
-      setView('2fa_code');
       setError(verifyError.message);
       setCode('');
       setLoading(false);
       return;
     }
 
-    console.log('2FA verified. Logging in.');
+    console.log('Branch B (app): 2FA verified. Logging in.');
+    window.location.hash = 'profile';
+  };
+
+  const handleEmailCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const token = code.trim();
+    if (!token) {
+      setError('Enter the 6-digit code from your email.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token,
+      type: 'email',
+    });
+    console.log('Email OTP Verify Response:', { data, error });
+
+    if (error) {
+      setError(error.message);
+      setCode('');
+      setLoading(false);
+      return;
+    }
+
+    console.log('Branch C (email): email code verified. Logging in.');
     window.location.hash = 'profile';
   };
 
@@ -190,20 +260,27 @@ export default function PasswordAuth() {
     },
     error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.9rem' },
     message: { margin: 0, color: '#216e5d', fontWeight: 600, fontSize: '0.9rem' },
-    center: { textAlign: 'center' as const },
   };
+
+  const isCodeView = view === 'app_code' || view === 'email_code';
 
   return (
     <div style={styles.card} role="form" aria-label="Secure sign in">
       <div>
         <p style={styles.eyebrow}>Secure access</p>
         <h2 style={styles.title}>
-          {view === '2fa_code' ? 'Enter your 2FA code' : 'Welcome back'}
+          {view === 'app_code'
+            ? 'Enter your authenticator code'
+            : view === 'email_code'
+              ? 'Enter your email code'
+              : 'Welcome back'}
         </h2>
         <p style={styles.description}>
-          {view === '2fa_code'
+          {view === 'app_code'
             ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
-            : 'Sign in with your email and password.'}
+            : view === 'email_code'
+              ? `A 6-digit code was sent to ${email.trim()}. Enter it below to finish signing in.`
+              : 'Sign in with your email and password.'}
         </p>
       </div>
 
@@ -248,12 +325,12 @@ export default function PasswordAuth() {
         </form>
       ) : null}
 
-      {view === '2fa_code' ? (
-        <form onSubmit={handleCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
+      {view === 'app_code' ? (
+        <form onSubmit={handleAppCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-totp">Authenticator code</label>
+            <label style={styles.label} htmlFor="pa-app-code">Authenticator code</label>
             <input
-              id="pa-totp"
+              id="pa-app-code"
               style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center' }}
               inputMode="numeric"
               autoComplete="one-time-code"
@@ -272,9 +349,44 @@ export default function PasswordAuth() {
           </button>
 
           <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
-            Use a different account
+            Back to sign in
           </button>
         </form>
+      ) : null}
+
+      {view === 'email_code' ? (
+        <form onSubmit={handleEmailCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
+          <div style={styles.field}>
+            <label style={styles.label} htmlFor="pa-email-code">Email code</label>
+            <input
+              id="pa-email-code"
+              style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center' }}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              placeholder="000000"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              disabled={loading}
+              required
+            />
+          </div>
+
+          <button type="submit" style={styles.primaryButton} disabled={loading}>
+            {loading ? 'Verifying...' : 'Verify and sign in'}
+          </button>
+
+          <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
+            Change email
+          </button>
+        </form>
+      ) : null}
+
+      {isCodeView && !loading ? (
+        <p style={{ ...styles.message, textAlign: 'center' }}>
+          Signed in as {email.trim()}
+        </p>
       ) : null}
     </div>
   );
