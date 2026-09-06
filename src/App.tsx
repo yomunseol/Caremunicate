@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -156,6 +156,7 @@ type SignupFormValues = {
   fullName: string;
   email: string;
   password: string;
+  confirmPassword: string;
   specialty: string;
   clinic: string;
   role: string;
@@ -170,7 +171,15 @@ type UserProfile = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+// Individual rules shown live in the password checklist (real-time).
+const passwordRuleMinLength = 8;
+const passwordRuleUpper = /[A-Z]/;
+const passwordRuleLower = /[a-z]/;
+const passwordRuleNumber = /\d/;
+const passwordRuleSpecial = /[!@#$%^&*]/;
+// Aggregate requirement for submit-time validation (all rules above).
+const passwordPattern =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/;
 
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
@@ -181,11 +190,18 @@ function App() {
     fullName: '',
     email: '',
     password: '',
+    confirmPassword: '',
     specialty: '',
     clinic: '',
     role: '',
   });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  // Fields the user has blurred/edited — only show inline errors for these so
+  // the form doesn't scream at a brand-new visitor.
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  // Set to true right after a submit (success or failure) so the password and
+  // confirm fields are cleared and are not immediately re-flagged as invalid.
+  const passwordsCleared = useRef(false);
   // The user visible to the header/route logic. It is derived from the gated
   // AuthContext value, so while 2FA is pending the user is treated as logged
   // out even if a transient token exists in storage.
@@ -264,6 +280,7 @@ function App() {
     setAuthRole(role);
     setRoute(mode === 'login' ? 'login' : 'signup');
     setSignupErrors({});
+    setTouchedFields({});
     setAuthMessage('');
     const hash = mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
@@ -275,18 +292,40 @@ function App() {
     return '';
   };
 
+  const getFullNameError = (value: string) => {
+    if (!value.trim()) return 'Full name is required.';
+    return '';
+  };
+
+  // Individual live checks shown in the real-time checklist.
+  const passwordChecks = {
+    minLength: (value: string) => value.length >= passwordRuleMinLength,
+    hasUpper: (value: string) => passwordRuleUpper.test(value),
+    hasLower: (value: string) => passwordRuleLower.test(value),
+    hasNumber: (value: string) => passwordRuleNumber.test(value),
+    hasSpecial: (value: string) => passwordRuleSpecial.test(value),
+  };
+
   const getPasswordError = (value: string) => {
-    if (!value.trim()) return 'Password is required.';
-    if (value.length < 8) return 'Password must be at least 8 characters long.';
-    if (!passwordPattern.test(value)) return 'Use upper, lower, and a number in the password.';
+    if (!value) return 'Password is required.';
+    if (!passwordPattern.test(value)) {
+      return 'Password must be 8+ characters with upper, lower, number, and special character (!@#$%^&*).';
+    }
+    return '';
+  };
+
+  const getConfirmPasswordError = (value: string) => {
+    if (!value) return 'Please confirm your password.';
+    if (value !== signupValues.password) return 'Passwords do not match.';
     return '';
   };
 
   const validateSignupForm = () => {
     const nextErrors: Record<string, string> = {};
 
-    if (!signupValues.fullName.trim()) {
-      nextErrors.fullName = 'Full name is required.';
+    const fullNameError = getFullNameError(signupValues.fullName);
+    if (fullNameError) {
+      nextErrors.fullName = fullNameError;
     }
 
     const emailError = getEmailError(signupValues.email);
@@ -307,6 +346,11 @@ function App() {
       nextErrors.password = passwordError;
     }
 
+    const confirmError = getConfirmPasswordError(signupValues.confirmPassword);
+    if (confirmError) {
+      nextErrors.confirmPassword = confirmError;
+    }
+
     if (!signupValues.role) {
       nextErrors.role = 'Please select a role.';
     }
@@ -314,13 +358,48 @@ function App() {
     return nextErrors;
   };
 
+  // The submit button is disabled until every rule passes. Re-evaluated on
+  // every render (cheap string checks) with no memoization needed — avoids a
+  // stale closure over signupValues that a useMemo dep array could introduce.
+  const signupIsValid =
+    !getFullNameError(signupValues.fullName) &&
+    !getEmailError(signupValues.email) &&
+    (authRole !== 'doctor' || Boolean(signupValues.specialty.trim())) &&
+    (authRole !== 'doctor' || Boolean(signupValues.clinic.trim())) &&
+    !getPasswordError(signupValues.password) &&
+    !getConfirmPasswordError(signupValues.confirmPassword) &&
+    Boolean(signupValues.role);
+
+  // Real-time checklist shown under the password field. Empty password shows
+  // only neutral (unmet) rows.
+  const passwordChecklist = [
+    { label: 'At least 8 characters', met: passwordChecks.minLength(signupValues.password) },
+    { label: 'One uppercase letter', met: passwordChecks.hasUpper(signupValues.password) },
+    { label: 'One lowercase letter', met: passwordChecks.hasLower(signupValues.password) },
+    { label: 'One number', met: passwordChecks.hasNumber(signupValues.password) },
+    { label: 'One special character (!@#$%^&*)', met: passwordChecks.hasSpecial(signupValues.password) },
+  ];
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const nextErrors = validateSignupForm();
     setSignupErrors(nextErrors);
-    if (Object.keys(nextErrors).length > 0) return;
 
+    // Only flag the fields the user actually reached, then keep inline errors
+    // off until the visitor blurs each invalid field.
+    const nextTouched = { ...touchedFields };
+    for (const key of Object.keys(nextErrors)) {
+      nextTouched[key] = true;
+    }
+    setTouchedFields(nextTouched);
+
+    if (Object.keys(nextErrors).length > 0) {
+      console.log('Validation failed:', nextErrors);
+      return;
+    }
+
+    console.log('Sign-up submitted with valid data');
     setIsAuthLoading(true);
     setAuthMessage('');
 
@@ -356,6 +435,10 @@ function App() {
       setAuthMessage(error instanceof Error ? error.message : 'Unable to authenticate. Please try again.');
     } finally {
       setIsAuthLoading(false);
+      // Do not keep the plaintext password in component state any longer than
+      // the request needs. Clear both password fields on success or error.
+      setSignupValues((previous) => ({ ...previous, password: '', confirmPassword: '' }));
+      passwordsCleared.current = true;
     }
   };
 
@@ -366,6 +449,15 @@ function App() {
   };
 
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
+
+  // Inline errors only appear once the visitor has interacted with a field
+  // (blurred it or submitted the form). This keeps a fresh form calm.
+  // After a submit clears the password fields, password/confirm are held back
+  // from error display until the visitor types again.
+  const showFieldError = (field: string) => {
+    if ((field === 'password' || field === 'confirmPassword') && passwordsCleared.current) return false;
+    return touchedFields[field] === true && Boolean(signupErrors[field]);
+  };
 
   return (
     <div className="app-shell">
@@ -650,7 +742,7 @@ function App() {
                 </div>
 
                 {authMode === 'signup' ? (
-                  <form onSubmit={handleSubmit}>
+                  <form onSubmit={handleSubmit} noValidate>
                     {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                     <>
                       <div className="form-row">
@@ -660,27 +752,34 @@ function App() {
                             placeholder="Full name"
                             aria-label="Full name"
                             value={signupValues.fullName}
+                            onBlur={() => setTouchedFields((previous) => ({ ...previous, fullName: true }))}
                             onChange={(event) => {
                               setSignupValues((previous) => ({ ...previous, fullName: event.target.value }));
-                              setSignupErrors((previous) => ({ ...previous, fullName: '' }));
+                              if (signupErrors.fullName) {
+                                setSignupErrors((previous) => ({ ...previous, fullName: '' }));
+                              }
                             }}
-                            aria-invalid={Boolean(signupErrors.fullName)}
+                            aria-invalid={showFieldError('fullName')}
                           />
-                          {signupErrors.fullName ? <span className="field-error">{signupErrors.fullName}</span> : null}
+                          {showFieldError('fullName') ? <span className="field-error">{signupErrors.fullName}</span> : null}
                         </div>
                         <div className="field-wrap">
                           <input
                             className="input"
                             placeholder="Email address"
+                            type="email"
                             aria-label="Email address"
                             value={signupValues.email}
+                            onBlur={() => setTouchedFields((previous) => ({ ...previous, email: true }))}
                             onChange={(event) => {
                               setSignupValues((previous) => ({ ...previous, email: event.target.value }));
-                              setSignupErrors((previous) => ({ ...previous, email: '' }));
+                              if (signupErrors.email) {
+                                setSignupErrors((previous) => ({ ...previous, email: '' }));
+                              }
                             }}
-                            aria-invalid={Boolean(signupErrors.email)}
+                            aria-invalid={showFieldError('email')}
                           />
-                          {signupErrors.email ? <span className="field-error">{signupErrors.email}</span> : null}
+                          {showFieldError('email') ? <span className="field-error">{signupErrors.email}</span> : null}
                         </div>
                       </div>
 
@@ -692,13 +791,16 @@ function App() {
                               placeholder="Medical specialty"
                               aria-label="Medical specialty"
                               value={signupValues.specialty}
+                              onBlur={() => setTouchedFields((previous) => ({ ...previous, specialty: true }))}
                               onChange={(event) => {
                                 setSignupValues((previous) => ({ ...previous, specialty: event.target.value }));
-                                setSignupErrors((previous) => ({ ...previous, specialty: '' }));
+                                if (signupErrors.specialty) {
+                                  setSignupErrors((previous) => ({ ...previous, specialty: '' }));
+                                }
                               }}
-                              aria-invalid={Boolean(signupErrors.specialty)}
+                              aria-invalid={showFieldError('specialty')}
                             />
-                            {signupErrors.specialty ? <span className="field-error">{signupErrors.specialty}</span> : null}
+                            {showFieldError('specialty') ? <span className="field-error">{signupErrors.specialty}</span> : null}
                           </div>
                           <div className="field-wrap">
                             <input
@@ -706,13 +808,16 @@ function App() {
                               placeholder="License or clinic"
                               aria-label="License or clinic"
                               value={signupValues.clinic}
+                              onBlur={() => setTouchedFields((previous) => ({ ...previous, clinic: true }))}
                               onChange={(event) => {
                                 setSignupValues((previous) => ({ ...previous, clinic: event.target.value }));
-                                setSignupErrors((previous) => ({ ...previous, clinic: '' }));
+                                if (signupErrors.clinic) {
+                                  setSignupErrors((previous) => ({ ...previous, clinic: '' }));
+                                }
                               }}
-                              aria-invalid={Boolean(signupErrors.clinic)}
+                              aria-invalid={showFieldError('clinic')}
                             />
-                            {signupErrors.clinic ? <span className="field-error">{signupErrors.clinic}</span> : null}
+                            {showFieldError('clinic') ? <span className="field-error">{signupErrors.clinic}</span> : null}
                           </div>
                         </div>
                       ) : null}
@@ -723,14 +828,58 @@ function App() {
                           placeholder="Password"
                           type="password"
                           aria-label="Password"
+                          autoComplete="new-password"
                           value={signupValues.password}
+                          onBlur={() => setTouchedFields((previous) => ({ ...previous, password: true }))}
                           onChange={(event) => {
-                            setSignupValues((previous) => ({ ...previous, password: event.target.value }));
-                            setSignupErrors((previous) => ({ ...previous, password: '' }));
+                            const nextPassword = event.target.value;
+                            setSignupValues((previous) => ({ ...previous, password: nextPassword }));
+                            passwordsCleared.current = false;
+                            if (signupErrors.password || signupErrors.confirmPassword) {
+                              setSignupErrors((previous) => ({
+                                ...previous,
+                                password: '',
+                                confirmPassword: '',
+                              }));
+                            }
                           }}
-                          aria-invalid={Boolean(signupErrors.password)}
+                          aria-invalid={showFieldError('password')}
                         />
-                        {signupErrors.password ? <span className="field-error">{signupErrors.password}</span> : null}
+                        {showFieldError('password') ? <span className="field-error">{signupErrors.password}</span> : null}
+
+                        {/* Real-time password requirements checklist. Hidden until
+                            the user starts typing, then updates live. */}
+                        {signupValues.password.length > 0 ? (
+                          <ul className="password-checklist" aria-label="Password requirements">
+                            {passwordChecklist.map((item) => (
+                              <li key={item.label} className={item.met ? 'password-rule met' : 'password-rule'}>
+                                <span aria-hidden="true">{item.met ? '✅' : '❌'}</span> {item.label}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder="Confirm password"
+                          type="password"
+                          aria-label="Confirm password"
+                          autoComplete="new-password"
+                          value={signupValues.confirmPassword}
+                          onBlur={() => setTouchedFields((previous) => ({ ...previous, confirmPassword: true }))}
+                          onChange={(event) => {
+                            setSignupValues((previous) => ({ ...previous, confirmPassword: event.target.value }));
+                            if (signupErrors.confirmPassword) {
+                              setSignupErrors((previous) => ({ ...previous, confirmPassword: '' }));
+                            }
+                          }}
+                          aria-invalid={showFieldError('confirmPassword')}
+                        />
+                        {showFieldError('confirmPassword') ? (
+                          <span className="field-error">{signupErrors.confirmPassword}</span>
+                        ) : null}
                       </div>
 
                       <div className="field-wrap">
@@ -738,11 +887,14 @@ function App() {
                           className="select"
                           value={signupValues.role}
                           aria-label="Select role"
+                          onBlur={() => setTouchedFields((previous) => ({ ...previous, role: true }))}
                           onChange={(event) => {
                             setSignupValues((previous) => ({ ...previous, role: event.target.value }));
-                            setSignupErrors((previous) => ({ ...previous, role: '' }));
+                            if (signupErrors.role) {
+                              setSignupErrors((previous) => ({ ...previous, role: '' }));
+                            }
                           }}
-                          aria-invalid={Boolean(signupErrors.role)}
+                          aria-invalid={showFieldError('role')}
                         >
                           <option value="" disabled>
                             {authRole === 'doctor' ? 'Professional type' : 'Select your role'}
@@ -751,10 +903,10 @@ function App() {
                           <option value="doctor">Doctor</option>
                           <option value="hospital">Hospital</option>
                         </select>
-                        {signupErrors.role ? <span className="field-error">{signupErrors.role}</span> : null}
+                        {showFieldError('role') ? <span className="field-error">{signupErrors.role}</span> : null}
                       </div>
 
-                      <button className="primary-button" type="submit" disabled={isAuthLoading}>
+                      <button className="primary-button" type="submit" disabled={isAuthLoading || !signupIsValid}>
                         {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
                       </button>
                     </>

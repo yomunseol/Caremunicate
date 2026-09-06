@@ -866,6 +866,30 @@ img {
   line-height: 1.4;
 }
 
+/* Real-time password requirements checklist */
+.password-checklist {
+  list-style: none;
+  display: grid;
+  gap: 0.28rem;
+  margin: 0.15rem 0 0;
+  padding: 0;
+}
+
+.password-rule {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-muted, #557b76);
+  transition: color 150ms ease;
+}
+
+.password-rule.met {
+  color: var(--accent-strong, #216e5d);
+}
+
 .auth-loading {
   max-width: 1220px;
   margin: 3rem auto;

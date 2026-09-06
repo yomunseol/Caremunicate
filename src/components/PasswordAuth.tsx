@@ -223,47 +223,61 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     setLoading(true);
     setError('');
     setMessage('');
+    console.log('Verification attempt started');
 
-    const { data, error: verifyError } = await supabaseMemory.auth.mfa.challengeAndVerify({
-      factorId,
-      code: token,
-    });
-    console.log('Challenge+Verify Response:', { data, error: verifyError });
+    try {
+      const { data, error: verifyError } = await supabaseMemory.auth.mfa.challengeAndVerify({
+        factorId,
+        code: token,
+      });
+      console.log('Challenge+Verify Response:', { data, error: verifyError });
 
-    if (verifyError || !data) {
-      setError(verifyError?.message ?? 'Unable to verify code.');
+      if (verifyError || !data) {
+        setError(verifyError?.message ?? 'Unable to verify code.');
+        setCode('');
+        return;
+      }
+
+      if (!data.access_token || !data.refresh_token) {
+        // Fail closed: without tokens we cannot complete the flow.
+        setError('Verification did not return a session. Please try again.');
+        setCode('');
+        return;
+      }
+
+      // Promote the memory-only session into the real persistent client.
+      const sessionResult = await supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+      console.log('Branch B (app): 2FA verified. Persistent session set:', {
+        data: sessionResult.data,
+        error: sessionResult.error,
+      });
+
+      if (sessionResult.error) {
+        setError(sessionResult.error.message);
+        setCode('');
+        return;
+      }
+
+      console.log('Session created successfully:', sessionResult.data.session);
+      console.log('2FA complete, persistent session created');
+
+      // Clear all pending-2FA state so the app treats the user as fully
+      // authenticated, then hard-redirect. A full page load bypasses any
+      // React state that may not have flushed after the async auth flow.
+      setPending2FA(false);
+      console.log('Redirecting to dashboard now');
+      window.location.href = '/#profile';
+    } catch (caughtError) {
+      console.error('Verification attempt error:', caughtError);
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to verify code.');
       setCode('');
+    } finally {
       setLoading(false);
-      return;
+      console.log('Verification attempt finished');
     }
-
-    if (!data.access_token || !data.refresh_token) {
-      // Fail closed: without tokens we cannot complete the flow.
-      setError('Verification did not return a session. Please try again.');
-      setCode('');
-      setLoading(false);
-      return;
-    }
-
-    // Promote the memory-only session into the real persistent client.
-    const sessionResult = await supabase.auth.setSession({
-      access_token: data.access_token,
-      refresh_token: data.refresh_token,
-    });
-    console.log('Branch B (app): 2FA verified. Persistent session set:', {
-      data: sessionResult.data,
-      error: sessionResult.error,
-    });
-
-    if (sessionResult.error) {
-      setError(sessionResult.error.message);
-      setCode('');
-      setLoading(false);
-      return;
-    }
-
-    console.log('2FA complete, persistent session created');
-    goToProfile();
   };
 
   // Branch C final step: email code. Verify the OTP on the MEMORY client, then
@@ -280,48 +294,62 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     setLoading(true);
     setError('');
     setMessage('');
+    console.log('Verification attempt started');
 
-    const { data, error } = await supabaseMemory.auth.verifyOtp({
-      email: email.trim(),
-      token,
-      type: 'email',
-    });
-    console.log('Email OTP Verify Response:', { data, error });
+    try {
+      const { data, error } = await supabaseMemory.auth.verifyOtp({
+        email: email.trim(),
+        token,
+        type: 'email',
+      });
+      console.log('Email OTP Verify Response:', { data, error });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setCode('');
+        return;
+      }
+
+      if (!data.session) {
+        // Fail closed: no session returned means no persistent session to create.
+        setError('Email verification did not return a session. Please try again.');
+        setCode('');
+        return;
+      }
+
+      // Promote the memory-only session into the real persistent client.
+      const sessionResult = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+      console.log('Branch C (email): email code verified. Persistent session set:', {
+        data: sessionResult.data,
+        error: sessionResult.error,
+      });
+
+      if (sessionResult.error) {
+        setError(sessionResult.error.message);
+        setCode('');
+        return;
+      }
+
+      console.log('Session created successfully:', data.session);
+      console.log('2FA complete, persistent session created');
+
+      // Clear all pending-2FA state so the app treats the user as fully
+      // authenticated, then hard-redirect. A full page load bypasses any
+      // React state that may not have flushed after the async auth flow.
+      setPending2FA(false);
+      console.log('Redirecting to dashboard now');
+      window.location.href = '/#profile';
+    } catch (caughtError) {
+      console.error('Verification attempt error:', caughtError);
+      setError(caughtError instanceof Error ? caughtError.message : 'Unable to verify code.');
       setCode('');
+    } finally {
       setLoading(false);
-      return;
+      console.log('Verification attempt finished');
     }
-
-    if (!data.session) {
-      // Fail closed: no session returned means no persistent session to create.
-      setError('Email verification did not return a session. Please try again.');
-      setCode('');
-      setLoading(false);
-      return;
-    }
-
-    // Promote the memory-only session into the real persistent client.
-    const sessionResult = await supabase.auth.setSession({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-    });
-    console.log('Branch C (email): email code verified. Persistent session set:', {
-      data: sessionResult.data,
-      error: sessionResult.error,
-    });
-
-    if (sessionResult.error) {
-      setError(sessionResult.error.message);
-      setCode('');
-      setLoading(false);
-      return;
-    }
-
-    console.log('2FA complete, persistent session created');
-    goToProfile();
   };
 
   const goBackToPassword = () => {
