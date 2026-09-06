@@ -173,7 +173,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
 const passwordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
 
 function App() {
-  const { user: authUser } = useAuth();
+  const { user: authUser, pending2FA, signOut } = useAuth();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
@@ -186,8 +186,14 @@ function App() {
     role: '',
   });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // The user visible to the header/route logic. It is derived from the gated
+  // AuthContext value, so while 2FA is pending the user is treated as logged
+  // out even if a transient token exists in storage.
+  const currentUser = pending2FA ? null : authUser;
+
+  // Derive userProfile from the gated currentUser (metadata read live each
+  // render from the session user object).
+  const userProfile = currentUser ? (currentUser.user_metadata as UserProfile) : null;
   const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState<'success' | 'error'>('error');
@@ -207,28 +213,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const user = session?.user ?? null;
-      setCurrentUser(user);
-      setUserProfile(user ? (user.user_metadata as UserProfile) : null);
-      if (user && route !== 'profile') return;
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const user = session?.user ?? null;
-      setCurrentUser(user);
-      setUserProfile(user ? (user.user_metadata as UserProfile) : null);
-      if (user && route !== 'profile') return;
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
     let cancelled = false;
 
     const fetchProfile = async () => {
-      if (!authUser) {
+      // Only load profile data once 2FA is complete and the user is actually
+      // authenticated (gated view of the session).
+      if (!currentUser) {
         setProfileData(null);
         return;
       }
@@ -236,7 +226,7 @@ function App() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('user_id', authUser.id)
+        .eq('user_id', currentUser.id)
         .single();
 
       if (cancelled) return;
@@ -255,10 +245,10 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [authUser]);
+  }, [currentUser]);
 
   const navigate = (nextRoute: RouteKey) => {
-    if (nextRoute === 'profile' && !currentUser) {
+    if (nextRoute === 'profile' && (!currentUser || pending2FA)) {
       nextRoute = 'login';
     }
     if (nextRoute === 'login' || nextRoute === 'signup') {
@@ -370,7 +360,7 @@ function App() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOut();
     setProfileMenuOpen(false);
     navigate('home');
   };

@@ -17,18 +17,24 @@ type AuthProviderProps = {
   children: ReactNode;
 };
 
+const PENDING_2FA_KEY = 'caremunicate:pending2fa';
+
+// Session Trap gate: while 2FA is pending, the global auth state reports no
+// user/session even if a transient token exists in storage. The user only
+// becomes "logged in" once the 2FA step completes and the real persistent
+// session is installed.
 export function AuthProvider({ children }: AuthProviderProps) {
   const [session, setSession] = useState<Session | null>(null);
-  const [pending2FA, setPending2FAState] = useState(() => sessionStorage.getItem('caremunicate:pending2fa') === 'true');
+  const [pending2FA, setPending2FAState] = useState(() => sessionStorage.getItem(PENDING_2FA_KEY) === 'true');
   const [loading, setLoading] = useState(true);
 
   const setPending2FA = (pending: boolean) => {
     setPending2FAState(pending);
 
     if (pending) {
-      sessionStorage.setItem('caremunicate:pending2fa', 'true');
+      sessionStorage.setItem(PENDING_2FA_KEY, 'true');
     } else {
-      sessionStorage.removeItem('caremunicate:pending2fa');
+      sessionStorage.removeItem(PENDING_2FA_KEY);
     }
   };
 
@@ -49,8 +55,23 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     void restoreSession();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+
+      // If the user completed 2FA (real persistent session installed), clear
+      // the pending flag so the gated state below reports them as logged in.
+      if (event === 'SIGNED_IN' || event === 'MFA_CHALLENGE_VERIFIED' || event === 'TOKEN_REFRESHED') {
+        if (nextSession) {
+          setPending2FAState(false);
+          sessionStorage.removeItem(PENDING_2FA_KEY);
+        }
+      }
+
+      if (event === 'SIGNED_OUT') {
+        setPending2FAState(false);
+        sessionStorage.removeItem(PENDING_2FA_KEY);
+      }
+
       setSession(nextSession);
       setLoading(false);
     });
@@ -67,9 +88,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (error) throw error;
   };
 
+  // The Session Trap gate itself: while 2FA is pending the app must not treat
+  // the user as authenticated, no matter what tokens exist in storage.
+  const effectiveSession = pending2FA ? null : session;
+
   const value: AuthContextValue = {
-    session,
-    user: session?.user ?? null,
+    session: effectiveSession,
+    user: effectiveSession?.user ?? null,
     loading,
     pending2FA,
     setPending2FA,
