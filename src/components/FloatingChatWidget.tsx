@@ -8,10 +8,11 @@ import { SearchUsers, type SearchUserResult } from './SearchUsers';
 
 // ---------------------------------------------------------------------------
 // Tailwind equivalents for the notes in this file:
-//   fixed wrapper  -> "fixed bottom-4 left-4 z-50"
+//   fixed wrapper  -> "fixed bottom-4 right-4 z-50 flex flex-col items-end"
 //   circular button-> "rounded-full bg-[var(--accent,#3ea985)]"
-//   window panel   -> "w-[350px] max-w-[calc(100vw-2rem)] h-[500px] rounded-2xl
-//                     shadow-xl bg-white"
+//   window panel   -> "absolute bottom-[4.5rem] w-[350px] max-w-[calc(100vw-2rem)]
+//                     h-[500px] max-h-[calc(100vh-7rem)] rounded-2xl shadow-xl
+//                     bg-white"
 // The project has no Tailwind build step, so the same design tokens are used
 // via inline styles (consistent with PasswordAuth/TwoFactorSetup/ChatWindow).
 // ---------------------------------------------------------------------------
@@ -188,39 +189,8 @@ export default function FloatingChatWidget() {
   const [inboxLoading, setInboxLoading] = useState(false);
   const [inboxError, setInboxError] = useState<string | null>(null);
 
-  const [myRole, setMyRole] = useState('patient');
-  const [roleResolved, setRoleResolved] = useState(false);
-
   const lastSeenRef = useRef(Date.now());
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  // Current user's role (drives search direction + copy). Prefer profiles,
-  // fall back to signup metadata.
-  useEffect(() => {
-    if (!myUserId || roleResolved) return;
-
-    let cancelled = false;
-
-    const load = async () => {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', myUserId)
-        .maybeSingle();
-
-      if (cancelled) return;
-      if (!error && data?.role) setMyRole(String(data.role));
-      else if (user?.user_metadata?.role) setMyRole(String(user.user_metadata.role));
-      setRoleResolved(true);
-    };
-
-    void load();
-
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myUserId]);
 
   // Load the inbox: my participants -> peers -> peer names -> last messages.
   useEffect(() => {
@@ -447,7 +417,7 @@ export default function FloatingChatWidget() {
 
           <div style={styles.windowBody}>
             {tab === 'search' ? (
-              <SearchUsers myRole={myRole} onPick={handlePickUser} />
+              <SearchUsers onPick={handlePickUser} />
             ) : thread ? (
               <ThreadView thread={thread} myUserId={myUserId} onBack={() => setThread(null)} />
             ) : (
@@ -516,8 +486,8 @@ function renderInbox({
   if (items.length === 0) {
     return (
       <div style={styles.centeredBox}>
-        <p style={styles.emptyTitle}>No active chats.</p>
-        <p style={styles.centeredText}>Search for a doctor/patient to start one.</p>
+        <p style={styles.emptyTitle}>No conversations yet!</p>
+        <p style={styles.centeredText}>Start a new chat to begin messaging.</p>
         <button type="button" onClick={onGoSearch} style={styles.primaryButton}>
           New Chat
         </button>
@@ -558,12 +528,12 @@ function renderInbox({
 const styles: Record<string, CSSProperties> = {
   root: {
     position: 'fixed',
-    left: 16,
+    right: 16,
     bottom: 16,
     zIndex: 50,
     display: 'flex',
     flexDirection: 'column',
-    alignItems: 'flex-start',
+    alignItems: 'flex-end',
     gap: 12,
   },
   fab: {

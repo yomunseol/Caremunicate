@@ -9,7 +9,6 @@ export interface SearchUserResult {
 }
 
 type SearchUsersProps = {
-  myRole: string;
   /** Resolve + open/create a thread. Returning a promise lets this component
    *  show per-row busy/error state instead of allowing duplicate clicks. */
   onPick: (user: SearchUserResult) => Promise<void>;
@@ -21,11 +20,12 @@ const ROLE_LABELS: Record<string, string> = {
   hospital: 'Hospital',
 };
 
-// Role-scoped directory search:
-//   doctor   -> patients
-//   patient  -> doctors
-//   anything else (hospital) -> patients + doctors
-export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
+// Open directory search: ANY user (patient or doctor) can be found by their
+// display name. profiles has no email column (email lives on auth.users,
+// which the anon/authenticated roles cannot read), so the ILIKE match runs
+// against username; if you add an email column to profiles later, extend the
+// query with an OR filter.
+export function SearchUsers({ onPick }: SearchUsersProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchUserResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,15 +50,6 @@ export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
 
     // Debounce keystrokes before hitting PostgREST.
     const timer = setTimeout(async () => {
-      const targetRoles =
-        myRole === 'doctor'
-          ? ['patient']
-          : myRole === 'patient'
-            ? ['doctor']
-            : ['patient', 'doctor'];
-
-      // profiles has no email column (email lives on auth.users, which is not
-      // readable by the anon/authenticated roles), so we match by username.
       // Strip %/_ so user input can't broaden the ILIKE match.
       const safeQuery = trimmed.replace(/[%_]/g, '');
 
@@ -66,7 +57,6 @@ export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
         const { data, error } = await supabase
           .from('profiles')
           .select('user_id, username, role')
-          .in('role', targetRoles)
           .ilike('username', `%${safeQuery}%`)
           .order('username', { ascending: true })
           .limit(8);
@@ -93,7 +83,7 @@ export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [trimmed, myRole]);
+  }, [trimmed]);
 
   const handlePick = async (user: SearchUserResult) => {
     setBusyId(user.user_id);
@@ -114,13 +104,7 @@ export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder={
-            myRole === 'doctor'
-              ? 'Search patients by username…'
-              : myRole === 'patient'
-                ? 'Search doctors by username…'
-                : 'Search patients or doctors…'
-          }
+          placeholder="Search by email or name..."
           aria-label="Search people"
           style={styles.input}
           autoFocus
@@ -128,18 +112,14 @@ export function SearchUsers({ myRole, onPick }: SearchUsersProps) {
         {loading ? <span style={styles.spinner} aria-hidden="true" /> : null}
       </div>
 
-      <p style={styles.hint}>
-        {myRole === 'doctor'
-          ? 'Find a patient to open a conversation.'
-          : 'Find a doctor to start a consultation.'}
-      </p>
+      <p style={styles.hint}>Find anyone — patients and doctors — to start a conversation.</p>
 
       {error ? <p role="alert" style={styles.inlineError}>{error}</p> : null}
       {pickError ? <p role="alert" style={styles.inlineError}>{pickError}</p> : null}
 
       {trimmed.length >= 2 && !loading && searched ? (
         results.length === 0 ? (
-          <p style={styles.emptyText}>No {myRole === 'patient' ? 'doctors' : 'users'} match “{trimmed}”.</p>
+          <p style={styles.emptyText}>No users match "{trimmed}".</p>
         ) : (
           <ul style={styles.resultList}>
             {results.map((user) => (
