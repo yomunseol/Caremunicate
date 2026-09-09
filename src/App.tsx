@@ -6,7 +6,7 @@ import TwoFactorSetup from './components/TwoFactorSetup';
 import PasswordAuth from './components/PasswordAuth';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
-import { DashboardChat } from './components/DashboardChat';
+import { ChatList } from './components/ChatList';
 import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
@@ -155,7 +155,7 @@ type ParsedRoute = {
 
 // Hash formats supported:
 //   #home, #signup, #login, #profile, #pricing   (existing routes)
-//   #/chat/<conversationId>  (chat, set by ChatList/DashboardChat)
+//   #/chat/<conversationId>  (chat, set by the chat list and dashboard)
 const parseHash = (hash: string): ParsedRoute => {
   const clean = hash.replace(/^#\/?/, '');
   const [name, ...rest] = clean.split('/');
@@ -1002,9 +1002,9 @@ function App() {
               </div>
 
               <div className="panel">
-                <DashboardChat
-                  userId={currentUser?.id ?? ''}
-                  role={effectiveRole}
+                <ChatList
+                  myUserId={currentUser?.id ?? ''}
+                  myRole={effectiveRole}
                   onOpenChat={openChatRoute}
                 />
               </div>

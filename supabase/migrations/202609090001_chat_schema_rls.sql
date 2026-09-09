@@ -22,18 +22,16 @@
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.conversations (
-  id                   uuid primary key default gen_random_uuid(),
+  id         uuid primary key default gen_random_uuid(),
   -- Currently only 1:1 direct chats. A check constraint keeps room to grow
   -- without letting callers invent arbitrary types.
-  type                 text not null default 'direct'
-                       check (type in ('direct')),
+  type       text not null default 'direct'
+             check (type in ('direct')),
   -- Null for direct chats; intended for future named group threads.
-  name                 text,
-  created_at           timestamptz not null default now(),
-  -- Denormalized "last message" so chat-list queries stay O(1) per row
-  -- instead of N+1 scanning messages. Maintained by handle_new_message().
-  last_message_preview text,
-  last_message_at      timestamptz
+  name       text,
+  -- The participant who created the thread.
+  created_by uuid not null references auth.users (id),
+  created_at timestamptz not null default now()
 );
 
 create table if not exists public.conversation_participants (
@@ -179,30 +177,9 @@ create policy "profiles_read_for_directory_or_peers"
     )
   );
 
--- ---------------------------------------------------------------------------
--- LAST-MESSAGE DENORMALIZATION (powers the chat list preview/timestamp)
--- ---------------------------------------------------------------------------
-
-create or replace function public.handle_new_message()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  update public.conversations
-     set last_message_preview = left(trim(new.content), 120),
-         last_message_at      = new.created_at
-   where id = new.conversation_id;
-  return new;
-end;
-$$;
-
-drop trigger if exists messages_update_conversation on public.messages;
-create trigger messages_update_conversation
-  after insert on public.messages
-  for each row
-  execute function public.handle_new_message();
+-- NOTE: last-message previews are intentionally NOT denormalized. The chat
+-- list computes each preview client-side from the messages table (see
+-- src/components/ChatList.tsx), so conversations stays lean.
 
 -- ---------------------------------------------------------------------------
 -- ATOMIC DIRECT-CONVERSATION CREATOR (the ONLY write path for new DMs)
@@ -285,8 +262,8 @@ begin
     raise exception 'Cannot start a chat: invalid role on a profile.';
   end if;
 
-  insert into public.conversations (type, name)
-  values ('direct', null)
+  insert into public.conversations (type, name, created_by)
+  values ('direct', null, auth.uid())
   returning id into v_conversation_id;
 
   insert into public.conversation_participants (conversation_id, user_id, role)
