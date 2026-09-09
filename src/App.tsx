@@ -6,7 +6,7 @@ import TwoFactorSetup from './components/TwoFactorSetup';
 import PasswordAuth from './components/PasswordAuth';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
-import { ChatList } from './components/ChatList';
+import FloatingChatWidget from './components/FloatingChatWidget';
 import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
@@ -480,14 +480,6 @@ function App() {
   };
 
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
-
-  // Role for role-aware dashboard UI: prefer the profiles row (source of
-  // truth), fall back to signup metadata, then assume patient.
-  const effectiveRole = String(profileData?.role ?? userProfile?.role ?? 'patient');
-
-  const openChatRoute = (conversationId: string) => {
-    window.location.hash = `/chat/${conversationId}`;
-  };
 
   // Inline errors only appear once the visitor has interacted with a field
   // (blurred it or submitted the form). This keeps a fresh form calm.
@@ -1000,14 +992,6 @@ function App() {
                 <span className="pill">Emergency line active</span>
                 <span className="pill">Hospital sync ready</span>
               </div>
-
-              <div className="panel">
-                <ChatList
-                  myUserId={currentUser?.id ?? ''}
-                  myRole={effectiveRole}
-                  onOpenChat={openChatRoute}
-                />
-              </div>
             </div>
 
             <div className="profile-sidebar">
@@ -1081,6 +1065,8 @@ function App() {
           </section>
         )}
       </main>
+
+      <FloatingChatWidget />
 
       <footer className="footer">
         <p>Caremunicate • A calm, postmodern medical communication experience.</p>
