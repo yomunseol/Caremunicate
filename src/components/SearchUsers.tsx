@@ -74,7 +74,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
           search_query: safeQuery,
         });
 
-        console.log('Search results:', data);
+        console.log('SEARCH:', data, error);
 
         if (error) throw error;
         if (cancelled) return;
@@ -121,7 +121,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Enter user's email to search..."
+          placeholder="Enter the person's email..."
           aria-label="Search users by email"
           style={styles.input}
           autoFocus
@@ -129,7 +129,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
         {loading ? <span style={styles.spinner} aria-hidden="true" /> : null}
       </div>
 
-      <p style={styles.hint}>Search any user by email to start a conversation.</p>
+      <p style={styles.hint}>Search any patient or doctor by email.</p>
 
       {error ? <p role="alert" style={styles.inlineError}>{error}</p> : null}
       {pickError ? <p role="alert" style={styles.inlineError}>{pickError}</p> : null}

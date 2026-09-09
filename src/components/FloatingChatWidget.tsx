@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { MessageCircle, X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { createDirectConversation } from '../lib/conversations';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
+import { ChatList, type ChatListItem } from './ChatList';
 import { SearchUsers, type SearchUserResult } from './SearchUsers';
 
 // ---------------------------------------------------------------------------
@@ -14,31 +15,8 @@ import { SearchUsers, type SearchUserResult } from './SearchUsers';
 //                     h-[500px] max-h-[calc(100vh-7rem)] rounded-2xl shadow-xl
 //                     bg-white"
 // The project has no Tailwind build step, so the same design tokens are used
-// via inline styles (consistent with PasswordAuth/TwoFactorSetup/ChatWindow).
+// via inline styles (consistent with the rest of the app).
 // ---------------------------------------------------------------------------
-
-interface InboxItem {
-  conversationId: string;
-  peerId: string;
-  peerName: string;
-  peerRole: string;
-  preview: string;
-  at: string | null;
-  lastSenderId: string | null;
-}
-
-interface PeerRow {
-  conversation_id: string;
-  user_id: string;
-  role: string;
-}
-
-interface MessageRow {
-  conversation_id: string;
-  content: string;
-  created_at: string;
-  sender_id: string;
-}
 
 const ROLE_LABELS: Record<string, string> = {
   patient: 'Patient',
@@ -46,13 +24,7 @@ const ROLE_LABELS: Record<string, string> = {
   hospital: 'Hospital',
 };
 
-const previewOf = (content: string | null | undefined): string => {
-  const cleaned = (content ?? '').replace(/\s+/g, ' ').trim();
-  return cleaned.length > 40 ? `${cleaned.slice(0, 40).trimEnd()}…` : cleaned;
-};
-
-const timeAgo = (iso: string | null): string => {
-  if (!iso) return '';
+const timeAgo = (iso: string): string => {
   const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
   if (seconds < 45) return 'just now';
   const minutes = seconds / 60;
@@ -174,7 +146,7 @@ function ThreadView({
 }
 
 // ---------------------------------------------------------------------------
-// Main floating widget
+// Main floating widget (bottom-right)
 // ---------------------------------------------------------------------------
 
 export default function FloatingChatWidget() {
@@ -185,120 +157,12 @@ export default function FloatingChatWidget() {
   const [tab, setTab] = useState<'inbox' | 'search'>('inbox');
   const [thread, setThread] = useState<Thread | null>(null);
 
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [inboxLoading, setInboxLoading] = useState(false);
-  const [inboxError, setInboxError] = useState<string | null>(null);
+  // Snapshot of the chat list, kept by ChatList via onLoaded so the collapsed
+  // widget can still render the unread badge.
+  const [snapshot, setSnapshot] = useState<ChatListItem[]>([]);
 
   const lastSeenRef = useRef(Date.now());
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  // Load the inbox: my participants -> peers -> peer names -> last messages.
-  useEffect(() => {
-    if (!isOpen || !myUserId || thread) return;
-
-    let cancelled = false;
-
-    const loadInbox = async () => {
-      setInboxLoading(true);
-      setInboxError(null);
-
-      try {
-        // 1) Conversations I belong to.
-        const { data: mine, error: mineError } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id')
-          .eq('user_id', myUserId);
-
-        if (mineError) throw mineError;
-
-        const conversationIds = [...new Set((mine ?? []).map((row) => row.conversation_id as string))];
-
-        if (conversationIds.length === 0) {
-          if (!cancelled) setItems([]);
-          return;
-        }
-
-        // 2) Other participants (exclude me) + their roles.
-        const { data: others, error: othersError } = await supabase
-          .from('conversation_participants')
-          .select('conversation_id, user_id, role')
-          .in('conversation_id', conversationIds)
-          .neq('user_id', myUserId);
-
-        if (othersError) throw othersError;
-
-        const peers = new Map<string, PeerRow>();
-        for (const peer of (others ?? []) as PeerRow[]) {
-          if (!peers.has(peer.conversation_id)) peers.set(peer.conversation_id, peer);
-        }
-
-        // 3) Peer display names.
-        const peerUserIds = [...new Set([...peers.values()].map((peer) => peer.user_id))];
-        const usernames = new Map<string, string>();
-
-        if (peerUserIds.length > 0) {
-          const { data: profiles, error: profilesError } = await supabase
-            .from('profiles')
-            .select('user_id, username')
-            .in('user_id', peerUserIds);
-
-          if (profilesError) throw profilesError;
-
-          for (const profile of (profiles ?? []) as Array<{ user_id: string; username: string | null }>) {
-            usernames.set(profile.user_id, profile.username ?? '');
-          }
-        }
-
-        // 4) Last message per conversation (newest-first, first row wins).
-        const { data: messages, error: messagesError } = await supabase
-          .from('messages')
-          .select('conversation_id, content, created_at, sender_id')
-          .in('conversation_id', conversationIds)
-          .order('created_at', { ascending: false })
-          .limit(500);
-
-        if (messagesError) throw messagesError;
-
-        const lastByConversation = new Map<string, MessageRow>();
-        for (const message of (messages ?? []) as MessageRow[]) {
-          if (!lastByConversation.has(message.conversation_id)) {
-            lastByConversation.set(message.conversation_id, message);
-          }
-        }
-
-        const nextItems: InboxItem[] = [];
-        for (const [conversationId, peer] of peers) {
-          const last = lastByConversation.get(conversationId);
-          nextItems.push({
-            conversationId,
-            peerId: peer.user_id,
-            peerName: usernames.get(peer.user_id) ?? 'Participant',
-            peerRole: peer.role,
-            preview: last ? previewOf(last.content) : 'No messages yet — say hello.',
-            at: last?.created_at ?? null,
-            lastSenderId: last?.sender_id ?? null,
-          });
-        }
-
-        nextItems.sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''));
-
-        if (!cancelled) setItems(nextItems);
-      } catch (err) {
-        console.error('[chat] inbox load failed:', err);
-        if (!cancelled) {
-          setInboxError(err instanceof Error ? err.message : 'Could not load conversations.');
-        }
-      } finally {
-        if (!cancelled) setInboxLoading(false);
-      }
-    };
-
-    void loadInbox();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, myUserId, thread]);
 
   // Close when clicking outside the widget (optional nicety).
   useEffect(() => {
@@ -317,7 +181,7 @@ export default function FloatingChatWidget() {
 
   // Red dot while collapsed: any thread whose last message is from the peer
   // and arrived after the widget was last opened.
-  const unreadCount = items.filter(
+  const unreadCount = snapshot.filter(
     (item) => item.lastSenderId && item.lastSenderId !== myUserId && new Date(item.at ?? 0).getTime() > lastSeenRef.current,
   ).length;
 
@@ -364,6 +228,12 @@ export default function FloatingChatWidget() {
     openThread(conversationId, user.username ?? 'Participant', user.role);
   };
 
+  const closeWidget = () => {
+    setIsOpen(false);
+    setThread(null);
+    setTab('inbox');
+  };
+
   const toggleOpen = () => {
     if (isOpen) {
       closeWidget();
@@ -373,12 +243,6 @@ export default function FloatingChatWidget() {
       lastSeenRef.current = Date.now();
       setIsOpen(true);
     }
-  };
-
-  const closeWidget = () => {
-    setIsOpen(false);
-    setThread(null);
-    setTab('inbox');
   };
 
   if (!myUserId) return null;
@@ -421,14 +285,12 @@ export default function FloatingChatWidget() {
             ) : thread ? (
               <ThreadView thread={thread} myUserId={myUserId} onBack={() => setThread(null)} />
             ) : (
-              renderInbox({
-                items,
-                loading: inboxLoading,
-                error: inboxError,
-                myUserId,
-                onOpen: openThread,
-                onGoSearch: () => setTab('search'),
-              })
+              <ChatList
+                myUserId={myUserId}
+                onOpenChat={(item) => openThread(item.conversationId, item.peerName, item.peerRole)}
+                onStartNewChat={() => setTab('search')}
+                onLoaded={setSnapshot}
+              />
             )}
           </div>
         </div>
@@ -443,85 +305,6 @@ export default function FloatingChatWidget() {
         ) : null}
       </button>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Inbox list renderer (kept as a pure function of the widget's state so the
-// same fetch logic can drive both the list and the unread badge).
-// ---------------------------------------------------------------------------
-
-function renderInbox({
-  items,
-  loading,
-  error,
-  myUserId,
-  onOpen,
-  onGoSearch,
-}: {
-  items: InboxItem[];
-  loading: boolean;
-  error: string | null;
-  myUserId: string;
-  onOpen: (conversationId: string, peerName: string, peerRole: string) => void;
-  onGoSearch: () => void;
-}): ReactNode {
-  if (loading) {
-    return (
-      <div style={styles.centeredBox}>
-        <span style={styles.spinner} aria-hidden="true" />
-        <p style={styles.centeredText}>Loading conversations…</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div style={styles.centeredBox}>
-        <p role="alert" style={styles.inlineError}>{error}</p>
-      </div>
-    );
-  }
-
-  if (items.length === 0) {
-    return (
-      <div style={styles.centeredBox}>
-        <p style={styles.emptyTitle}>No conversations yet!</p>
-        <p style={styles.centeredText}>Start a new chat to begin messaging.</p>
-        <button type="button" onClick={onGoSearch} style={styles.primaryButton}>
-          New Chat
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <ul style={styles.inboxList}>
-      {items.map((item) => {
-        const isUnread = item.lastSenderId && item.lastSenderId !== myUserId && item.at ? true : false;
-        return (
-          <li key={item.conversationId}>
-            <button
-              type="button"
-              onClick={() => onOpen(item.conversationId, item.peerName, item.peerRole)}
-              style={styles.inboxRow}
-              aria-label={`Open chat with ${item.peerName}`}
-            >
-              <span style={styles.inboxAvatar}>{item.peerName.charAt(0).toUpperCase()}</span>
-              <span style={styles.inboxCopy}>
-                <span style={styles.inboxTop}>
-                  <strong style={styles.inboxName}>{item.peerName}</strong>
-                  <time style={styles.inboxTime}>{timeAgo(item.at)}</time>
-                </span>
-                <span style={{ ...styles.inboxPreview, ...(isUnread ? styles.inboxPreviewUnread : null) }}>
-                  {item.preview}
-                </span>
-              </span>
-            </button>
-          </li>
-        );
-      })}
-    </ul>
   );
 }
 
@@ -629,75 +412,6 @@ const styles: Record<string, CSSProperties> = {
     minHeight: 0,
     padding: 12,
   },
-  inboxList: {
-    listStyle: 'none',
-    margin: 0,
-    padding: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 6,
-    overflowY: 'auto',
-  },
-  inboxRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    width: '100%',
-    textAlign: 'left',
-    fontFamily: 'inherit',
-    padding: '10px',
-    background: '#fff',
-    border: '1px solid rgba(0, 0, 0, 0.06)',
-    borderRadius: 12,
-    cursor: 'pointer',
-  },
-  inboxAvatar: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 38,
-    height: 38,
-    flexShrink: 0,
-    borderRadius: '50%',
-    background: 'var(--accent, #3ea985)',
-    color: '#fff',
-    fontWeight: 700,
-  },
-  inboxCopy: {
-    flex: 1,
-    minWidth: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 2,
-  },
-  inboxTop: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  inboxName: {
-    fontSize: 14,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  inboxTime: {
-    flexShrink: 0,
-    fontSize: 11,
-    color: 'var(--text-muted, #777)',
-  },
-  inboxPreview: {
-    fontSize: 13,
-    color: 'var(--text-muted, #555)',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  },
-  inboxPreviewUnread: {
-    color: '#222',
-    fontWeight: 600,
-  },
   thread: {
     flex: 1,
     display: 'flex',
@@ -748,6 +462,11 @@ const styles: Record<string, CSSProperties> = {
     flexDirection: 'column',
     gap: 8,
     padding: '12px 0',
+  },
+  centeredText: {
+    margin: 'auto',
+    fontSize: 13,
+    color: 'var(--text-muted, #777)',
   },
   bubbleMine: {
     background: 'var(--accent, #3ea985)',
@@ -822,45 +541,5 @@ const styles: Record<string, CSSProperties> = {
     margin: 0,
     fontSize: 13,
     color: '#c0392b',
-    textAlign: 'center',
-  },
-  centeredBox: {
-    flex: 1,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    padding: '0 12px',
-    textAlign: 'center',
-  },
-  centeredText: {
-    margin: 0,
-    fontSize: 13,
-    color: 'var(--text-muted, #777)',
-  },
-  emptyTitle: {
-    margin: 0,
-    fontSize: 15,
-    fontWeight: 600,
-  },
-  primaryButton: {
-    border: 'none',
-    borderRadius: 999,
-    padding: '9px 18px',
-    fontSize: 14,
-    fontWeight: 600,
-    fontFamily: 'inherit',
-    color: '#fff',
-    background: 'var(--accent, #3ea985)',
-    cursor: 'pointer',
-  },
-  spinner: {
-    width: 16,
-    height: 16,
-    border: '2px solid rgba(62, 169, 133, 0.3)',
-    borderTopColor: 'var(--accent, #3ea985)',
-    borderRadius: '50%',
-    display: 'inline-block',
   },
 };
