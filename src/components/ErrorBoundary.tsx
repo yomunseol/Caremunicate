@@ -1,0 +1,65 @@
+import { Component, type ErrorInfo, type ReactNode } from 'react';
+
+type ErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type ErrorBoundaryState = {
+  error: Error | null;
+};
+
+// Minimal error boundary so an unexpected render crash inside a chat view
+// degrades to an inline message instead of unmounting the whole app.
+export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, info);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div role="alert" style={styles.wrapper}>
+          <p style={styles.title}>Something went wrong loading this conversation.</p>
+          <p style={styles.detail}>{this.state.error.message}</p>
+          <button type="button" style={styles.button} onClick={() => this.setState({ error: null })}>
+            Try again
+          </button>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+const styles = {
+  wrapper: {
+    textAlign: 'center' as const,
+    padding: '3rem 1rem',
+  },
+  title: {
+    margin: 0,
+    fontWeight: 600,
+    fontSize: 16,
+  },
+  detail: {
+    margin: '0.5rem 0 1rem',
+    fontSize: 14,
+    color: '#c0392b',
+  },
+  button: {
+    padding: '8px 16px',
+    borderRadius: 999,
+    border: 'none',
+    background: 'var(--accent, #3ea985)',
+    color: '#fff',
+    fontWeight: 600,
+    cursor: 'pointer',
+  },
+};

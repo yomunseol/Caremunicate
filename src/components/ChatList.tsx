@@ -42,11 +42,13 @@ const formatTimestamp = (iso: string | null): string => {
 
 type ChatListProps = {
   onOpenChat?: (conversationId: string) => void;
+  /** Pre-select a role tab (e.g. dashboard shows doctors to patients only). */
+  initialFilter?: RoleFilter;
 };
 
-export function ChatList({ onOpenChat }: ChatListProps) {
+export function ChatList({ onOpenChat, initialFilter = 'all' }: ChatListProps) {
   const { user } = useAuth();
-  const [tab, setTab] = useState<RoleFilter>('all');
+  const [tab, setTab] = useState<RoleFilter>(initialFilter);
   const [items, setItems] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

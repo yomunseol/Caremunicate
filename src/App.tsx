@@ -4,9 +4,12 @@ import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
 import PasswordAuth from './components/PasswordAuth';
+import ChatWindow from './components/ChatWindow';
+import ErrorBoundary from './components/ErrorBoundary';
+import { DashboardChat } from './components/DashboardChat';
 import { useAuth } from './context/AuthContext';
 
-type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing';
+type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor';
 
@@ -145,12 +148,37 @@ const plans: Plan[] = [
   },
 ];
 
-const getInitialRoute = (): RouteKey => {
-  if (typeof window === 'undefined') return 'home';
-  const hash = window.location.hash.replace('#', '');
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
-  return validRoutes.includes(hash as RouteKey) ? (hash as RouteKey) : 'home';
+type ParsedRoute = {
+  route: RouteKey;
+  conversationId: string | null;
 };
+
+// Hash formats supported:
+//   #home, #signup, #login, #profile, #pricing   (existing routes)
+//   #/chat/<conversationId>  (chat, set by ChatList/DashboardChat)
+const parseHash = (hash: string): ParsedRoute => {
+  const clean = hash.replace(/^#\/?/, '');
+  const [name, ...rest] = clean.split('/');
+
+  if (name === 'chat') {
+    const id = rest.join('/');
+    return id
+      ? { route: 'chat', conversationId: id }
+      : { route: 'home', conversationId: null };
+  }
+
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
+  return {
+    route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
+    conversationId: null,
+  };
+};
+
+const getInitialRoute = (): RouteKey =>
+  typeof window === 'undefined' ? 'home' : parseHash(window.location.hash).route;
+
+const getInitialConversationId = (): string | null =>
+  typeof window === 'undefined' ? null : parseHash(window.location.hash).conversationId;
 
 type SignupFormValues = {
   fullName: string;
@@ -184,6 +212,7 @@ const passwordPattern =
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
+  const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
   const [signupValues, setSignupValues] = useState<SignupFormValues>({
@@ -219,9 +248,10 @@ function App() {
 
   useEffect(() => {
     const syncRoute = () => {
-      const nextRoute = getInitialRoute();
-      setRoute(nextRoute);
-      setAuthMode(nextRoute === 'login' ? 'login' : 'signup');
+      const parsed = parseHash(window.location.hash);
+      setRoute(parsed.route);
+      setConversationId(parsed.conversationId);
+      setAuthMode(parsed.route === 'login' ? 'login' : 'signup');
     };
 
     window.addEventListener('hashchange', syncRoute);
@@ -264,13 +294,14 @@ function App() {
   }, [currentUser]);
 
   const navigate = (nextRoute: RouteKey) => {
-    if (nextRoute === 'profile' && (!currentUser || pending2FA)) {
+    if ((nextRoute === 'profile' || nextRoute === 'chat') && (!currentUser || pending2FA)) {
       nextRoute = 'login';
     }
     if (nextRoute === 'login' || nextRoute === 'signup') {
       setAuthMode(nextRoute);
     }
     setRoute(nextRoute);
+    setConversationId(null);
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -449,6 +480,14 @@ function App() {
   };
 
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
+
+  // Role for role-aware dashboard UI: prefer the profiles row (source of
+  // truth), fall back to signup metadata, then assume patient.
+  const effectiveRole = String(profileData?.role ?? userProfile?.role ?? 'patient');
+
+  const openChatRoute = (conversationId: string) => {
+    window.location.hash = `/chat/${conversationId}`;
+  };
 
   // Inline errors only appear once the visitor has interacted with a field
   // (blurred it or submitted the form). This keeps a fresh form calm.
@@ -962,16 +1001,12 @@ function App() {
                 <span className="pill">Hospital sync ready</span>
               </div>
 
-              <div className="profile-grid">
-                <div className="panel">
-                  <h3>Assigned doctor</h3>
-                  <p>No assigned doctors yet. Choose an assigned doctor when you are ready for ongoing care and follow-up support.</p>
-                </div>
-
-                <div className="panel">
-                  <h3>Wishlist</h3>
-                  <p>No doctors saved yet. Add trusted doctors to your wishlist for quick access later.</p>
-                </div>
+              <div className="panel">
+                <DashboardChat
+                  userId={currentUser?.id ?? ''}
+                  role={effectiveRole}
+                  onOpenChat={openChatRoute}
+                />
               </div>
             </div>
 
@@ -993,6 +1028,25 @@ function App() {
                 <p>Fresh hospital information, case notes, and follow-up updates are ready for review whenever you need them.</p>
               </div>
             </div>
+            </section>
+          </ProtectedRoute>
+        )}
+
+        {route === 'chat' && (
+          <ProtectedRoute>
+            <section className="section">
+              <ErrorBoundary key={conversationId ?? 'chat'}>
+                {conversationId ? (
+                  <ChatWindow conversationId={conversationId} />
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                    <p>This chat link is invalid.</p>
+                    <a href="#profile" style={{ color: 'var(--accent-strong, #2d7a5f)' }}>
+                      ← Back to dashboard
+                    </a>
+                  </div>
+                )}
+              </ErrorBoundary>
             </section>
           </ProtectedRoute>
         )}
