@@ -20,11 +20,27 @@ const ROLE_LABELS: Record<string, string> = {
   hospital: 'Hospital',
 };
 
-// Open directory search: ANY user (patient or doctor) can be found by their
-// display name. profiles has no email column (email lives on auth.users,
-// which the anon/authenticated roles cannot read), so the ILIKE match runs
-// against username; if you add an email column to profiles later, extend the
-// query with an OR filter.
+// Defensive shape for whatever search_users() returns — it may expose
+// user_id or id, and username or email, depending on the SQL definition.
+type SearchUserRow = {
+  user_id?: string;
+  id?: string;
+  email?: string | null;
+  username?: string | null;
+  role?: string | null;
+};
+
+const normalizeResult = (row: SearchUserRow): SearchUserResult => ({
+  user_id: String(row.user_id ?? row.id ?? ''),
+  username: row.username ?? row.email ?? null,
+  role: row.role ?? '',
+});
+
+// Open search backed by the SECURITY DEFINER SQL function search_users(), which
+// safely resolves matching users (by email or name) without exposing profiles
+// to direct client-side reads (profiles RLS stays strict). The function's
+// return shape is normalized below so the UI does not depend on exact column
+// names from the RPC.
 export function SearchUsers({ onPick }: SearchUsersProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchUserResult[]>([]);
@@ -48,25 +64,26 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
     setLoading(true);
     setError(null);
 
-    // Debounce keystrokes before hitting PostgREST.
+    // Debounce keystrokes before hitting the RPC.
     const timer = setTimeout(async () => {
-      // Strip %/_ so user input can't broaden the ILIKE match.
+      // Strip %/_ so user input can't broaden the ILIKE inside search_users().
       const safeQuery = trimmed.replace(/[%_]/g, '');
 
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('user_id, username, role')
-          .ilike('username', `%${safeQuery}%`)
-          .order('username', { ascending: true })
-          .limit(8);
+        const { data, error } = await supabase.rpc('search_users', {
+          search_query: safeQuery,
+        });
 
         console.log('Search results:', data);
 
         if (error) throw error;
         if (cancelled) return;
 
-        setResults((data ?? []) as SearchUserResult[]);
+        setResults(
+          ((data ?? []) as SearchUserRow[])
+            .map(normalizeResult)
+            .filter((result) => Boolean(result.user_id)),
+        );
         setSearched(true);
       } catch (err) {
         if (!cancelled) {
@@ -104,15 +121,15 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search by email or name..."
-          aria-label="Search people"
+          placeholder="Enter user's email to search..."
+          aria-label="Search users by email"
           style={styles.input}
           autoFocus
         />
         {loading ? <span style={styles.spinner} aria-hidden="true" /> : null}
       </div>
 
-      <p style={styles.hint}>Find anyone — patients and doctors — to start a conversation.</p>
+      <p style={styles.hint}>Search any user by email to start a conversation.</p>
 
       {error ? <p role="alert" style={styles.inlineError}>{error}</p> : null}
       {pickError ? <p role="alert" style={styles.inlineError}>{pickError}</p> : null}
