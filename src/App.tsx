@@ -395,7 +395,7 @@ function App() {
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? '');
 
   const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
-  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'free';
+  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'basic';
   const planOptions = getPlans(t);
   const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
   const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;

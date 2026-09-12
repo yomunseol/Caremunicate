@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useLang } from '../i18n';
 
-export type PlanId = 'free' | 'care-plus' | 'doctor' | 'clinic' | 'department' | 'hospital';
+export type PlanId = 'basic' | 'plus' | 'pro' | 'independent-doctor' | 'department' | 'hospital';
 
 export type Plan = {
   id: PlanId;
@@ -34,42 +34,48 @@ type PlanMeta = {
 };
 
 // Language-neutral plan metadata. Every visible string resolves through i18n,
-// so the four plans exist once and render in all locales.
+// so the six plans exist once and render in all locales.
 const PLAN_META: PlanMeta[] = [
   {
-    id: 'free',
-    base: 'pricing.free',
-    price: '$0',
-    cadence: '/mo',
-    bulletKeys: ['pricing.free.b1', 'pricing.free.b2', 'pricing.free.b3'],
-    signupRole: 'patient',
-    grantsDoctorRole: false,
-  },
-  {
-    id: 'care-plus',
-    base: 'pricing.carePlus',
+    id: 'basic',
+    base: 'pricing.basic',
     price: '$9',
     cadence: '/mo',
-    bulletKeys: ['pricing.carePlus.b1', 'pricing.carePlus.b2', 'pricing.carePlus.b3'],
+    bulletKeys: ['pricing.basic.b1', 'pricing.basic.b2', 'pricing.basic.b3'],
     popular: true,
     signupRole: 'patient',
     grantsDoctorRole: false,
   },
   {
-    id: 'doctor',
-    base: 'pricing.doctor',
+    id: 'plus',
+    base: 'pricing.plus',
     price: '$29',
     cadence: '/mo',
-    bulletKeys: ['pricing.doctor.b1', 'pricing.doctor.b2', 'pricing.doctor.b3', 'pricing.doctor.b4'],
-    signupRole: 'doctor',
-    grantsDoctorRole: true,
+    bulletKeys: ['pricing.plus.b1', 'pricing.plus.b2', 'pricing.plus.b3'],
+    signupRole: 'patient',
+    grantsDoctorRole: false,
   },
   {
-    id: 'clinic',
-    base: 'pricing.clinic',
+    id: 'pro',
+    base: 'pricing.pro',
+    price: '$49',
+    cadence: '/mo',
+    bulletKeys: ['pricing.pro.b1', 'pricing.pro.b2'],
+    signupRole: 'patient',
+    grantsDoctorRole: false,
+  },
+  {
+    id: 'independent-doctor',
+    base: 'pricing.independentDoctor',
     price: '$79',
     cadence: '/mo',
-    bulletKeys: ['pricing.clinic.b1', 'pricing.clinic.b2', 'pricing.clinic.b3'],
+    bulletKeys: [
+      'pricing.independentDoctor.b1',
+      'pricing.independentDoctor.b2',
+      'pricing.independentDoctor.b3',
+      'pricing.independentDoctor.b4',
+      'pricing.independentDoctor.b5',
+    ],
     signupRole: 'doctor',
     grantsDoctorRole: true,
   },
