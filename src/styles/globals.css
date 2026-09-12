@@ -800,10 +800,10 @@ img {
   margin-right: 0.45rem;
 }
 
-/* Four actionable plans: 4 across on desktop, 2 at <=980px, 1 at <=720px
-   (the responsive overrides below already handle the smaller breakpoints). */
+/* Six plans: 3 across on desktop (two clean rows), 2 at <=980px, 1 at <=720px.
+   The grid wraps automatically, so no card is ever clipped. */
 .pricing-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .plan-badges {

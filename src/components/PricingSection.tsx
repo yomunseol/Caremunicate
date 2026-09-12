@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import { useLang } from '../i18n';
 
-export type PlanId = 'free' | 'care-plus' | 'doctor' | 'clinic';
+export type PlanId = 'free' | 'care-plus' | 'doctor' | 'clinic' | 'department' | 'hospital';
 
 export type Plan = {
   id: PlanId;
@@ -70,6 +70,34 @@ const PLAN_META: PlanMeta[] = [
     price: '$79',
     cadence: '/mo',
     bulletKeys: ['pricing.clinic.b1', 'pricing.clinic.b2', 'pricing.clinic.b3'],
+    signupRole: 'doctor',
+    grantsDoctorRole: true,
+  },
+  {
+    id: 'department',
+    base: 'pricing.department',
+    price: '$149',
+    cadence: '/mo',
+    bulletKeys: [
+      'pricing.department.b1',
+      'pricing.department.b2',
+      'pricing.department.b3',
+      'pricing.department.b4',
+    ],
+    signupRole: 'doctor',
+    grantsDoctorRole: true,
+  },
+  {
+    id: 'hospital',
+    base: 'pricing.hospital',
+    price: '$399',
+    cadence: '/mo',
+    bulletKeys: [
+      'pricing.hospital.b1',
+      'pricing.hospital.b2',
+      'pricing.hospital.b3',
+      'pricing.hospital.b4',
+    ],
     signupRole: 'doctor',
     grantsDoctorRole: true,
   },
