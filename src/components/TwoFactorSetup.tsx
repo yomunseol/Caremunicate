@@ -120,6 +120,36 @@ const badgeStyle = {
   whiteSpace: 'nowrap' as const,
 };
 
+const noticeStyle = {
+  margin: 0,
+  padding: '0.6rem 0.8rem',
+  border: '1px solid #f0d27a',
+  borderRadius: '0.7rem',
+  background: '#fff7d6',
+  color: '#8a6d1a',
+  fontSize: '0.82rem',
+  fontWeight: 600,
+  lineHeight: 1.45,
+};
+
+const resendRowStyle = {
+  display: 'flex',
+  gap: '0.5rem',
+  alignItems: 'stretch',
+};
+
+const resendButtonStyle = {
+  border: '1px solid rgba(62, 169, 133, 0.3)',
+  borderRadius: '999px',
+  padding: '0.6rem 0.9rem',
+  background: 'transparent',
+  color: '#216e5d',
+  fontWeight: 700,
+  cursor: 'pointer',
+  fontSize: '0.82rem',
+  whiteSpace: 'nowrap' as const,
+};
+
 function findTotpFactor(factors: Factor[] | undefined): Factor | null {
   return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
 }
@@ -140,6 +170,10 @@ export default function TwoFactorSetup() {
   const [verificationCode, setVerificationCode] = useState('');
   const [emailEnrolling, setEmailEnrolling] = useState(false);
   const [emailCode, setEmailCode] = useState('');
+  // Yellow, non-blocking notice when the OTP send fails (never blocks the view).
+  const [sendNotice, setSendNotice] = useState('');
+  // Resend cooldown, counted down one second at a time.
+  const [resendIn, setResendIn] = useState(0);
 
   // Load the real state once: a TOTP factor from Supabase MFA, plus the
   // saved profile preference ('email' | 'app' | 'none').
@@ -198,6 +232,13 @@ export default function TwoFactorSetup() {
       cancelled = true;
     };
   }, []);
+
+  // Tick the resend cooldown down to zero.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
 
   const savePreference = async (value: TwoFactorMethod) => {
     const userId = await getUserId();
@@ -259,10 +300,33 @@ export default function TwoFactorSetup() {
     return true;
   };
 
+  // Sends (or resends) the email OTP. Fault-tolerant: a send error surfaces a
+  // yellow notice and returns false, but the caller still opens the code-entry
+  // view — a code may arrive even when the API reported a failure.
+  const sendEmailCode = async (): Promise<boolean> => {
+    const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
+    const { data, error } = await supabase.auth.signInWithOtp({
+      email: userEmail,
+      options: { shouldCreateUser: false },
+    });
+    console.log('[2FA] email OTP send response:', { data, error });
+
+    if (error) {
+      console.log('OTP send error:', error);
+      setSendNotice('Send error — but if a code arrived in your inbox, enter it below.');
+      return false;
+    }
+
+    setSendNotice('');
+    setResendIn(30);
+    return true;
+  };
+
   const handleMethodChange = async (next: TwoFactorMethod) => {
     if (loading || next === method) return;
     setError('');
     setMessage('');
+    setSendNotice('');
     setLoading(true);
 
     // Leaving app (authenticator): unenroll the live TOTP factor first.
@@ -279,20 +343,11 @@ export default function TwoFactorSetup() {
       await savePreference('none');
       setMessage('Two-factor authentication is off.');
     } else if (next === 'email') {
-      // Trigger a native email OTP so the user can prove inbox access.
-      const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
-      const { data: otpData, error: otpError } = await supabase.auth.signInWithOtp({
-        email: userEmail,
-        options: { shouldCreateUser: false },
-      });
-      console.log('[2FA] email OTP send response:', { data: otpData, error: otpError });
-      if (otpError) {
-        setError(otpError.message);
-        setLoading(false);
-        return;
-      }
+      // Trigger a native email OTP so the user can prove inbox access. The code
+      // entry view opens even if the send fails, so the user is never dead-ended.
+      const sent = await sendEmailCode();
       setEmailCode('');
-      setMessage('2FA Code Sent. Check your email for the 6-digit code.');
+      setMessage(sent ? '2FA Code Sent. Check your email for the 6-digit code.' : '');
       setEmailEnrolling(true);
     } else {
       // 'app': kick off the TOTP enrollment wizard.
@@ -396,6 +451,21 @@ export default function TwoFactorSetup() {
     setLoading(false);
   };
 
+  // Resend the email code (30s cooldown). Same send path as the radio handler,
+  // so it uses shouldCreateUser: false and never dead-ends on failure.
+  const handleResendEmailCode = async () => {
+    if (resendIn > 0 || loading) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      const sent = await sendEmailCode();
+      if (sent) setMessage('2FA Code Sent. Check your email for the 6-digit code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCancelEnroll = () => {
     setEnrolling(false);
     setTotpUri('');
@@ -403,6 +473,8 @@ export default function TwoFactorSetup() {
     setEmailEnrolling(false);
     setEmailCode('');
     setError('');
+    setSendNotice('');
+    setResendIn(0);
     // The unverified factor may still exist server-side; reconcile.
     void (async () => {
       const { data, error: listError } = await supabase.auth.mfa.listFactors();
@@ -529,22 +601,40 @@ export default function TwoFactorSetup() {
 
         {emailEnrolling ? (
           <form onSubmit={handleEmailVerify} style={{ display: 'grid', gap: '0.9rem' }}>
+            {sendNotice ? <p style={noticeStyle} role="status">{sendNotice}</p> : null}
+
             <p style={descriptionStyle}>
-              We sent a 6-digit code to your email. Enter it below to confirm email-code 2FA.
+              {sendNotice
+                ? 'Enter the 6-digit code below to confirm email-code 2FA.'
+                : 'We sent a 6-digit code to your email. Enter it below to confirm email-code 2FA.'}
             </p>
-            <input
-              style={inputStyle}
-              value={emailCode}
-              onChange={(event) => setEmailCode(event.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              placeholder="Enter 6-digit code"
-              aria-label="Six-digit email code"
-              disabled={loading}
-              required
-            />
+
+            <div style={resendRowStyle}>
+              <input
+                style={{ ...inputStyle, width: 'auto', flex: 1, minWidth: 0 }}
+                value={emailCode}
+                onChange={(event) => setEmailCode(event.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="[0-9]{6}"
+                placeholder="Enter 6-digit code"
+                aria-label="Six-digit email code"
+                disabled={loading}
+                required
+              />
+              <button
+                type="button"
+                style={{
+                  ...resendButtonStyle,
+                  ...(resendIn > 0 || loading ? { opacity: 0.55, cursor: 'not-allowed' as const } : null),
+                }}
+                onClick={() => void handleResendEmailCode()}
+                disabled={resendIn > 0 || loading}
+              >
+                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+              </button>
+            </div>
 
             <button type="submit" style={buttonStyle} disabled={loading}>
               {loading ? 'Verifying...' : 'Verify and enable email 2FA'}

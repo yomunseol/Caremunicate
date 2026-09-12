@@ -29,6 +29,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  // Yellow, non-blocking notice shown when the OTP send fails. It never stops
+  // the code-entry view from rendering.
+  const [sendNotice, setSendNotice] = useState('');
+  // Resend cooldown, counted down one second at a time.
+  const [resendIn, setResendIn] = useState(0);
 
   // Clear any partially-persisted session from a previous attempt whenever the
   // component mounts (arriving at the login screen) or the view resets.
@@ -39,6 +44,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Tick the resend cooldown down to zero.
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
+
   // Final step for every no-2FA success path. Clear any pending flag, then
   // hard-redirect: a full page load bypasses any React state that may not have
   // flushed after the async auth flow (same pattern as the 2FA verify
@@ -47,6 +59,28 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     setPending2FA(false);
     console.log('Redirecting to dashboard now');
     window.location.href = '/#profile';
+  };
+
+  // Sends (or resends) the email OTP. Fault-tolerant by design: a send error
+  // does NOT throw or dead-end — it surfaces a yellow notice and returns false
+  // so the caller still shows the 6-digit code entry view. A code may have
+  // arrived even when the API reported a failure.
+  const sendEmailCode = async (): Promise<boolean> => {
+    const { data, error: otpError } = await supabaseMemory.auth.signInWithOtp({
+      email: email.trim(),
+      options: { shouldCreateUser: false },
+    });
+    console.log('Branch C (email): signInWithOtp response:', { data, error: otpError });
+
+    if (otpError) {
+      console.log('OTP send error:', otpError);
+      setSendNotice('Send error — but if a code arrived in your inbox, enter it below.');
+      return false;
+    }
+
+    setSendNotice('');
+    setResendIn(30);
+    return true;
   };
 
   // Step 1: The Password Trap.
@@ -179,22 +213,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
         return;
       }
 
-      // Branch C: email 2FA. Trigger a native email OTP code.
+      // Branch C: email 2FA. Trigger a native email OTP code, then always show
+      // the code entry view — even if the send failed.
       if (preference === 'email') {
-        const { data: otpData, error: otpError } = await supabaseMemory.auth.signInWithOtp({
-          email: email.trim(),
-          options: { shouldCreateUser: false },
-        });
-        console.log('Branch C (email): signInWithOtp response:', { data: otpData, error: otpError });
-
-        if (otpError) {
-          setPending2FA(false);
-          setError(otpError.message);
-          setLoading(false);
-          return;
-        }
-
-        console.log('Branch C (email): email code sent. Switching to email_code view.');
+        await sendEmailCode();
+        console.log('Branch C (email): switching to email_code view (send errors are non-fatal).');
         setCode('');
         setView('email_code');
         setLoading(false);
@@ -370,12 +393,28 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
+  // Resend the email code (30s cooldown). Same send path as Branch C, so it
+  // uses shouldCreateUser: false and never dead-ends on failure.
+  const handleResendCode = async () => {
+    if (resendIn > 0 || loading) return;
+
+    setLoading(true);
+    setError('');
+    try {
+      await sendEmailCode();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const goBackToPassword = () => {
     setPending2FA(false);
     setView('password');
     setError('');
     setMessage('');
     setCode('');
+    setSendNotice('');
+    setResendIn(0);
   };
 
   const styles = {
@@ -433,6 +472,30 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     },
     error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.9rem' },
     message: { margin: 0, color: '#216e5d', fontWeight: 600, fontSize: '0.9rem' },
+    notice: {
+      margin: 0,
+      padding: '0.6rem 0.8rem',
+      border: '1px solid #f0d27a',
+      borderRadius: '0.7rem',
+      background: '#fff7d6',
+      color: '#8a6d1a',
+      fontSize: '0.82rem',
+      fontWeight: 600,
+      lineHeight: 1.45,
+    },
+    resendRow: { display: 'flex', gap: '0.5rem', alignItems: 'stretch' },
+    resendButton: {
+      border: '1px solid rgba(62, 169, 133, 0.3)',
+      borderRadius: '999px',
+      padding: '0.6rem 0.9rem',
+      background: 'transparent',
+      color: '#216e5d',
+      fontWeight: 700,
+      cursor: 'pointer',
+      fontSize: '0.82rem',
+      whiteSpace: 'nowrap' as const,
+    },
+    resendButtonDisabled: { opacity: 0.55, cursor: 'not-allowed' as const },
   };
 
   const isCodeView = view === 'app_code' || view === 'email_code';
@@ -452,7 +515,9 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           {view === 'app_code'
             ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
             : view === 'email_code'
-              ? `A 6-digit code was sent to ${email.trim()}. Enter it below to finish signing in.`
+              ? sendNotice
+                ? `Enter the 6-digit code for ${email.trim()} below.`
+                : `A 6-digit code was sent to ${email.trim()}. Enter it below to finish signing in.`
               : 'Sign in with your email and password.'}
         </p>
       </div>
@@ -529,21 +594,33 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       {view === 'email_code' ? (
         <form onSubmit={handleEmailCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
+          {sendNotice ? <p style={styles.notice} role="status">{sendNotice}</p> : null}
+
           <div style={styles.field}>
             <label style={styles.label} htmlFor="pa-email-code">Email code</label>
-            <input
-              id="pa-email-code"
-              style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center' }}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              placeholder="000000"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              disabled={loading}
-              required
-            />
+            <div style={styles.resendRow}>
+              <input
+                id="pa-email-code"
+                style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center', width: 'auto', flex: 1, minWidth: 0 }}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                pattern="[0-9]{6}"
+                placeholder="000000"
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                disabled={loading}
+                required
+              />
+              <button
+                type="button"
+                style={{ ...styles.resendButton, ...(resendIn > 0 || loading ? styles.resendButtonDisabled : null) }}
+                onClick={() => void handleResendCode()}
+                disabled={resendIn > 0 || loading}
+              >
+                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+              </button>
+            </div>
           </div>
 
           <button type="submit" style={styles.primaryButton} disabled={loading}>
