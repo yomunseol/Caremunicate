@@ -1,10 +1,12 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { resolveDisplayName } from '../lib/displayName';
 
 export interface SearchUserResult {
   user_id: string;
   username: string | null;
+  email: string | null;
   role: string;
 }
 
@@ -32,7 +34,8 @@ type SearchUserRow = {
 
 const normalizeResult = (row: SearchUserRow): SearchUserResult => ({
   user_id: String(row.user_id ?? row.id ?? ''),
-  username: row.username ?? row.email ?? null,
+  username: row.username ?? null,
+  email: row.email ?? null,
   role: row.role ?? '',
 });
 
@@ -139,25 +142,28 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
           <p style={styles.emptyText}>No users match "{trimmed}".</p>
         ) : (
           <ul style={styles.resultList}>
-            {results.map((user) => (
-              <li key={user.user_id}>
-                <button
-                  type="button"
-                  onClick={() => void handlePick(user)}
-                  disabled={busyId !== null}
-                  style={styles.resultRow}
-                >
-                  <span style={styles.avatar}>{user.username?.charAt(0).toUpperCase() ?? '?'}</span>
-                  <span style={styles.resultCopy}>
-                    <strong style={styles.resultName}>{user.username ?? 'Unnamed user'}</strong>
-                    <span style={styles.resultRole}>{ROLE_LABELS[user.role] ?? user.role}</span>
-                  </span>
-                  <span style={styles.resultAction}>
-                    {busyId === user.user_id ? 'Opening…' : 'Chat'}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {results.map((user) => {
+              const displayName = resolveDisplayName(user.username, user.email);
+              return (
+                <li key={user.user_id}>
+                  <button
+                    type="button"
+                    onClick={() => void handlePick(user)}
+                    disabled={busyId !== null}
+                    style={styles.resultRow}
+                  >
+                    <span style={styles.avatar}>{displayName.charAt(0).toUpperCase()}</span>
+                    <span style={styles.resultCopy}>
+                      <strong style={styles.resultName}>{displayName}</strong>
+                      <span style={styles.resultRole}>{ROLE_LABELS[user.role] ?? user.role}</span>
+                    </span>
+                    <span style={styles.resultAction}>
+                      {busyId === user.user_id ? 'Opening…' : 'Chat'}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )
       ) : null}

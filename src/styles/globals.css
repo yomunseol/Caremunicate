@@ -724,6 +724,116 @@ img {
   margin-right: 0.45rem;
 }
 
+/* Four actionable plans: 4 across on desktop, 2 at <=980px, 1 at <=720px
+   (the responsive overrides below already handle the smaller breakpoints). */
+.pricing-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.plan-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.plan-current {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0.36rem 0.66rem;
+  border-radius: 999px;
+  background: rgba(33, 110, 93, 0.12);
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.plan-cadence {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pricing-footnote {
+  margin: 1.25rem 0 0;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+/* Sign-up plan preselection banner (#signup?plan=...) */
+.plan-selected-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(62, 169, 133, 0.3);
+  border-radius: 1rem;
+  background: var(--accent-soft);
+}
+
+.plan-selected-banner > div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.plan-selected-label {
+  color: var(--accent-strong);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.plan-selected-banner strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.plan-selected-banner small {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.plan-selected-banner button {
+  border: 1px solid rgba(62, 169, 133, 0.3);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Confirmation toast after a plan is applied */
+.plan-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  z-index: 60;
+  max-width: min(92vw, 30rem);
+  padding: 0.85rem 1.15rem;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: linear-gradient(120deg, #48b58f, #7adab1);
+  color: var(--button-text);
+  font-size: 0.9rem;
+  font-weight: 700;
+  box-shadow: 0 18px 40px rgba(17, 55, 47, 0.22);
+  animation: fadeInUp 240ms cubic-bezier(.22,1,.36,1) both;
+}
+
+.plan-toast.is-error {
+  background: linear-gradient(120deg, #d9736a, #f0a99f);
+  color: #4a1610;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { resolveDisplayName } from '../lib/displayName';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
 
 interface ParticipantMeta {
@@ -38,24 +39,29 @@ async function fetchParticipants(conversationId: string) {
   const rows = (data ?? []) as Array<{ user_id: string; role: string }>;
   const userIds = rows.map((row) => row.user_id);
 
-  const usernames = new Map<string, string>();
+  // Display names: username, else the email prefix. Never empty.
+  const displayNames = new Map<string, string>();
   if (userIds.length > 0) {
     const { data: profiles, error: profilesError } = await supabase
       .from('profiles')
-      .select('user_id, username')
+      .select('*')
       .in('user_id', userIds);
 
     if (profilesError) throw profilesError;
 
-    for (const profile of (profiles ?? []) as Array<{ user_id: string; username: string | null }>) {
-      usernames.set(profile.user_id, profile.username ?? '');
+    for (const profile of (profiles ?? []) as Array<{
+      user_id: string;
+      username: string | null;
+      email?: string | null;
+    }>) {
+      displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email));
     }
   }
 
   return rows.map((row) => ({
     userId: row.user_id,
     role: row.role,
-    name: usernames.get(row.user_id) ?? 'Participant',
+    name: displayNames.get(row.user_id) ?? 'Participant',
   }));
 }
 
@@ -129,8 +135,8 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
     try {
       await sendMessage(content);
       setDraft('');
-    } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Could not send your message. Please try again.');
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : String(error));
     } finally {
       setSending(false);
     }

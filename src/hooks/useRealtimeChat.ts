@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../context/AuthContext';
 
 export interface ChatMessage {
   id: string;
@@ -13,6 +14,7 @@ const compareByCreatedAt = (a: ChatMessage, b: ChatMessage) =>
   a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
 
 export function useRealtimeChat(conversationId: string) {
+  const { user: currentUser } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,26 +103,25 @@ export function useRealtimeChat(conversationId: string) {
 
   const sendMessage = useCallback(
     async (content: string): Promise<ChatMessage> => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) throw new Error('Not authenticated — cannot send a message.');
+      if (!currentUser) throw new Error('Not authenticated — cannot send a message.');
 
       const { data, error } = await supabase
         .from('messages')
         .insert({
           conversation_id: conversationId,
-          sender_id: user.id,
+          sender_id: currentUser.id,
           content,
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.log('SEND ERROR:', error);
+        throw error;
+      }
       return data as ChatMessage;
     },
-    [conversationId],
+    [conversationId, currentUser],
   );
 
   return { messages, loading, error, sendMessage };

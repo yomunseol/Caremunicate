@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
+import { resolveDisplayName } from '../lib/displayName';
 
 export interface ChatListItem {
   conversationId: string;
@@ -111,20 +112,24 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
           if (!peers.has(peer.conversation_id)) peers.set(peer.conversation_id, peer);
         }
 
-        // 3) Peer display names.
+        // 3) Peer display names: username, else the email prefix.
         const peerUserIds = [...new Set([...peers.values()].map((peer) => peer.user_id))];
-        const usernames = new Map<string, string>();
+        const displayNames = new Map<string, string>();
 
         if (peerUserIds.length > 0) {
           const { data: profiles, error: profilesError } = await supabase
             .from('profiles')
-            .select('user_id, username')
+            .select('*')
             .in('user_id', peerUserIds);
 
           if (profilesError) throw profilesError;
 
-          for (const profile of (profiles ?? []) as Array<{ user_id: string; username: string | null }>) {
-            usernames.set(profile.user_id, profile.username ?? '');
+          for (const profile of (profiles ?? []) as Array<{
+            user_id: string;
+            username: string | null;
+            email?: string | null;
+          }>) {
+            displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email));
           }
         }
 
@@ -151,7 +156,7 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
           nextItems.push({
             conversationId,
             peerId: peer.user_id,
-            peerName: usernames.get(peer.user_id) ?? 'Participant',
+            peerName: displayNames.get(peer.user_id) ?? 'Participant',
             peerRole: peer.role,
             preview: last ? previewOf(last.content) : 'No messages yet — say hello.',
             at: last?.created_at ?? null,

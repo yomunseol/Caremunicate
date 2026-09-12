@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { MessageCircle, X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { resolveDisplayName } from '../lib/displayName';
 import { createDirectConversation } from '../lib/conversations';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
 import { ChatList, type ChatListItem } from './ChatList';
@@ -78,7 +79,7 @@ function ThreadView({
       await sendMessage(content);
       setDraft('');
     } catch (err) {
-      setSendError(err instanceof Error ? err.message : 'Could not send your message.');
+      setSendError(err instanceof Error ? err.message : String(err));
     } finally {
       setSending(false);
     }
@@ -91,7 +92,7 @@ function ThreadView({
           ←
         </button>
         <div style={styles.threadPeer}>
-          <strong style={styles.threadPeerName}>{thread.peerName}</strong>
+          <strong style={styles.threadPeerName}>{thread.peerName?.trim() || 'Participant'}</strong>
           <span style={styles.roleBadge}>{ROLE_LABELS[thread.peerRole] ?? 'Care member'}</span>
         </div>
       </div>
@@ -225,7 +226,7 @@ export default function FloatingChatWidget() {
     }
 
     lastSeenRef.current = Date.now();
-    openThread(conversationId, user.username ?? 'Participant', user.role);
+    openThread(conversationId, resolveDisplayName(user.username, user.email), user.role);
   };
 
   const closeWidget = () => {

@@ -7,21 +7,12 @@ import PasswordAuth from './components/PasswordAuth';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
+import PricingSection, { PLANS, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor';
-
-interface Plan {
-  name: string;
-  price: string;
-  subtitle: string;
-  description: string;
-  bullets: string[];
-  badge?: string;
-  cta: string;
-}
 
 const featureCards = [
   {
@@ -62,115 +53,34 @@ const featureCards = [
   },
 ];
 
-const plans: Plan[] = [
-  {
-    name: 'Patient Basic',
-    price: '$9/month',
-    subtitle: 'Essential access for occasional care needs.',
-    description: 'Simple access for lighter use and everyday care discovery.',
-    bullets: [
-      'Up to 3 voice consultations / month',
-      'Up to 1 short video consultation / month',
-      'Basic doctor discovery',
-      'Save up to 3 doctors to wishlist',
-      'Standard queue routing',
-    ],
-    cta: 'Choose Basic',
-  },
-  {
-    name: 'Patient + Assigned Doctor',
-    price: '$29/month',
-    subtitle: 'A dedicated physician who knows your history and prioritizes your calls.',
-    description: 'A strong middle tier for continuity, priority routing, and follow-up care.',
-    bullets: [
-      'Up to 10 high-quality voice & video consultations',
-      'Dedicated assigned doctor',
-      'Priority routing & emergency line',
-      'Unlimited wishlist',
-      'Follow-up scheduling',
-    ],
-    badge: 'Most chosen',
-    cta: 'Choose Assigned Doctor',
-  },
-  {
-    name: 'Patient Pro',
-    price: '$49/month',
-    subtitle: 'For those who seek very often consultations.',
-    description: 'A premium patient plan for frequent communication and rapid support.',
-    bullets: [
-      'Unlimited voice & video consultations per month (1 per day)',
-      '2-3 assigned doctors',
-      'Fastest priority routing',
-      'Emergency line',
-      'Automatic scheduling with AI',
-    ],
-    cta: 'Choose Pro',
-  },
-  {
-    name: 'Independent Doctor',
-    price: '$69/month',
-    subtitle: 'For independent physicians who want to see patients directly on Caremunicate.',
-    description: 'A doctor-focused plan for personal patient lists and direct care access.',
-    bullets: [
-      'Verified public doctor profile',
-      'Accept voice & video consultations',
-      'Personal patient list & notes',
-      'Own scheduling & availability',
-      'Direct payouts, no hospital required',
-    ],
-    cta: 'Join as doctor',
-  },
-  {
-    name: 'Department Plan',
-    price: '$149/month',
-    subtitle: 'For hospital departments — onboard your team and patients together.',
-    description: 'A department-level plan for internal care coordination and patient sync.',
-    bullets: [
-      'Up to 5 doctor accounts / department',
-      'Department-wide patient sync',
-      'Emergency dispatch tools',
-      'Analytics & compliance dashboard',
-    ],
-    cta: 'Talk to sales',
-  },
-  {
-    name: 'Hospital Plan',
-    price: '$399/month',
-    subtitle: 'For hospital-wide oversight and high-volume communication.',
-    description: 'A large-scale plan for full hospital orchestration and AI-integrated workflows.',
-    bullets: [
-      'Up to 5 underlying departments',
-      'Hospital-wide patient syncing',
-      'Emergency dispatch tools',
-      'Direct payouts and systematic tools with AI integration',
-    ],
-    cta: 'Talk to sales',
-  },
-];
-
 type ParsedRoute = {
   route: RouteKey;
   conversationId: string | null;
+  plan: string | null;
 };
 
 // Hash formats supported:
 //   #home, #signup, #login, #profile, #pricing   (existing routes)
+//   #signup?plan=care-plus                       (plan preselected from pricing)
 //   #/chat/<conversationId>  (chat, set by the chat list and dashboard)
 const parseHash = (hash: string): ParsedRoute => {
   const clean = hash.replace(/^#\/?/, '');
-  const [name, ...rest] = clean.split('/');
+  const [rawName, ...rest] = clean.split('/');
+  const [name, query = ''] = rawName.split('?');
+  const params = new URLSearchParams(query);
 
   if (name === 'chat') {
     const id = rest.join('/');
     return id
-      ? { route: 'chat', conversationId: id }
-      : { route: 'home', conversationId: null };
+      ? { route: 'chat', conversationId: id, plan: null }
+      : { route: 'home', conversationId: null, plan: null };
   }
 
   const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
+    plan: params.get('plan'),
   };
 };
 
@@ -179,6 +89,12 @@ const getInitialRoute = (): RouteKey =>
 
 const getInitialConversationId = (): string | null =>
   typeof window === 'undefined' ? null : parseHash(window.location.hash).conversationId;
+
+const getInitialPlan = (): PlanId | null => {
+  if (typeof window === 'undefined') return null;
+  const { plan } = parseHash(window.location.hash);
+  return isPlanId(plan) ? plan : null;
+};
 
 type SignupFormValues = {
   fullName: string;
@@ -244,7 +160,14 @@ function App() {
   const [authMessageType, setAuthMessageType] = useState<'success' | 'error'>('error');
   const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
-  const [upgradeMessage, setUpgradeMessage] = useState('');
+  // Plan chosen on the pricing page. Persisted in the URL as
+  // #signup?plan=<id> so it survives a refresh on the sign-up screen.
+  const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(getInitialPlan);
+  // The plan currently being written to the DB (drives the button's loading state).
+  const [pendingPlan, setPendingPlan] = useState<PlanId | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  // Bumped after a successful plan write to re-read profiles without a reload.
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -252,6 +175,12 @@ function App() {
       setRoute(parsed.route);
       setConversationId(parsed.conversationId);
       setAuthMode(parsed.route === 'login' ? 'login' : 'signup');
+      // Only overwrite the selection when the URL actually carries a valid
+      // plan (deep link / browser back into #signup?plan=...). A plain #signup
+      // keeps the plan the visitor already picked.
+      if (isPlanId(parsed.plan)) {
+        setSelectedPlan(parsed.plan);
+      }
     };
 
     window.addEventListener('hashchange', syncRoute);
@@ -269,17 +198,18 @@ function App() {
         return;
       }
 
+      // `.maybeSingle()` because a user may legitimately have no profiles row
+      // yet — that is a normal state, not an error.
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', currentUser.id)
-        .single();
+        .maybeSingle();
 
       if (cancelled) return;
 
-      if (error?.code === 'PGRST116') {
-        setProfileData(null);
-      } else if (error) {
+      if (error) {
+        console.error('Could not load profile:', error.message);
         setProfileData(null);
       } else {
         setProfileData(data);
@@ -291,7 +221,14 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, profileRefreshKey]);
+
+  // Auto-dismiss the plan toast so it never lingers over the page.
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const navigate = (nextRoute: RouteKey) => {
     if ((nextRoute === 'profile' || nextRoute === 'chat') && (!currentUser || pending2FA)) {
@@ -313,7 +250,7 @@ function App() {
     setSignupErrors({});
     setTouchedFields({});
     setAuthMessage('');
-    const hash = mode === 'login' ? '#login' : '#signup';
+    const hash = mode === 'signup' && selectedPlan ? `#signup?plan=${selectedPlan}` : mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
 
@@ -446,6 +383,7 @@ function App() {
               specialty: signupValues.specialty.trim(),
               clinic: signupValues.clinic.trim(),
             } : {}),
+            ...(selectedPlan ? { plan: selectedPlan } : {}),
           },
         },
       });
@@ -479,7 +417,79 @@ function App() {
     navigate('home');
   };
 
+  // Pricing CTAs. Logged-out visitors are sent to sign-up with the plan
+  // preselected; logged-in users get the plan written to profiles.plan
+  // (Doctor/Clinic also promote the account to the doctor role).
+  const selectPlan = async (plan: PlanId) => {
+    console.log('Plan selected:', plan);
+
+    const option = PLANS.find((item) => item.id === plan);
+    if (!option) return;
+
+    if (!currentUser) {
+      setSelectedPlan(plan);
+      setAuthRole(option.signupRole);
+      setSignupValues((previous) => ({ ...previous, role: option.signupRole }));
+      setAuthMode('signup');
+      setRoute('signup');
+      setConversationId(null);
+      setSignupErrors({});
+      setTouchedFields({});
+      setAuthMessage('');
+      setProfileMenuOpen(false);
+      window.history.pushState({}, '', `${window.location.pathname}#signup?plan=${plan}`);
+      return;
+    }
+
+    setPendingPlan(plan);
+    try {
+      const payload = option.grantsDoctorRole ? { plan, role: 'doctor' } : { plan };
+
+      // Check for an existing row rather than a bare UPDATE, which would
+      // silently affect zero rows for a user who has no profile yet.
+      const { data: existing, error: findError } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', currentUser.id)
+        .maybeSingle();
+
+      console.log('Profile lookup before plan update:', { existing, error: findError });
+      if (findError) throw findError;
+
+      if (existing) {
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(payload)
+          .eq('user_id', currentUser.id);
+        console.log('Plan update result:', { plan, payload, error: updateError });
+        if (updateError) throw updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({ user_id: currentUser.id, ...payload });
+        console.log('Plan insert result:', { plan, payload, error: insertError });
+        if (insertError) throw insertError;
+      }
+
+      setProfileRefreshKey((key) => key + 1);
+      setToast({ message: `You're now on the ${option.name} plan!`, type: 'success' });
+    } catch (error) {
+      console.error('Plan update failed:', error);
+      setToast({
+        message: error instanceof Error ? error.message : 'Could not update your plan. Please try again.',
+        type: 'error',
+      });
+    } finally {
+      setPendingPlan(null);
+    }
+  };
+
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
+
+  const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
+  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'free';
+  const currentPlanOption = PLANS.find((item) => item.id === currentPlanId) ?? PLANS[0];
+  const selectedPlanOption = selectedPlan ? PLANS.find((item) => item.id === selectedPlan) ?? null : null;
 
   // Inline errors only appear once the visitor has interacted with a field
   // (blurred it or submitted the form). This keeps a fresh form calm.
@@ -507,15 +517,12 @@ function App() {
                   type="button"
                   aria-expanded={profileMenuOpen}
                   aria-haspopup="true"
-                  onClick={() => {
-                    setProfileMenuOpen((open) => !open);
-                    setUpgradeMessage('');
-                  }}
+                  onClick={() => setProfileMenuOpen((open) => !open)}
                 >
                   <span className="profile-avatar" aria-hidden="true">{profileDisplayName.charAt(0).toUpperCase()}</span>
                   <span className="profile-trigger-copy">
                     <strong>{profileDisplayName}</strong>
-                    <small>Free plan</small>
+                    <small>{currentPlanOption.name} plan</small>
                   </span>
                   <span className="profile-chevron" aria-hidden="true">{profileMenuOpen ? '▲' : '▼'}</span>
                 </button>
@@ -528,27 +535,29 @@ function App() {
                         <h3>{profileDisplayName}</h3>
                         <p>{currentUser.email}</p>
                       </div>
-                      <span className="plan-status">Free</span>
+                      <span className="plan-status">{currentPlanOption.name}</span>
                     </div>
 
                     <div className="plan-summary">
                       <div className="plan-summary-heading">
                         <span>Current plan</span>
-                        <strong>Free plan</strong>
+                        <strong>{currentPlanOption.name} plan</strong>
                       </div>
-                      <p>Essential access to your profile and Caremunicate care network.</p>
+                      <p>{currentPlanOption.subtitle}</p>
                       <div className="plan-meter" aria-hidden="true"><span /></div>
                     </div>
 
                     <button
                       className="upgrade-button"
                       type="button"
-                      onClick={() => setUpgradeMessage('Payment service currently unavailable')}
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        navigate('pricing');
+                      }}
                     >
                       <span>Upgrade to other plans</span>
                       <span aria-hidden="true">→</span>
                     </button>
-                    {upgradeMessage ? <p className="upgrade-message">{upgradeMessage}</p> : null}
 
                     <button className="popover-profile-link" type="button" onClick={() => {
                       setProfileMenuOpen(false);
@@ -666,33 +675,13 @@ function App() {
               </div>
             </section>
 
-            <section className="section">
-              <div className="section-heading">
-                <div className="eyebrow">Pricing</div>
-                <h2>Fair monthly plans for patients, doctors, and hospitals.</h2>
-                <p>No per-call surcharges and no hidden costs.</p>
-              </div>
-
-              <div className="pricing-grid">
-                {plans.map((plan) => (
-                  <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.name}>
-                    {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
-                    <h3 className="plan-name">{plan.name}</h3>
-                    <div className="plan-price">{plan.price}</div>
-                    <p className="plan-subtitle">{plan.subtitle}</p>
-                    <p className="plan-description">{plan.description}</p>
-                    <ul>
-                      {plan.bullets.map((bullet) => (
-                        <li key={bullet}>{bullet}</li>
-                      ))}
-                    </ul>
-                    <button className="primary-button cta-button" type="button" onClick={() => navigate('pricing')}>
-                      {plan.cta}
-                    </button>
-                  </article>
-                ))}
-              </div>
-            </section>
+            <PricingSection
+              heading="Fair monthly plans for patients, doctors, and hospitals."
+              subheading="No per-call surcharges, no hidden costs, and no sales calls — pick a plan and go."
+              onSelectPlan={(plan) => void selectPlan(plan)}
+              currentPlan={currentUser ? currentPlanId : null}
+              busyPlan={pendingPlan}
+            />
 
             <section className="section">
               <div className="cta-banner">
@@ -773,6 +762,23 @@ function App() {
                 </div>
 
                 {authMode === 'signup' ? (
+                  <>
+                    {selectedPlanOption ? (
+                      <div className="plan-selected-banner">
+                        <div>
+                          <span className="plan-selected-label">Selected plan</span>
+                          <strong>{selectedPlanOption.name}</strong>
+                          <small>
+                            {selectedPlanOption.price}
+                            {selectedPlanOption.cadence} — you can change this any time.
+                          </small>
+                        </div>
+                        <button type="button" onClick={() => navigate('pricing')}>
+                          Change
+                        </button>
+                      </div>
+                    ) : null}
+
                   <form onSubmit={handleSubmit} noValidate>
                     {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                     <>
@@ -942,6 +948,7 @@ function App() {
                       </button>
                     </>
                   </form>
+                  </>
                 ) : (
                   <PasswordAuth onAuthenticated={() => navigate('profile')} />
                 )}
@@ -1036,35 +1043,21 @@ function App() {
         )}
 
         {route === 'pricing' && (
-          <section className="section">
-            <div className="section-heading">
-              <div className="eyebrow">Pricing</div>
-              <h2>Fair fees for patients, doctors, and hospitals.</h2>
-              <p>Simple monthly plans. No per-call surcharges, no hidden costs.</p>
-            </div>
-
-            <div className="pricing-grid">
-              {plans.map((plan) => (
-                <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.name}>
-                  {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
-                  <h3 className="plan-name">{plan.name}</h3>
-                  <div className="plan-price">{plan.price}</div>
-                  <p className="plan-subtitle">{plan.subtitle}</p>
-                  <p className="plan-description">{plan.description}</p>
-                  <ul>
-                    {plan.bullets.map((bullet) => (
-                      <li key={bullet}>{bullet}</li>
-                    ))}
-                  </ul>
-                  <button className="primary-button" type="button">
-                    {plan.cta}
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
+          <PricingSection
+            heading="Simple monthly pricing, ready when you are."
+            subheading="Every plan is self-serve — choose one and it's applied to your account instantly."
+            onSelectPlan={(plan) => void selectPlan(plan)}
+            currentPlan={currentUser ? currentPlanId : null}
+            busyPlan={pendingPlan}
+          />
         )}
       </main>
+
+      {toast ? (
+        <div className={`plan-toast ${toast.type === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">
+          {toast.message}
+        </div>
+      ) : null}
 
       <FloatingChatWidget />
 
