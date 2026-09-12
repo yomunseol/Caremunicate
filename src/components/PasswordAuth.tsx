@@ -7,6 +7,7 @@ import {
   supabaseMemory,
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../i18n';
 
 type View = 'password' | 'app_code' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
@@ -21,6 +22,7 @@ function findTotpFactor(factors: Factor[] | undefined): Factor | null {
 
 export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const { setPending2FA } = useAuth();
+  const { t } = useLang();
   const [view, setView] = useState<View>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -74,7 +76,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
     if (otpError) {
       console.log('OTP send error:', otpError);
-      setSendNotice('Send error — but if a code arrived in your inbox, enter it below.');
+      setSendNotice(t('tfa.sendError'));
       return false;
     }
 
@@ -90,7 +92,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     event.preventDefault();
 
     if (!email.trim() || !password) {
-      setError('Please enter both email and password.');
+      setError(t('login.err.enterBoth'));
       return;
     }
 
@@ -108,7 +110,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       if (signInError) {
         console.log('Password Response (error):', signInError);
-        setError('Invalid credentials');
+        setError(t('login.err.invalidCredentials'));
         return;
       }
 
@@ -240,7 +242,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       goToProfile();
     } catch (caughtError) {
       console.log('LOGIN CRASHED:', caughtError);
-      setError(caughtError instanceof Error ? caughtError.message : 'Something went wrong. Please try again.');
+      setError(caughtError instanceof Error ? caughtError.message : t('auth.msg.errorGeneric'));
     } finally {
       // Guaranteed reset: runs on every return, throw, or fallthrough above,
       // so the submit button can never stay stuck on 'Signing in...'.
@@ -257,7 +259,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
     const token = code.trim();
     if (!token) {
-      setError('Enter the 6-digit code from your authenticator app.');
+      setError(t('login.err.enterAppCode'));
       return;
     }
 
@@ -274,14 +276,14 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       console.log('Challenge+Verify Response:', { data, error: verifyError });
 
       if (verifyError || !data) {
-        setError(verifyError?.message ?? 'Unable to verify code.');
+        setError(verifyError?.message ?? t('login.err.unableVerify'));
         setCode('');
         return;
       }
 
       if (!data.access_token || !data.refresh_token) {
         // Fail closed: without tokens we cannot complete the flow.
-        setError('Verification did not return a session. Please try again.');
+        setError(t('login.err.noSession'));
         setCode('');
         return;
       }
@@ -313,7 +315,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       window.location.href = '/#profile';
     } catch (caughtError) {
       console.error('Verification attempt error:', caughtError);
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to verify code.');
+      setError(caughtError instanceof Error ? caughtError.message : t('login.err.unableVerify'));
       setCode('');
     } finally {
       setLoading(false);
@@ -328,7 +330,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
     const token = code.trim();
     if (!token) {
-      setError('Enter the 6-digit code from your email.');
+      setError(t('login.err.enterEmailCode'));
       return;
     }
 
@@ -353,7 +355,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       if (!data.session) {
         // Fail closed: no session returned means no persistent session to create.
-        setError('Email verification did not return a session. Please try again.');
+        setError(t('login.err.emailNoSession'));
         setCode('');
         return;
       }
@@ -385,7 +387,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       window.location.href = '/#profile';
     } catch (caughtError) {
       console.error('Verification attempt error:', caughtError);
-      setError(caughtError instanceof Error ? caughtError.message : 'Unable to verify code.');
+      setError(caughtError instanceof Error ? caughtError.message : t('login.err.unableVerify'));
       setCode('');
     } finally {
       setLoading(false);
@@ -501,24 +503,24 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const isCodeView = view === 'app_code' || view === 'email_code';
 
   return (
-    <div style={styles.card} role="form" aria-label="Secure sign in">
+    <div style={styles.card} role="form" aria-label={t('login.eyebrow')}>
       <div>
-        <p style={styles.eyebrow}>Secure access</p>
+        <p style={styles.eyebrow}>{t('login.eyebrow')}</p>
         <h2 style={styles.title}>
           {view === 'app_code'
-            ? 'Enter your authenticator code'
+            ? t('login.titleApp')
             : view === 'email_code'
-              ? 'Enter your email code'
-              : 'Welcome back'}
+              ? t('login.titleEmail')
+              : t('login.titleWelcome')}
         </h2>
         <p style={styles.description}>
           {view === 'app_code'
-            ? 'Enter the 6-digit code from your authenticator app to finish signing in.'
+            ? t('login.descApp')
             : view === 'email_code'
               ? sendNotice
-                ? `Enter the 6-digit code for ${email.trim()} below.`
-                : `A 6-digit code was sent to ${email.trim()}. Enter it below to finish signing in.`
-              : 'Sign in with your email and password.'}
+                ? t('login.descEmailEnter', { email: email.trim() })
+                : t('login.descEmailSent', { email: email.trim() })
+              : t('login.descPassword')}
         </p>
       </div>
 
@@ -528,13 +530,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       {view === 'password' ? (
         <form onSubmit={handlePasswordSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-email">Email</label>
+            <label style={styles.label} htmlFor="pa-email">{t('login.labelEmail')}</label>
             <input
               id="pa-email"
               style={styles.input}
               type="email"
               autoComplete="email"
-              placeholder="you@example.com"
+              placeholder={t('login.phEmail')}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               disabled={loading}
@@ -543,13 +545,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           </div>
 
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-password">Password</label>
+            <label style={styles.label} htmlFor="pa-password">{t('login.labelPassword')}</label>
             <input
               id="pa-password"
               style={styles.input}
               type="password"
               autoComplete="current-password"
-              placeholder="Your password"
+              placeholder={t('login.phPassword')}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               disabled={loading}
@@ -558,7 +560,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           </div>
 
           <button type="submit" style={styles.primaryButton} disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? t('login.signingIn') : t('login.signIn')}
           </button>
         </form>
       ) : null}
@@ -566,7 +568,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       {view === 'app_code' ? (
         <form onSubmit={handleAppCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-app-code">Authenticator code</label>
+            <label style={styles.label} htmlFor="pa-app-code">{t('login.labelAppCode')}</label>
             <input
               id="pa-app-code"
               style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center' }}
@@ -583,11 +585,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           </div>
 
           <button type="submit" style={styles.primaryButton} disabled={loading}>
-            {loading ? 'Verifying...' : 'Verify and sign in'}
+            {loading ? t('tfa.verifying') : t('login.verifyAndSignIn')}
           </button>
 
           <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
-            Back to sign in
+            {t('login.backToSignIn')}
           </button>
         </form>
       ) : null}
@@ -597,7 +599,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           {sendNotice ? <p style={styles.notice} role="status">{sendNotice}</p> : null}
 
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-email-code">Email code</label>
+            <label style={styles.label} htmlFor="pa-email-code">{t('login.labelEmailCode')}</label>
             <div style={styles.resendRow}>
               <input
                 id="pa-email-code"
@@ -618,24 +620,24 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
                 onClick={() => void handleResendCode()}
                 disabled={resendIn > 0 || loading}
               >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                {resendIn > 0 ? t('tfa.resendIn', { seconds: resendIn }) : t('tfa.resend')}
               </button>
             </div>
           </div>
 
           <button type="submit" style={styles.primaryButton} disabled={loading}>
-            {loading ? 'Verifying...' : 'Verify and sign in'}
+            {loading ? t('tfa.verifying') : t('login.verifyAndSignIn')}
           </button>
 
           <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
-            Change email
+            {t('login.changeEmail')}
           </button>
         </form>
       ) : null}
 
       {isCodeView && !loading ? (
         <p style={{ ...styles.message, textAlign: 'center' }}>
-          Signed in as {email.trim()}
+          {t('login.signedInAs', { email: email.trim() })}
         </p>
       ) : null}
     </div>

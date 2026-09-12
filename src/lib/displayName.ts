@@ -9,12 +9,16 @@ export function emailPrefix(email?: string | null): string {
   return (prefix ?? '').trim();
 }
 
-export function resolveDisplayName(username?: string | null, email?: string | null): string {
+export function resolveDisplayName(
+  username?: string | null,
+  email?: string | null,
+  fallback = 'Participant',
+): string {
   const name = (username ?? '').trim();
   if (name) return name;
 
   const prefix = emailPrefix(email);
   if (prefix) return prefix;
 
-  return 'Participant';
+  return fallback;
 }

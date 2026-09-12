@@ -3,18 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
+import { useLang } from '../i18n';
 
 interface ParticipantMeta {
   userId: string;
   role: string;
   name: string;
 }
-
-const ROLE_LABELS: Record<string, string> = {
-  patient: 'Patient',
-  doctor: 'Doctor',
-  hospital: 'Hospital',
-};
 
 const formatMessageTime = (iso: string): string => {
   const date = new Date(iso);
@@ -28,7 +23,7 @@ type ChatWindowProps = {
 // Loads participants + display names for a conversation. RLS guarantees this
 // returns rows ONLY if the signed-in user is a participant, so an empty
 // result doubles as the access check.
-async function fetchParticipants(conversationId: string) {
+async function fetchParticipants(conversationId: string, participantLabel: string) {
   const { data, error } = await supabase
     .from('conversation_participants')
     .select('user_id, role')
@@ -54,20 +49,28 @@ async function fetchParticipants(conversationId: string) {
       username: string | null;
       email?: string | null;
     }>) {
-      displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email));
+      displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email, participantLabel));
     }
   }
 
   return rows.map((row) => ({
     userId: row.user_id,
     role: row.role,
-    name: displayNames.get(row.user_id) ?? 'Participant',
+    name: displayNames.get(row.user_id) ?? participantLabel,
   }));
 }
 
 export default function ChatWindow({ conversationId }: ChatWindowProps) {
   const { user } = useAuth();
+  const { t } = useLang();
   const { messages, loading, error, sendMessage } = useRealtimeChat(conversationId);
+
+  const roleLabel = (role: string) => {
+    if (role === 'patient') return t('common.patient');
+    if (role === 'doctor') return t('common.doctor');
+    if (role === 'hospital') return t('common.hospital');
+    return t('chat.careMember');
+  };
 
   const [participants, setParticipants] = useState<ParticipantMeta[]>([]);
   const [metaLoading, setMetaLoading] = useState(true);
@@ -88,18 +91,18 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
       setMetaLoading(true);
       setMetaError(null);
       try {
-        const rows = await fetchParticipants(conversationId);
+        const rows = await fetchParticipants(conversationId, t('chat.participant'));
         if (cancelled) return;
 
         if (rows.length === 0) {
-          setMetaError('This conversation does not exist or you are not a participant.');
+          setMetaError(t('chat.conversationMissing'));
           setParticipants([]);
           return;
         }
         setParticipants(rows);
       } catch (err) {
         if (!cancelled) {
-          setMetaError(err instanceof Error ? err.message : 'Could not load conversation details.');
+          setMetaError(err instanceof Error ? err.message : t('chat.detailsError'));
         }
       } finally {
         if (!cancelled) setMetaLoading(false);
@@ -111,7 +114,7 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, t]);
 
   // Scroll to the newest message once on load, then on every new message.
   useEffect(() => {
@@ -144,7 +147,7 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
 
   if (metaLoading) {
     return (
-      <section aria-label="Conversation" style={styles.window}>
+      <section aria-label={t('chat.conversationAria')} style={styles.window}>
         <div aria-busy="true" style={styles.metaSkeleton}>
           <div style={styles.skeletonAvatar} />
           <div style={styles.skeletonLine} />
@@ -155,24 +158,24 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
 
   if (metaError) {
     return (
-      <section aria-label="Conversation" style={styles.window}>
+      <section aria-label={t('chat.conversationAria')} style={styles.window}>
         <div role="alert" style={styles.centeredMessage}>
           <p style={styles.centeredTitle}>{metaError}</p>
-          <a href="#profile" style={styles.backLink}>← Back to dashboard</a>
+          <a href="#profile" style={styles.backLink}>← {t('chat.backAria')}</a>
         </div>
       </section>
     );
   }
 
   return (
-    <section aria-label="Conversation" style={styles.window}>
+    <section aria-label={t('chat.conversationAria')} style={styles.window}>
       <header style={styles.header}>
-        <a href="#profile" style={styles.backLink} aria-label="Back to dashboard">←</a>
+        <a href="#profile" style={styles.backLink} aria-label={t('chat.backAria')}>←</a>
 
         <div style={styles.headerCopy}>
-          <strong style={styles.peerName}>{peer?.name ?? 'Conversation'}</strong>
+          <strong style={styles.peerName}>{peer?.name ?? t('chat.conversationAria')}</strong>
           {peer ? (
-            <span style={styles.roleBadge}>{ROLE_LABELS[peer.role] ?? 'Care member'}</span>
+            <span style={styles.roleBadge}>{roleLabel(peer.role)}</span>
           ) : null}
         </div>
       </header>
@@ -188,8 +191,8 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
           ))
         ) : messages.length === 0 ? (
           <div style={styles.centeredMessage}>
-            <p style={styles.centeredTitle}>No messages yet</p>
-            <p style={styles.centeredHint}>Say hello to start the conversation.</p>
+            <p style={styles.centeredTitle}>{t('chat.noMessagesTitle')}</p>
+            <p style={styles.centeredHint}>{t('chat.sayHello')}</p>
           </div>
         ) : (
           messages.map((message) => {
@@ -201,8 +204,8 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
                 <div style={{ maxWidth: '78%', display: 'flex', flexDirection: 'column', alignItems: mine ? 'flex-end' : 'flex-start', gap: 4 }}>
                   {!mine ? (
                     <span style={styles.senderLine}>
-                      <strong>{sender?.name ?? 'Participant'}</strong>
-                      {sender ? <span style={styles.senderRole}>{ROLE_LABELS[sender.role] ?? ''}</span> : null}
+                      <strong>{sender?.name ?? t('chat.participant')}</strong>
+                      {sender ? <span style={styles.senderRole}>{roleLabel(sender.role)}</span> : null}
                     </span>
                   ) : null}
 
@@ -227,8 +230,8 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={loading ? 'Loading conversation…' : 'Write a message…'}
-            aria-label="Message"
+            placeholder={loading ? t('chat.loadingConversation') : t('chat.writeMessage')}
+            aria-label={t('chat.messageAria')}
             disabled={loading}
             style={styles.input}
           />
@@ -240,7 +243,7 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
               ...(canSend ? styles.sendButtonEnabled : null),
             }}
           >
-            {sending ? 'Sending…' : 'Send'}
+            {sending ? t('chat.sending') : t('chat.send')}
           </button>
         </form>
       </footer>

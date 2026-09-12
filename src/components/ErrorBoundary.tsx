@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { useLang } from '../i18n';
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -7,6 +8,22 @@ type ErrorBoundaryProps = {
 type ErrorBoundaryState = {
   error: Error | null;
 };
+
+// A class cannot call hooks, so the fallback is a small function component that
+// can read the translation context.
+function ErrorFallback({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const { t } = useLang();
+
+  return (
+    <div role="alert" style={styles.wrapper}>
+      <p style={styles.title}>{t('errors.conversationTitle')}</p>
+      <p style={styles.detail}>{message}</p>
+      <button type="button" style={styles.button} onClick={onRetry}>
+        {t('common.tryAgain')}
+      </button>
+    </div>
+  );
+}
 
 // Minimal error boundary so an unexpected render crash inside a chat view
 // degrades to an inline message instead of unmounting the whole app.
@@ -24,13 +41,10 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
   render() {
     if (this.state.error) {
       return (
-        <div role="alert" style={styles.wrapper}>
-          <p style={styles.title}>Something went wrong loading this conversation.</p>
-          <p style={styles.detail}>{this.state.error.message}</p>
-          <button type="button" style={styles.button} onClick={() => this.setState({ error: null })}>
-            Try again
-          </button>
-        </div>
+        <ErrorFallback
+          message={this.state.error.message}
+          onRetry={() => this.setState({ error: null })}
+        />
       );
     }
 

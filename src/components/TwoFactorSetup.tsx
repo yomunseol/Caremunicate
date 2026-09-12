@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { useLang } from '../i18n';
 
 type TwoFactorMethod = 'none' | 'email' | 'app';
 
@@ -160,6 +161,7 @@ async function getUserId(): Promise<string> {
 }
 
 export default function TwoFactorSetup() {
+  const { t } = useLang();
   const [method, setMethod] = useState<TwoFactorMethod>('none');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -313,7 +315,7 @@ export default function TwoFactorSetup() {
 
     if (error) {
       console.log('OTP send error:', error);
-      setSendNotice('Send error — but if a code arrived in your inbox, enter it below.');
+      setSendNotice(t('tfa.sendError'));
       return false;
     }
 
@@ -341,13 +343,13 @@ export default function TwoFactorSetup() {
     if (next === 'none') {
       setMethod('none');
       await savePreference('none');
-      setMessage('Two-factor authentication is off.');
+      setMessage(t('tfa.msg.off'));
     } else if (next === 'email') {
       // Trigger a native email OTP so the user can prove inbox access. The code
       // entry view opens even if the send fails, so the user is never dead-ended.
       const sent = await sendEmailCode();
       setEmailCode('');
-      setMessage(sent ? '2FA Code Sent. Check your email for the 6-digit code.' : '');
+      setMessage(sent ? t('tfa.msg.sent') : '');
       setEmailEnrolling(true);
     } else {
       // 'app': kick off the TOTP enrollment wizard.
@@ -366,7 +368,7 @@ export default function TwoFactorSetup() {
         setEnrolling(true);
         console.log('[2FA] Enrollment started. Factor id:', data.id);
       } else {
-        setError('Unable to start two-factor setup.');
+        setError(t('tfa.err.enroll'));
       }
     }
 
@@ -377,7 +379,7 @@ export default function TwoFactorSetup() {
     event.preventDefault();
 
     if (!factorId || !verificationCode.trim()) {
-      setError('Enter the 6-digit authentication code.');
+      setError(t('tfa.err.enterAppCode'));
       return;
     }
 
@@ -412,7 +414,7 @@ export default function TwoFactorSetup() {
     setEnrolling(false);
     setMethod('app');
     await savePreference('app');
-    setMessage('2FA is Active using your authenticator app.');
+    setMessage(t('tfa.msg.activeApp'));
     setLoading(false);
   };
 
@@ -421,7 +423,7 @@ export default function TwoFactorSetup() {
 
     const token = emailCode.trim();
     if (!token) {
-      setError('Enter the 6-digit code from your email.');
+      setError(t('tfa.err.enterEmailCode'));
       return;
     }
 
@@ -447,7 +449,7 @@ export default function TwoFactorSetup() {
     setEmailEnrolling(false);
     setMethod('email');
     await savePreference('email');
-    setMessage('2FA is Active using email codes.');
+    setMessage(t('tfa.msg.activeEmail'));
     setLoading(false);
   };
 
@@ -460,7 +462,7 @@ export default function TwoFactorSetup() {
     setError('');
     try {
       const sent = await sendEmailCode();
-      if (sent) setMessage('2FA Code Sent. Check your email for the 6-digit code.');
+      if (sent) setMessage(t('tfa.msg.sent'));
     } finally {
       setLoading(false);
     }
@@ -491,16 +493,16 @@ export default function TwoFactorSetup() {
     <section style={settingsCardStyle} aria-labelledby="two-factor-heading">
       <div style={cardContentStyle}>
         <div>
-          <p style={eyebrowStyle}>Account security</p>
+          <p style={eyebrowStyle}>{t('tfa.eyebrow')}</p>
           <h2 id="two-factor-heading" style={titleStyle}>
-            Two-Factor Authentication
+            {t('tfa.title')}
           </h2>
           <p style={descriptionStyle}>
-            Add an extra verification step when you sign in. Email codes are the default; you can use an authenticator app instead.
+            {t('tfa.desc')}
           </p>
         </div>
 
-        {loading && <p style={statusStyle}>Checking two-factor status...</p>}
+        {loading && <p style={statusStyle}>{t('tfa.checking')}</p>}
         {error && <p style={errorStyle} role="alert">{error}</p>}
         {message && <p style={statusStyle}>{message}</p>}
 
@@ -516,12 +518,12 @@ export default function TwoFactorSetup() {
                 style={methodRadioStyle}
               />
               <span>
-                <strong>No 2FA</strong>
+                <strong>{t('tfa.none')}</strong>
                 <br />
-                <small style={{ color: '#557b76' }}>Sign in with just your email.</small>
+                <small style={{ color: '#557b76' }}>{t('tfa.noneDesc')}</small>
               </span>
               {method === 'none' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Current</span>
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.current')}</span>
               ) : null}
             </label>
 
@@ -535,12 +537,12 @@ export default function TwoFactorSetup() {
                 style={methodRadioStyle}
               />
               <span>
-                <strong>Email code</strong>
+                <strong>{t('tfa.email')}</strong>
                 <br />
-                <small style={{ color: '#557b76' }}>Receive a one-time 6-digit code at your email. Recommended.</small>
+                <small style={{ color: '#557b76' }}>{t('tfa.emailDesc')}</small>
               </span>
               {method === 'email' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Active</span>
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.active')}</span>
               ) : null}
             </label>
 
@@ -554,12 +556,12 @@ export default function TwoFactorSetup() {
                 style={methodRadioStyle}
               />
               <span>
-                <strong>Authenticator app</strong>
+                <strong>{t('tfa.app')}</strong>
                 <br />
-                <small style={{ color: '#557b76' }}>Use a rotating 6-digit code from an app like Google Authenticator.</small>
+                <small style={{ color: '#557b76' }}>{t('tfa.appDesc')}</small>
               </span>
               {method === 'app' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>Active</span>
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.active')}</span>
               ) : null}
             </label>
           </>
@@ -570,8 +572,7 @@ export default function TwoFactorSetup() {
             <div style={qrCardStyle}>
               <QRCodeSVG value={totpUri} size={180} />
               <p style={{ margin: 0, color: '#557b76', fontSize: '0.9rem', textAlign: 'center' }}>
-                Open an authenticator app such as Google Authenticator, Microsoft Authenticator, Authy, or 1Password.
-                Choose “Add account,” scan this QR code with your phone camera, then type the 6-digit code it shows.
+                {t('tfa.qrHelp')}
               </p>
             </div>
 
@@ -583,18 +584,18 @@ export default function TwoFactorSetup() {
               autoComplete="one-time-code"
               maxLength={6}
               pattern="[0-9]{6}"
-              placeholder="Enter 6-digit code"
-              aria-label="Six-digit authentication code"
+              placeholder={t('tfa.codePlaceholder')}
+              aria-label={t('tfa.appCodeAria')}
               disabled={loading}
               required
             />
 
             <button type="submit" style={buttonStyle} disabled={loading}>
-              {loading ? 'Verifying...' : 'Verify and enable 2FA'}
+              {loading ? t('tfa.verifying') : t('tfa.verifyEnable')}
             </button>
 
             <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
-              Cancel
+              {t('common.cancel')}
             </button>
           </form>
         ) : null}
@@ -604,9 +605,7 @@ export default function TwoFactorSetup() {
             {sendNotice ? <p style={noticeStyle} role="status">{sendNotice}</p> : null}
 
             <p style={descriptionStyle}>
-              {sendNotice
-                ? 'Enter the 6-digit code below to confirm email-code 2FA.'
-                : 'We sent a 6-digit code to your email. Enter it below to confirm email-code 2FA.'}
+              {sendNotice ? t('tfa.emailEnterDesc') : t('tfa.emailSentDesc')}
             </p>
 
             <div style={resendRowStyle}>
@@ -618,8 +617,8 @@ export default function TwoFactorSetup() {
                 autoComplete="one-time-code"
                 maxLength={6}
                 pattern="[0-9]{6}"
-                placeholder="Enter 6-digit code"
-                aria-label="Six-digit email code"
+                placeholder={t('tfa.codePlaceholder')}
+                aria-label={t('tfa.emailCodeAria')}
                 disabled={loading}
                 required
               />
@@ -632,16 +631,16 @@ export default function TwoFactorSetup() {
                 onClick={() => void handleResendEmailCode()}
                 disabled={resendIn > 0 || loading}
               >
-                {resendIn > 0 ? `Resend in ${resendIn}s` : 'Resend code'}
+                {resendIn > 0 ? t('tfa.resendIn', { seconds: resendIn }) : t('tfa.resend')}
               </button>
             </div>
 
             <button type="submit" style={buttonStyle} disabled={loading}>
-              {loading ? 'Verifying...' : 'Verify and enable email 2FA'}
+              {loading ? t('tfa.verifying') : t('tfa.verifyEmail')}
             </button>
 
             <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
-              Cancel
+              {t('common.cancel')}
             </button>
           </form>
         ) : null}

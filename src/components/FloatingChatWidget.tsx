@@ -5,8 +5,16 @@ import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
 import { createDirectConversation } from '../lib/conversations';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
+import { useLang } from '../i18n';
 import { ChatList, type ChatListItem } from './ChatList';
 import { SearchUsers, type SearchUserResult } from './SearchUsers';
+
+// Role → i18n key. The visible label is resolved with t() at render time.
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  patient: 'common.patient',
+  doctor: 'common.doctor',
+  hospital: 'common.hospital',
+};
 
 // ---------------------------------------------------------------------------
 // Tailwind equivalents for the notes in this file:
@@ -18,12 +26,6 @@ import { SearchUsers, type SearchUserResult } from './SearchUsers';
 // The project has no Tailwind build step, so the same design tokens are used
 // via inline styles (consistent with the rest of the app).
 // ---------------------------------------------------------------------------
-
-const ROLE_LABELS: Record<string, string> = {
-  patient: 'Patient',
-  doctor: 'Doctor',
-  hospital: 'Hospital',
-};
 
 const timeAgo = (iso: string): string => {
   const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -57,6 +59,7 @@ function ThreadView({
   onBack: () => void;
 }) {
   const { messages, loading, error, sendMessage } = useRealtimeChat(thread.conversationId);
+  const { t } = useLang();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -88,20 +91,22 @@ function ThreadView({
   return (
     <div style={styles.thread}>
       <div style={styles.threadHeader}>
-        <button type="button" onClick={onBack} style={styles.backButton} aria-label="Back to chats">
+        <button type="button" onClick={onBack} style={styles.backButton} aria-label={t('chat.backToChats')}>
           ←
         </button>
         <div style={styles.threadPeer}>
-          <strong style={styles.threadPeerName}>{thread.peerName?.trim() || 'Participant'}</strong>
-          <span style={styles.roleBadge}>{ROLE_LABELS[thread.peerRole] ?? 'Care member'}</span>
+          <strong style={styles.threadPeerName}>{thread.peerName?.trim() || t('chat.participant')}</strong>
+          <span style={styles.roleBadge}>
+            {ROLE_LABEL_KEYS[thread.peerRole] ? t(ROLE_LABEL_KEYS[thread.peerRole]) : t('chat.careMember')}
+          </span>
         </div>
       </div>
 
       <div style={styles.messages} aria-live="polite" aria-busy={loading}>
         {loading ? (
-          <p style={styles.centeredText}>Loading messages…</p>
+          <p style={styles.centeredText}>{t('chat.loadingMessages')}</p>
         ) : messages.length === 0 ? (
-          <p style={styles.centeredText}>No messages yet — say hello.</p>
+          <p style={styles.centeredText}>{t('chat.noMessages')}</p>
         ) : (
           messages.map((message) => {
             const mine = message.sender_id === myUserId;
@@ -127,15 +132,15 @@ function ThreadView({
           <input
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder={loading ? 'Loading…' : 'Write a message…'}
-            aria-label="Message"
+            placeholder={loading ? t('chat.loadingMessages') : t('chat.writeMessage')}
+            aria-label={t('chat.messageAria')}
             disabled={loading}
             style={styles.composerInput}
           />
           <button
             type="submit"
             disabled={!canSend}
-            aria-label="Send message"
+            aria-label={t('chat.sendAria')}
             style={{ ...styles.sendButton, ...(canSend ? styles.sendButtonEnabled : null) }}
           >
             <Send size={16} />
@@ -152,6 +157,7 @@ function ThreadView({
 
 export default function FloatingChatWidget() {
   const { user } = useAuth();
+  const { t } = useLang();
   const myUserId = user?.id ?? '';
 
   const [isOpen, setIsOpen] = useState(false);
@@ -226,7 +232,7 @@ export default function FloatingChatWidget() {
     }
 
     lastSeenRef.current = Date.now();
-    openThread(conversationId, resolveDisplayName(user.username, user.email), user.role);
+    openThread(conversationId, resolveDisplayName(user.username, user.email, t('chat.participant')), user.role);
   };
 
   const closeWidget = () => {
@@ -251,10 +257,10 @@ export default function FloatingChatWidget() {
   return (
     <div ref={rootRef} style={styles.root}>
       {isOpen ? (
-        <div style={styles.window} role="dialog" aria-label="Chat">
+        <div style={styles.window} role="dialog" aria-label={t('chat.messages')}>
           <div style={styles.windowHeader}>
-            <strong style={styles.windowTitle}>Messages</strong>
-            <button type="button" onClick={closeWidget} style={styles.iconButton} aria-label="Close chat">
+            <strong style={styles.windowTitle}>{t('chat.messages')}</strong>
+            <button type="button" onClick={closeWidget} style={styles.iconButton} aria-label={t('chat.closeChat')}>
               <X size={18} />
             </button>
           </div>
@@ -262,8 +268,8 @@ export default function FloatingChatWidget() {
           <div style={styles.tabs}>
             {(
               [
-                { key: 'inbox', label: 'My Chats' },
-                { key: 'search', label: 'New Chat' },
+                { key: 'inbox', label: t('chat.myChats') },
+                { key: 'search', label: t('chat.newChat') },
               ] as const
             ).map(({ key, label }) => (
               <button
@@ -297,10 +303,10 @@ export default function FloatingChatWidget() {
         </div>
       ) : null}
 
-      <button type="button" onClick={toggleOpen} style={styles.fab} aria-label={isOpen ? 'Close chat' : 'Open chat'}>
+      <button type="button" onClick={toggleOpen} style={styles.fab} aria-label={isOpen ? t('chat.closeChat') : t('chat.openChat')}>
         {isOpen ? <X size={22} /> : <MessageCircle size={22} />}
         {!isOpen && unreadCount > 0 ? (
-          <span style={styles.unreadDot} aria-label={`${unreadCount} unread conversations`}>
+          <span style={styles.unreadDot} aria-label={t('chat.unread', { count: unreadCount })}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         ) : null}

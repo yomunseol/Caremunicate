@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { useLang } from '../i18n';
 
 export interface ChatListItem {
   conversationId: string;
@@ -61,6 +62,7 @@ type ChatListProps = {
 //   - 0 conversations + no error -> friendly empty state.
 //   - error truthy               -> the REAL database error message in red.
 export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: ChatListProps) {
+  const { t } = useLang();
   const [items, setItems] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,7 +131,7 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
             username: string | null;
             email?: string | null;
           }>) {
-            displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email));
+            displayNames.set(profile.user_id, resolveDisplayName(profile.username, profile.email, t('chat.participant')));
           }
         }
 
@@ -156,9 +158,9 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
           nextItems.push({
             conversationId,
             peerId: peer.user_id,
-            peerName: displayNames.get(peer.user_id) ?? 'Participant',
+            peerName: displayNames.get(peer.user_id) ?? t('chat.participant'),
             peerRole: peer.role,
-            preview: last ? previewOf(last.content) : 'No messages yet — say hello.',
+            preview: last ? previewOf(last.content) : t('chat.noMessages'),
             at: last?.created_at ?? null,
             lastSenderId: last?.sender_id ?? null,
           });
@@ -181,13 +183,13 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [myUserId]);
+  }, [myUserId, t]);
 
   if (loading) {
     return (
       <div style={styles.centered}>
         <span style={styles.spinner} aria-hidden="true" />
-        <p style={styles.muted}>Loading conversations…</p>
+        <p style={styles.muted}>{t('chat.loadingConversations')}</p>
       </div>
     );
   }
@@ -205,10 +207,10 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
   if (items.length === 0) {
     return (
       <div style={styles.centered}>
-        <p style={styles.emptyTitle}>No conversations yet!</p>
-        <p style={styles.muted}>Start a new chat to begin messaging.</p>
+        <p style={styles.emptyTitle}>{t('chat.emptyTitle')}</p>
+        <p style={styles.muted}>{t('chat.emptySub')}</p>
         <button type="button" onClick={onStartNewChat} style={styles.primaryButton}>
-          New Chat
+          {t('chat.newChat')}
         </button>
       </div>
     );
@@ -226,7 +228,7 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
               type="button"
               onClick={() => onOpenChat(item)}
               style={styles.row}
-              aria-label={`Open chat with ${item.peerName}`}
+              aria-label={t('chat.openWith', { name: item.peerName })}
             >
               <span style={styles.avatar}>{item.peerName.charAt(0).toUpperCase()}</span>
               <span style={styles.copy}>

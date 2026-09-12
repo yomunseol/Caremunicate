@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../i18n';
 
 type ProtectedRouteProps = {
   children: ReactNode;
@@ -7,6 +8,7 @@ type ProtectedRouteProps = {
 
 export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, loading, pending2FA } = useAuth();
+  const { t } = useLang();
 
   useEffect(() => {
     if (loading) return;
@@ -17,15 +19,15 @@ export default function ProtectedRoute({ children }: ProtectedRouteProps) {
   }, [loading, pending2FA, user]);
 
   if (loading) {
-    return <p className="auth-loading">Checking your account...</p>;
+    return <p className="auth-loading">{t('errors.checkingAccount')}</p>;
   }
 
   if (!user) {
-    return <p className="auth-loading">Redirecting to login...</p>;
+    return <p className="auth-loading">{t('errors.redirecting')}</p>;
   }
 
   if (pending2FA) {
-    return <p className="auth-loading">Complete two-factor verification to continue...</p>;
+    return <p className="auth-loading">{t('errors.complete2fa')}</p>;
   }
 
   return <>{children}</>;

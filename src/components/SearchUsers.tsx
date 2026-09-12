@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { useLang } from '../i18n';
 
 export interface SearchUserResult {
   user_id: string;
@@ -16,10 +17,10 @@ type SearchUsersProps = {
   onPick: (user: SearchUserResult) => Promise<void>;
 };
 
-const ROLE_LABELS: Record<string, string> = {
-  patient: 'Patient',
-  doctor: 'Doctor',
-  hospital: 'Hospital',
+const ROLE_LABEL_KEYS: Record<string, string> = {
+  patient: 'common.patient',
+  doctor: 'common.doctor',
+  hospital: 'common.hospital',
 };
 
 // Defensive shape for whatever search_users() returns — it may expose
@@ -45,6 +46,7 @@ const normalizeResult = (row: SearchUserRow): SearchUserResult => ({
 // return shape is normalized below so the UI does not depend on exact column
 // names from the RPC.
 export function SearchUsers({ onPick }: SearchUsersProps) {
+  const { t } = useLang();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchUserResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,7 +93,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
       } catch (err) {
         if (!cancelled) {
           console.error('[chat] user search failed:', err);
-          setError(err instanceof Error ? err.message : 'Search failed. Please try again.');
+          setError(err instanceof Error ? err.message : t('chat.searchFailed'));
           setSearched(true);
         }
       } finally {
@@ -111,7 +113,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
     try {
       await onPick(user);
     } catch (err) {
-      setPickError(err instanceof Error ? err.message : 'Could not start a conversation.');
+      setPickError(err instanceof Error ? err.message : t('chat.startFailed'));
     } finally {
       setBusyId(null);
     }
@@ -124,26 +126,26 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Enter the person's email..."
-          aria-label="Search users by email"
+          placeholder={t('chat.searchPlaceholder')}
+          aria-label={t('chat.searchAria')}
           style={styles.input}
           autoFocus
         />
         {loading ? <span style={styles.spinner} aria-hidden="true" /> : null}
       </div>
 
-      <p style={styles.hint}>Search any patient or doctor by email.</p>
+      <p style={styles.hint}>{t('chat.searchHint')}</p>
 
       {error ? <p role="alert" style={styles.inlineError}>{error}</p> : null}
       {pickError ? <p role="alert" style={styles.inlineError}>{pickError}</p> : null}
 
       {trimmed.length >= 2 && !loading && searched ? (
         results.length === 0 ? (
-          <p style={styles.emptyText}>No users match "{trimmed}".</p>
+          <p style={styles.emptyText}>{t('chat.noUsers', { query: trimmed })}</p>
         ) : (
           <ul style={styles.resultList}>
             {results.map((user) => {
-              const displayName = resolveDisplayName(user.username, user.email);
+              const displayName = resolveDisplayName(user.username, user.email, t('chat.participant'));
               return (
                 <li key={user.user_id}>
                   <button
@@ -155,10 +157,10 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
                     <span style={styles.avatar}>{displayName.charAt(0).toUpperCase()}</span>
                     <span style={styles.resultCopy}>
                       <strong style={styles.resultName}>{displayName}</strong>
-                      <span style={styles.resultRole}>{ROLE_LABELS[user.role] ?? user.role}</span>
+                      <span style={styles.resultRole}>{ROLE_LABEL_KEYS[user.role] ? t(ROLE_LABEL_KEYS[user.role]) : t('chat.careMember')}</span>
                     </span>
                     <span style={styles.resultAction}>
-                      {busyId === user.user_id ? 'Opening…' : 'Chat'}
+                      {busyId === user.user_id ? t('chat.opening') : t('chat.chatAction')}
                     </span>
                   </button>
                 </li>
@@ -169,7 +171,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
       ) : null}
 
       {trimmed.length < 2 ? (
-        <p style={styles.emptyText}>Type at least 2 characters to search.</p>
+        <p style={styles.emptyText}>{t('chat.searchMin')}</p>
       ) : null}
     </div>
   );

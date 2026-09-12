@@ -1,3 +1,6 @@
+import type { CSSProperties } from 'react';
+import { useLang } from '../i18n';
+
 export type PlanId = 'free' | 'care-plus' | 'doctor' | 'clinic';
 
 export type Plan = {
@@ -17,56 +20,77 @@ export type Plan = {
   grantsDoctorRole: boolean;
 };
 
-export const PLANS: Plan[] = [
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+type PlanMeta = {
+  id: PlanId;
+  base: string;
+  price: string;
+  cadence: string;
+  bulletKeys: string[];
+  popular?: boolean;
+  signupRole: 'patient' | 'doctor';
+  grantsDoctorRole: boolean;
+};
+
+// Language-neutral plan metadata. Every visible string resolves through i18n,
+// so the four plans exist once and render in all locales.
+const PLAN_META: PlanMeta[] = [
   {
     id: 'free',
-    name: 'Free',
+    base: 'pricing.free',
     price: '$0',
     cadence: '/mo',
-    subtitle: 'Everything you need to start a care conversation today.',
-    bullets: ['1 active conversation', 'Basic messaging', 'Email 2FA'],
-    cta: 'Start Free',
+    bulletKeys: ['pricing.free.b1', 'pricing.free.b2', 'pricing.free.b3'],
     signupRole: 'patient',
     grantsDoctorRole: false,
   },
   {
     id: 'care-plus',
-    name: 'Care Plus',
+    base: 'pricing.carePlus',
     price: '$9',
     cadence: '/mo',
-    subtitle: 'For people who message their care team often.',
-    bullets: ['Unlimited conversations', 'File sharing', 'Priority doctor replies'],
-    badge: 'Most Popular',
-    cta: 'Get Care Plus',
+    bulletKeys: ['pricing.carePlus.b1', 'pricing.carePlus.b2', 'pricing.carePlus.b3'],
+    popular: true,
     signupRole: 'patient',
     grantsDoctorRole: false,
   },
   {
     id: 'doctor',
-    name: 'Doctor',
+    base: 'pricing.doctor',
     price: '$29',
     cadence: '/mo',
-    subtitle: 'Run your own patient list and consult directly.',
-    bullets: ['Patient roster', 'Group chats', 'Care notes', "Role set to 'doctor'"],
-    cta: 'Start as Doctor',
+    bulletKeys: ['pricing.doctor.b1', 'pricing.doctor.b2', 'pricing.doctor.b3', 'pricing.doctor.b4'],
     signupRole: 'doctor',
     grantsDoctorRole: true,
   },
   {
     id: 'clinic',
-    name: 'Clinic',
+    base: 'pricing.clinic',
     price: '$79',
     cadence: '/mo',
-    subtitle: 'One shared workspace for your whole practice.',
-    bullets: ['Multiple doctor seats', 'Shared inbox', 'Admin dashboard'],
-    cta: 'Start as Clinic',
+    bulletKeys: ['pricing.clinic.b1', 'pricing.clinic.b2', 'pricing.clinic.b3'],
     signupRole: 'doctor',
     grantsDoctorRole: true,
   },
 ];
 
+export const getPlans = (t: Translate): Plan[] =>
+  PLAN_META.map((meta) => ({
+    id: meta.id,
+    name: t(`${meta.base}.name`),
+    price: meta.price,
+    cadence: meta.cadence,
+    subtitle: t(`${meta.base}.subtitle`),
+    bullets: meta.bulletKeys.map((key) => t(key)),
+    badge: meta.popular ? t('pricing.mostPopular') : undefined,
+    cta: t(`${meta.base}.cta`),
+    signupRole: meta.signupRole,
+    grantsDoctorRole: meta.grantsDoctorRole,
+  }));
+
 export const isPlanId = (value: string | null | undefined): value is PlanId =>
-  typeof value === 'string' && PLANS.some((plan) => plan.id === value);
+  typeof value === 'string' && PLAN_META.some((plan) => plan.id === value);
 
 type PricingSectionProps = {
   onSelectPlan: (planId: PlanId) => void;
@@ -83,18 +107,20 @@ export default function PricingSection({
   currentPlan = null,
   busyPlan = null,
 }: PricingSectionProps) {
+  const { t } = useLang();
+  const plans = getPlans(t);
   const busy = busyPlan !== null;
 
   return (
     <section className="section" id="pricing">
       <div className="section-heading">
-        <div className="eyebrow">Pricing</div>
+        <div className="eyebrow">{t('pricing.eyebrow')}</div>
         <h2>{heading}</h2>
         <p>{subheading}</p>
       </div>
 
       <div className="pricing-grid" aria-busy={busy}>
-        {PLANS.map((plan) => {
+        {plans.map((plan) => {
           const isCurrent = currentPlan === plan.id;
           const isBusy = busyPlan === plan.id;
 
@@ -103,7 +129,7 @@ export default function PricingSection({
               {plan.badge || isCurrent ? (
                 <div className="plan-badges">
                   {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
-                  {isCurrent ? <span className="plan-current">Current plan</span> : null}
+                  {isCurrent ? <span className="plan-current">{t('pricing.currentPlan')}</span> : null}
                 </div>
               ) : null}
 
@@ -126,16 +152,16 @@ export default function PricingSection({
                 onClick={() => onSelectPlan(plan.id)}
                 disabled={busy}
                 aria-busy={isBusy}
-                aria-label={`${plan.cta} — ${plan.name} plan`}
+                aria-label={`${plan.cta} — ${plan.name} ${t('common.plan')}`}
               >
-                {isBusy ? 'Saving...' : plan.cta}
+                {isBusy ? t('pricing.saving') : plan.cta}
               </button>
             </article>
           );
         })}
       </div>
 
-      <p className="pricing-footnote">Payments coming soon — all plans are free during beta.</p>
+      <p className="pricing-footnote">{t('pricing.footnote')}</p>
     </section>
   );
 }

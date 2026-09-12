@@ -7,50 +7,24 @@ import PasswordAuth from './components/PasswordAuth';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
-import PricingSection, { PLANS, isPlanId, type PlanId } from './components/PricingSection';
+import CarePlaces from './components/CarePlaces';
+import LanguageSwitcher from './components/LanguageSwitcher';
+import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
+import { useLang } from './i18n';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor';
 
-const featureCards = [
-  {
-    title: 'Emergency doctors in every region',
-    description:
-      'Access emergency doctors across every local region, helping patients move from urgent need to medical support without unnecessary delay.',
-    accent: 'Local emergency access',
-  },
-  {
-    title: 'Hospital-informed care',
-    description:
-      'Bring hospital-provided customer information and care updates into the conversation, giving providers the context needed to act faster.',
-    accent: 'Connected information',
-  },
-  {
-    title: 'Your choice of assigned doctor',
-    description:
-      'Choose an assigned doctor when you want ongoing care, familiar follow-ups, and a more personal route to medical support.',
-    accent: 'Continuity of care',
-  },
-  {
-    title: 'Direct online calls and sessions',
-    description:
-      'Use one independent platform to arrange direct calls and online meeting sessions between customers, doctors, and hospitals.',
-    accent: 'Flexible connection',
-  },
-  {
-    title: 'Save doctors for quick assistance',
-    description:
-      'Save trusted doctors to a personal wishlist for faster follow-ups, easier access, and quick assistance when time matters.',
-    accent: 'Quick assistance',
-  },
-  {
-    title: 'Plans, provider choice, and easy registration',
-    description:
-      'Choose monthly cloud plans for customers or hospitals, register with ease, and connect with certified or non-certified doctors.',
-    accent: 'Accessible care network',
-  },
+// Feature cards are keyed so every visible string resolves through i18n.
+const FEATURE_CARDS = [
+  { title: 'home.f1.title', description: 'home.f1.desc', accent: 'home.f1.accent' },
+  { title: 'home.f2.title', description: 'home.f2.desc', accent: 'home.f2.accent' },
+  { title: 'home.f3.title', description: 'home.f3.desc', accent: 'home.f3.accent' },
+  { title: 'home.f4.title', description: 'home.f4.desc', accent: 'home.f4.accent' },
+  { title: 'home.f5.title', description: 'home.f5.desc', accent: 'home.f5.accent' },
+  { title: 'home.f6.title', description: 'home.f6.desc', accent: 'home.f6.accent' },
 ];
 
 type ParsedRoute = {
@@ -127,6 +101,7 @@ const passwordPattern =
 
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
+  const { t } = useLang();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
@@ -255,13 +230,13 @@ function App() {
   };
 
   const getEmailError = (value: string) => {
-    if (!value.trim()) return 'Email is required.';
-    if (!emailPattern.test(value.trim())) return 'Enter a valid email address.';
+    if (!value.trim()) return t('auth.err.emailRequired');
+    if (!emailPattern.test(value.trim())) return t('auth.err.emailInvalid');
     return '';
   };
 
   const getFullNameError = (value: string) => {
-    if (!value.trim()) return 'Full name is required.';
+    if (!value.trim()) return t('auth.err.fullName');
     return '';
   };
 
@@ -275,16 +250,16 @@ function App() {
   };
 
   const getPasswordError = (value: string) => {
-    if (!value) return 'Password is required.';
+    if (!value) return t('auth.err.passwordRequired');
     if (!passwordPattern.test(value)) {
-      return 'Password must be 8+ characters with upper, lower, number, and special character (!@#$%^&*).';
+      return t('auth.err.passwordRules');
     }
     return '';
   };
 
   const getConfirmPasswordError = (value: string) => {
-    if (!value) return 'Please confirm your password.';
-    if (value !== signupValues.password) return 'Passwords do not match.';
+    if (!value) return t('auth.err.confirmRequired');
+    if (value !== signupValues.password) return t('auth.err.passwordMismatch');
     return '';
   };
 
@@ -302,11 +277,11 @@ function App() {
     }
 
     if (authRole === 'doctor' && !signupValues.specialty.trim()) {
-      nextErrors.specialty = 'Medical specialty is required.';
+      nextErrors.specialty = t('auth.err.specialty');
     }
 
     if (authRole === 'doctor' && !signupValues.clinic.trim()) {
-      nextErrors.clinic = 'Clinic or license is required.';
+      nextErrors.clinic = t('auth.err.clinic');
     }
 
     const passwordError = getPasswordError(signupValues.password);
@@ -320,7 +295,7 @@ function App() {
     }
 
     if (!signupValues.role) {
-      nextErrors.role = 'Please select a role.';
+      nextErrors.role = t('auth.err.role');
     }
 
     return nextErrors;
@@ -341,11 +316,11 @@ function App() {
   // Real-time checklist shown under the password field. Empty password shows
   // only neutral (unmet) rows.
   const passwordChecklist = [
-    { label: 'At least 8 characters', met: passwordChecks.minLength(signupValues.password) },
-    { label: 'One uppercase letter', met: passwordChecks.hasUpper(signupValues.password) },
-    { label: 'One lowercase letter', met: passwordChecks.hasLower(signupValues.password) },
-    { label: 'One number', met: passwordChecks.hasNumber(signupValues.password) },
-    { label: 'One special character (!@#$%^&*)', met: passwordChecks.hasSpecial(signupValues.password) },
+    { label: t('auth.ruleLength'), met: passwordChecks.minLength(signupValues.password) },
+    { label: t('auth.ruleUpper'), met: passwordChecks.hasUpper(signupValues.password) },
+    { label: t('auth.ruleLower'), met: passwordChecks.hasLower(signupValues.password) },
+    { label: t('auth.ruleNumber'), met: passwordChecks.hasNumber(signupValues.password) },
+    { label: t('auth.ruleSpecial'), met: passwordChecks.hasSpecial(signupValues.password) },
   ];
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -392,16 +367,16 @@ function App() {
 
       if (!data.session) {
         setAuthMessageType('success');
-        setAuthMessage('Account created. Check your email to confirm your account before logging in.');
+        setAuthMessage(t('auth.msg.createdConfirm'));
         return;
       }
 
       setAuthMessageType('success');
-      setAuthMessage('Your account is ready.');
+      setAuthMessage(t('auth.msg.ready'));
       navigate('profile');
     } catch (error) {
       setAuthMessageType('error');
-      setAuthMessage(error instanceof Error ? error.message : 'Unable to authenticate. Please try again.');
+      setAuthMessage(error instanceof Error ? error.message : t('auth.msg.errorGeneric'));
     } finally {
       setIsAuthLoading(false);
       // Do not keep the plaintext password in component state any longer than
@@ -417,13 +392,33 @@ function App() {
     navigate('home');
   };
 
+  const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? '');
+
+  const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
+  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'free';
+  const planOptions = getPlans(t);
+  const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
+  const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
+
+  // Role that gates doctor-only dashboard panels. Prefer the persisted
+  // profiles.role, falling back to the sign-up metadata.
+  const profileRole = String(profileData?.role ?? userProfile?.role ?? '').toLowerCase();
+  const profileRoleKey =
+    profileRole === 'doctor'
+      ? 'common.doctor'
+      : profileRole === 'hospital'
+        ? 'common.hospital'
+        : profileRole === 'patient'
+          ? 'common.patient'
+          : 'common.care';
+
   // Pricing CTAs. Logged-out visitors are sent to sign-up with the plan
   // preselected; logged-in users get the plan written to profiles.plan
   // (Doctor/Clinic also promote the account to the doctor role).
   const selectPlan = async (plan: PlanId) => {
     console.log('Plan selected:', plan);
 
-    const option = PLANS.find((item) => item.id === plan);
+    const option = planOptions.find((item) => item.id === plan);
     if (!option) return;
 
     if (!currentUser) {
@@ -472,11 +467,11 @@ function App() {
       }
 
       setProfileRefreshKey((key) => key + 1);
-      setToast({ message: `You're now on the ${option.name} plan!`, type: 'success' });
+      setToast({ message: t('auth.toast.planActivated', { name: option.name }), type: 'success' });
     } catch (error) {
       console.error('Plan update failed:', error);
       setToast({
-        message: error instanceof Error ? error.message : 'Could not update your plan. Please try again.',
+        message: error instanceof Error ? error.message : t('auth.toast.planError'),
         type: 'error',
       });
     } finally {
@@ -484,12 +479,20 @@ function App() {
     }
   };
 
-  const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? 'Your profile');
+  // Feature cards, translated for the active locale.
+  const featureCards = FEATURE_CARDS.map((card) => ({
+    title: t(card.title),
+    description: t(card.description),
+    accent: t(card.accent),
+  }));
 
-  const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
-  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'free';
-  const currentPlanOption = PLANS.find((item) => item.id === currentPlanId) ?? PLANS[0];
-  const selectedPlanOption = selectedPlan ? PLANS.find((item) => item.id === selectedPlan) ?? null : null;
+  // "What you unlock" list varies by mode and role.
+  const authBenefitKeys =
+    authMode === 'signup'
+      ? authRole === 'doctor'
+        ? ['auth.doctorBenefit1', 'auth.doctorBenefit2', 'auth.doctorBenefit3']
+        : ['auth.patientBenefit1', 'auth.patientBenefit2', 'auth.patientBenefit3']
+      : ['auth.loginBenefit1', 'auth.loginBenefit2', 'auth.loginBenefit3'];
 
   // Inline errors only appear once the visitor has interacted with a field
   // (blurred it or submitted the form). This keeps a fresh form calm.
@@ -504,11 +507,13 @@ function App() {
     <div className="app-shell">
       <header className="topbar">
         <button className="brand" type="button" onClick={() => navigate('home')}>
-          <img src="/Caremunicate.png" alt="Caremunicate logo" className="brand-logo" />
-          <span>Caremunicate</span>
+          <img src="/Caremunicate.png" alt={t('home.brandLogoAlt')} className="brand-logo" />
+          <span>{t('common.appName')}</span>
         </button>
 
         <div className="nav-actions">
+          <LanguageSwitcher />
+
           {currentUser ? (
             <>
               <div className="profile-menu">
@@ -522,16 +527,16 @@ function App() {
                   <span className="profile-avatar" aria-hidden="true">{profileDisplayName.charAt(0).toUpperCase()}</span>
                   <span className="profile-trigger-copy">
                     <strong>{profileDisplayName}</strong>
-                    <small>{currentPlanOption.name} plan</small>
+                    <small>{currentPlanOption.name} {t('common.plan')}</small>
                   </span>
                   <span className="profile-chevron" aria-hidden="true">{profileMenuOpen ? '▲' : '▼'}</span>
                 </button>
 
                 {profileMenuOpen ? (
-                  <div className="profile-popover" role="dialog" aria-label="Profile menu">
+                  <div className="profile-popover" role="dialog" aria-label={t('header.profileMenu')}>
                     <div className="profile-popover-header">
                       <div>
-                        <span className="profile-kicker">Caremunicate account</span>
+                        <span className="profile-kicker">{t('header.account')}</span>
                         <h3>{profileDisplayName}</h3>
                         <p>{currentUser.email}</p>
                       </div>
@@ -540,8 +545,8 @@ function App() {
 
                     <div className="plan-summary">
                       <div className="plan-summary-heading">
-                        <span>Current plan</span>
-                        <strong>{currentPlanOption.name} plan</strong>
+                        <span>{t('header.currentPlan')}</span>
+                        <strong>{currentPlanOption.name} {t('common.plan')}</strong>
                       </div>
                       <p>{currentPlanOption.subtitle}</p>
                       <div className="plan-meter" aria-hidden="true"><span /></div>
@@ -555,7 +560,7 @@ function App() {
                         navigate('pricing');
                       }}
                     >
-                      <span>Upgrade to other plans</span>
+                      <span>{t('header.upgrade')}</span>
                       <span aria-hidden="true">→</span>
                     </button>
 
@@ -563,22 +568,22 @@ function App() {
                       setProfileMenuOpen(false);
                       navigate('profile');
                     }}>
-                      View full profile
+                      {t('header.viewProfile')}
                     </button>
                   </div>
                 ) : null}
               </div>
               <button className="primary-button" type="button" onClick={handleLogout}>
-                Log out
+                {t('common.logOut')}
               </button>
             </>
           ) : (
             <>
               <button className="ghost-button" type="button" onClick={() => navigate('login')}>
-                Log in
+                {t('common.logIn')}
               </button>
               <button className="primary-button" type="button" onClick={() => navigate('signup')}>
-                Sign up
+                {t('common.signUp')}
               </button>
             </>
           )}
@@ -590,44 +595,41 @@ function App() {
           <>
             <section className="section hero-section">
               <div className="hero-card">
-                <div className="eyebrow">Medical communication • modern care</div>
+                <div className="eyebrow">{t('home.heroEyebrow')}</div>
                 <h1 className="hero-title">
-                  Direct access to care, exactly when it matters.
+                  {t('home.heroTitle')}
                 </h1>
                 <p className="hero-copy">
-                  Caremunicate helps people facing medical-access barriers connect directly with hospitals and doctors through
-                  online calls and meeting sessions. Get regional emergency support, hospital-informed care conversations,
-                  an optional assigned doctor, and an emergency calling system from one accessible platform.
+                  {t('home.heroCopy')}
                 </p>
 
                 <div className="pill-row" style={{ marginBottom: '1.5rem' }}>
-                  <span className="pill">Emergency calls, regional support</span>
-                  <span className="pill">Monthly customer & hospital plans</span>
-                  <span className="pill">Certified & non-certified doctors</span>
+                  <span className="pill">{t('home.heroPill1')}</span>
+                  <span className="pill">{t('home.heroPill2')}</span>
+                  <span className="pill">{t('home.heroPill3')}</span>
                 </div>
 
                 <div className="cta-row">
                   <button className="primary-button" type="button" onClick={() => navigate('signup')}>
-                    Create account
+                    {t('common.createAccount')}
                   </button>
                   <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
-                    View pricing
+                    {t('common.viewPricing')}
                   </button>
                 </div>
               </div>
 
               <div className="hero-visual">
-                <img src="/Caremunicate_carousel_photo.jpg" alt="Caremunicate medical communication dashboard" />
+                <img src="/Caremunicate_carousel_photo.jpg" alt={t('home.heroImageAlt')} />
               </div>
             </section>
 
             <section className="section">
               <div className="section-heading">
-                <div className="eyebrow">Core features</div>
-                <h2>One clear path from urgent need to connected care.</h2>
+                <div className="eyebrow">{t('home.featuresEyebrow')}</div>
+                <h2>{t('home.featuresTitle')}</h2>
                 <p>
-                  Accessible registration and direct communication give customers, doctors, and hospitals the tools to respond
-                  faster and keep care moving forward.
+                  {t('home.featuresCopy')}
                 </p>
               </div>
 
@@ -644,40 +646,39 @@ function App() {
 
             <section className="section care-network">
               <div className="care-grid">
-                <img src="/Caremunicate_Paragraph_photo.jpg" alt="Caremunicate care network" className="care-image" />
+                <img src="/Caremunicate_Paragraph_photo.jpg" alt={t('home.careImageAlt')} className="care-image" />
                 <div className="care-content">
-                  <div className="eyebrow">Care network at a glance</div>
-                  <h2>Simple communication layers for hospitals, doctors, and patients.</h2>
+                  <div className="eyebrow">{t('home.careEyebrow')}</div>
+                  <h2>{t('home.careTitle')}</h2>
                   <p className="hero-copy">
-                    Customers can sign in, browse care options, and save doctors to their wishlist. Doctors can join as
-                    independent professionals or take part in a department plan.
+                    {t('home.careCopy')}
                   </p>
                   <div className="stack-list">
                     <div className="stack-item">
-                      <strong>Emergency line</strong>
-                      <span>Fast, calm access to care support when a patient needs help immediately.</span>
+                      <strong>{t('home.careEmergencyTitle')}</strong>
+                      <span>{t('home.careEmergencyDesc')}</span>
                     </div>
                     <div className="stack-item">
-                      <strong>Hospital info</strong>
-                      <span>Hospitals can share care notes, procedural notes, and relevant service information.</span>
+                      <strong>{t('home.careHospitalTitle')}</strong>
+                      <span>{t('home.careHospitalDesc')}</span>
                     </div>
                     <div className="stack-item">
-                      <strong>Assigned doctors</strong>
-                      <span>Patients can be paired with a personal doctor when they choose that option.</span>
+                      <strong>{t('home.careAssignedTitle')}</strong>
+                      <span>{t('home.careAssignedDesc')}</span>
                     </div>
                   </div>
                   <div className="pill-row" style={{ marginTop: '1.2rem' }}>
-                    <span className="pill">Customer registration</span>
-                    <span className="pill">Doctor registration</span>
-                    <span className="pill">Wishlist saving</span>
+                    <span className="pill">{t('home.carePill1')}</span>
+                    <span className="pill">{t('home.carePill2')}</span>
+                    <span className="pill">{t('home.carePill3')}</span>
                   </div>
                 </div>
               </div>
             </section>
 
             <PricingSection
-              heading="Fair monthly plans for patients, doctors, and hospitals."
-              subheading="No per-call surcharges, no hidden costs, and no sales calls — pick a plan and go."
+              heading={t('pricing.homeHeading')}
+              subheading={t('pricing.homeSubheading')}
               onSelectPlan={(plan) => void selectPlan(plan)}
               currentPlan={currentUser ? currentPlanId : null}
               busyPlan={pendingPlan}
@@ -686,16 +687,16 @@ function App() {
             <section className="section">
               <div className="cta-banner">
                 <div className="cta-banner-copy">
-                  <div className="eyebrow">Ready when you are</div>
-                  <h2>Bring calmer care communication to patients, teams, and hospitals.</h2>
+                  <div className="eyebrow">{t('home.ctaEyebrow')}</div>
+                  <h2>{t('home.ctaTitle')}</h2>
                 </div>
 
                 <div className="cta-row">
                   <button className="primary-button" type="button" onClick={() => openAuth('signup')}>
-                    Create account
+                    {t('common.createAccount')}
                   </button>
                   <button className="secondary-button" type="button" onClick={() => openAuth('signup', 'doctor')}>
-                    I&apos;m a doctor
+                    {t('home.imADoctor')}
                   </button>
                 </div>
               </div>
@@ -706,58 +707,58 @@ function App() {
         {(route === 'signup' || route === 'login') && (
           <section className="section form-grid auth-combined-layout">
             <div className="auth-side auth-visual-panel">
-              <img src="/HealthcareTeamCollab.jpg" alt="Healthcare team collaboration" />
+              <img src="/HealthcareTeamCollab.jpg" alt={t('home.authImageAlt')} />
             </div>
 
             <div className="auth-card auth-panel-shell">
-              <div className="auth-mode-toggle" aria-label="Authentication mode selector">
+              <div className="auth-mode-toggle" aria-label={t('auth.modeAria')}>
                 <button
                   type="button"
                   className={authMode === 'signup' ? 'mode-button active' : 'mode-button'}
                   onClick={() => openAuth('signup', authRole)}
                 >
-                  Sign up
+                  {t('common.signUp')}
                 </button>
                 <button
                   type="button"
                   className={authMode === 'login' ? 'mode-button active' : 'mode-button'}
                   onClick={() => openAuth('login', authRole)}
                 >
-                  Log in
+                  {t('common.logIn')}
                 </button>
               </div>
 
               <div className="auth-form-shell" key={authMode}>
-                <div className="eyebrow">{authMode === 'signup' ? 'Accessible registration' : 'Secure access'}</div>
+                <div className="eyebrow">{authMode === 'signup' ? t('auth.signupEyebrow') : t('auth.loginEyebrow')}</div>
                 <h2>
                   {authMode === 'signup'
                     ? authRole === 'doctor'
-                      ? 'Create your doctor profile'
-                      : 'Create your Caremunicate account'
-                    : 'Welcome back to Caremunicate'}
+                      ? t('auth.titleDoctorSignup')
+                      : t('auth.titleSignup')
+                    : t('auth.titleLogin')}
                 </h2>
                 <p className="auth-copy">
                   {authMode === 'signup'
                     ? authRole === 'doctor'
-                      ? 'Join Caremunicate as a physician, manage your availability, and welcome patients with a calmer, clearer care experience.'
-                      : 'Join as a patient, doctor, or care team member and bring clearer communication into everyday healthcare.'
-                    : 'Access your dashboard, hospital updates, planned consultations, and saved doctor preferences in one secure place.'}
+                      ? t('auth.copyDoctorSignup')
+                      : t('auth.copySignup')
+                    : t('auth.copyLogin')}
                 </p>
 
-                <div className="role-toggle" aria-label="Account type selector">
+                <div className="role-toggle" aria-label={t('auth.roleAria')}>
                   <button
                     type="button"
                     className={authRole === 'patient' ? 'role-button active' : 'role-button'}
                     onClick={() => setAuthRole('patient')}
                   >
-                    Patient
+                    {t('common.patient')}
                   </button>
                   <button
                     type="button"
                     className={authRole === 'doctor' ? 'role-button active' : 'role-button'}
                     onClick={() => setAuthRole('doctor')}
                   >
-                    Doctor
+                    {t('common.doctor')}
                   </button>
                 </div>
 
@@ -766,15 +767,15 @@ function App() {
                     {selectedPlanOption ? (
                       <div className="plan-selected-banner">
                         <div>
-                          <span className="plan-selected-label">Selected plan</span>
+                          <span className="plan-selected-label">{t('auth.selectedPlan')}</span>
                           <strong>{selectedPlanOption.name}</strong>
                           <small>
                             {selectedPlanOption.price}
-                            {selectedPlanOption.cadence} — you can change this any time.
+                            {selectedPlanOption.cadence} {t('auth.canChange')}
                           </small>
                         </div>
                         <button type="button" onClick={() => navigate('pricing')}>
-                          Change
+                          {t('common.change')}
                         </button>
                       </div>
                     ) : null}
@@ -786,8 +787,8 @@ function App() {
                         <div className="field-wrap">
                           <input
                             className="input"
-                            placeholder="Full name"
-                            aria-label="Full name"
+                            placeholder={t('auth.fullName')}
+                            aria-label={t('auth.fullName')}
                             value={signupValues.fullName}
                             onBlur={() => setTouchedFields((previous) => ({ ...previous, fullName: true }))}
                             onChange={(event) => {
@@ -803,9 +804,9 @@ function App() {
                         <div className="field-wrap">
                           <input
                             className="input"
-                            placeholder="Email address"
+                            placeholder={t('auth.email')}
                             type="email"
-                            aria-label="Email address"
+                            aria-label={t('auth.email')}
                             value={signupValues.email}
                             onBlur={() => setTouchedFields((previous) => ({ ...previous, email: true }))}
                             onChange={(event) => {
@@ -825,8 +826,8 @@ function App() {
                           <div className="field-wrap">
                             <input
                               className="input"
-                              placeholder="Medical specialty"
-                              aria-label="Medical specialty"
+                              placeholder={t('auth.specialty')}
+                              aria-label={t('auth.specialty')}
                               value={signupValues.specialty}
                               onBlur={() => setTouchedFields((previous) => ({ ...previous, specialty: true }))}
                               onChange={(event) => {
@@ -842,8 +843,8 @@ function App() {
                           <div className="field-wrap">
                             <input
                               className="input"
-                              placeholder="License or clinic"
-                              aria-label="License or clinic"
+                              placeholder={t('auth.clinic')}
+                              aria-label={t('auth.clinic')}
                               value={signupValues.clinic}
                               onBlur={() => setTouchedFields((previous) => ({ ...previous, clinic: true }))}
                               onChange={(event) => {
@@ -862,9 +863,9 @@ function App() {
                       <div className="field-wrap">
                         <input
                           className="input"
-                          placeholder="Password"
+                          placeholder={t('auth.password')}
                           type="password"
-                          aria-label="Password"
+                          aria-label={t('auth.password')}
                           autoComplete="new-password"
                           value={signupValues.password}
                           onBlur={() => setTouchedFields((previous) => ({ ...previous, password: true }))}
@@ -887,7 +888,7 @@ function App() {
                         {/* Real-time password requirements checklist. Hidden until
                             the user starts typing, then updates live. */}
                         {signupValues.password.length > 0 ? (
-                          <ul className="password-checklist" aria-label="Password requirements">
+                          <ul className="password-checklist" aria-label={t('auth.reqAria')}>
                             {passwordChecklist.map((item) => (
                               <li key={item.label} className={item.met ? 'password-rule met' : 'password-rule'}>
                                 <span aria-hidden="true">{item.met ? '✅' : '❌'}</span> {item.label}
@@ -900,9 +901,9 @@ function App() {
                       <div className="field-wrap">
                         <input
                           className="input"
-                          placeholder="Confirm password"
+                          placeholder={t('auth.confirmPassword')}
                           type="password"
-                          aria-label="Confirm password"
+                          aria-label={t('auth.confirmPassword')}
                           autoComplete="new-password"
                           value={signupValues.confirmPassword}
                           onBlur={() => setTouchedFields((previous) => ({ ...previous, confirmPassword: true }))}
@@ -923,7 +924,7 @@ function App() {
                         <select
                           className="select"
                           value={signupValues.role}
-                          aria-label="Select role"
+                          aria-label={t('auth.selectRoleAria')}
                           onBlur={() => setTouchedFields((previous) => ({ ...previous, role: true }))}
                           onChange={(event) => {
                             setSignupValues((previous) => ({ ...previous, role: event.target.value }));
@@ -934,17 +935,17 @@ function App() {
                           aria-invalid={showFieldError('role')}
                         >
                           <option value="" disabled>
-                            {authRole === 'doctor' ? 'Professional type' : 'Select your role'}
+                            {authRole === 'doctor' ? t('auth.professionalType') : t('auth.selectRole')}
                           </option>
-                          <option value="patient">Patient</option>
-                          <option value="doctor">Doctor</option>
-                          <option value="hospital">Hospital</option>
+                          <option value="patient">{t('common.patient')}</option>
+                          <option value="doctor">{t('common.doctor')}</option>
+                          <option value="hospital">{t('common.hospital')}</option>
                         </select>
                         {showFieldError('role') ? <span className="field-error">{signupErrors.role}</span> : null}
                       </div>
 
                       <button className="primary-button" type="submit" disabled={isAuthLoading || !signupIsValid}>
-                        {isAuthLoading ? 'Creating account...' : authRole === 'doctor' ? 'Create doctor profile' : 'Create account'}
+                        {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}
                       </button>
                     </>
                   </form>
@@ -954,28 +955,11 @@ function App() {
                 )}
 
                 <div className="auth-benefits">
-                  <div className="eyebrow">{authMode === 'signup' ? 'What you unlock' : 'Helpful recovery tools'}</div>
+                  <div className="eyebrow">{authMode === 'signup' ? t('auth.benefitsSignup') : t('auth.benefitsLogin')}</div>
                   <ul className="thin-list">
-                    {(authMode === 'signup'
-                      ? authRole === 'doctor'
-                        ? [
-                            'Professional profile and availability setup',
-                            'Patient routing and care follow-up tools',
-                            'Hospital and department collaboration workflows',
-                          ]
-                        : [
-                            'Emergency routing and communication support',
-                            'Doctor wishlist and assigned care tools',
-                            'Hospital updates and monthly plan access',
-                          ]
-                      : [
-                          'Fast profile access',
-                          'Saved doctors for quick follow-up',
-                          'Emergency support and dashboard tools',
-                        ])
-                      .map((item) => (
-                        <li key={item}>{item}</li>
-                      ))}
+                    {authBenefitKeys.map((key) => (
+                      <li key={key}>{t(key)}</li>
+                    ))}
                   </ul>
                 </div>
               </div>
@@ -987,37 +971,38 @@ function App() {
           <ProtectedRoute>
             <section className="section profile-grid">
             <div className="profile-card">
-              <div className="eyebrow">Your care dashboard</div>
-              <h2>Welcome back, {userProfile?.fullName ?? currentUser?.email ?? 'there'}</h2>
+              <div className="eyebrow">{t('profile.eyebrow')}</div>
+              <h2>{t('profile.welcome', { name: userProfile?.fullName ?? currentUser?.email ?? '' })}</h2>
               <p className="hero-copy">
-                Your {userProfile?.role ?? 'care'} profile is connected to hospital updates, your wishlist, and your
-                ongoing care preferences.
+                {t('profile.copy', { role: t(profileRoleKey) })}
               </p>
 
               <div className="pill-row">
-                <span className="pill">Assigned doctor enabled</span>
-                <span className="pill">Emergency line active</span>
-                <span className="pill">Hospital sync ready</span>
+                <span className="pill">{t('profile.pill1')}</span>
+                <span className="pill">{t('profile.pill2')}</span>
+                <span className="pill">{t('profile.pill3')}</span>
               </div>
             </div>
 
             <div className="profile-sidebar">
               <div className="panel">
-                <div className="eyebrow">Emergency line</div>
-                <h3>Emergency service unavailable</h3>
-                <p>The emergency calling service is not available right now. Please check back later for updates.</p>
+                <div className="eyebrow">{t('profile.emergencyEyebrow')}</div>
+                <h3>{t('profile.emergencyTitle')}</h3>
+                <p>{t('profile.emergencyCopy')}</p>
                 <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }} disabled>
-                  Service unavailable
+                  {t('profile.emergencyButton')}
                 </button>
               </div>
 
               <TwoFactorSetup />
 
               <div className="panel">
-                <div className="eyebrow">Hospital updates</div>
-                <h3>Latest care notes</h3>
-                <p>Fresh hospital information, case notes, and follow-up updates are ready for review whenever you need them.</p>
+                <div className="eyebrow">{t('profile.updatesEyebrow')}</div>
+                <h3>{t('profile.updatesTitle')}</h3>
+                <p>{t('profile.updatesCopy')}</p>
               </div>
+
+              <CarePlaces role={profileRole} />
             </div>
             </section>
           </ProtectedRoute>
@@ -1031,9 +1016,9 @@ function App() {
                   <ChatWindow conversationId={conversationId} />
                 ) : (
                   <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
-                    <p>This chat link is invalid.</p>
+                    <p>{t('profile.chatInvalidLink')}</p>
                     <a href="#profile" style={{ color: 'var(--accent-strong, #2d7a5f)' }}>
-                      ← Back to dashboard
+                      ← {t('chat.backAria')}
                     </a>
                   </div>
                 )}
@@ -1044,8 +1029,8 @@ function App() {
 
         {route === 'pricing' && (
           <PricingSection
-            heading="Simple monthly pricing, ready when you are."
-            subheading="Every plan is self-serve — choose one and it's applied to your account instantly."
+            heading={t('pricing.pageHeading')}
+            subheading={t('pricing.pageSubheading')}
             onSelectPlan={(plan) => void selectPlan(plan)}
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
@@ -1062,7 +1047,7 @@ function App() {
       <FloatingChatWidget />
 
       <footer className="footer">
-        <p>Caremunicate • A calm, postmodern medical communication experience.</p>
+        <p>{t('footer.tagline')}</p>
       </footer>
     </div>
   );
