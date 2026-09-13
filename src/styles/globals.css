@@ -1130,6 +1130,47 @@ img {
   text-align: center;
 }
 
+/* Emergency line: mint-to-red pulse while a line is active. */
+.emergency-pulse {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #2d9c78;
+  animation: emergencyPulse 1.6s ease-out infinite;
+}
+
+@keyframes emergencyPulse {
+  0% {
+    background: #2d9c78;
+    box-shadow: 0 0 0 0 rgba(224, 101, 90, 0.5);
+  }
+  70% {
+    background: #e0655a;
+    box-shadow: 0 0 0 0.75rem rgba(224, 101, 90, 0);
+  }
+  100% {
+    background: #2d9c78;
+    box-shadow: 0 0 0 0 rgba(224, 101, 90, 0);
+  }
+}
+
+/* Provider alert banner: sits above the dashboard cards. */
+.emergency-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-block: 0.9rem;
+  padding-inline: 1rem;
+  border: 1px solid rgba(224, 101, 90, 0.45);
+  border-radius: 1.15rem;
+  background: linear-gradient(135deg, rgba(224, 101, 90, 0.16), rgba(62, 169, 133, 0.14));
+  box-shadow: 0 18px 40px rgba(17, 55, 47, 0.12);
+}
+
 .auth-success {
   color: var(--accent-strong);
   font-size: 0.82rem;

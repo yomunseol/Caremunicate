@@ -1015,15 +1015,6 @@ function App() {
             <DashboardOverview role={profileRole} />
 
             <div className="profile-sidebar">
-              <div className="panel">
-                <div className="eyebrow">{t('profile.emergencyEyebrow')}</div>
-                <h3>{t('profile.emergencyTitle')}</h3>
-                <p>{t('profile.emergencyCopy')}</p>
-                <button className="primary-button" type="button" style={{ marginTop: '0.9rem' }} disabled>
-                  {t('profile.emergencyButton')}
-                </button>
-              </div>
-
               <TwoFactorSetup />
 
               <div className="panel">

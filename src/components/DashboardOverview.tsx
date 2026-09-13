@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Calendar, CheckCircle2, MessageCircle, Phone, ShieldCheck, Video, X } from 'lucide-react';
+import { Calendar, CheckCircle2, MessageCircle, ShieldCheck, Video, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
+import { useCallContext } from '../context/CallContext';
+import EmergencyAlertBanner from './EmergencyAlertBanner';
+import EmergencyCard from './EmergencyCard';
 
 // ---------------------------------------------------------------------------
 // Dashboard overview — the left column of the profile dashboard.
@@ -14,21 +17,6 @@ import { useLang } from '../i18n';
 // derived from what actually exists rather than faked — see the comments on
 // each section.
 // ---------------------------------------------------------------------------
-
-// Locale → local emergency number.
-const EMERGENCY_NUMBERS: Record<string, string> = {
-  ko: '119',
-  en: '911',
-  fr: '112',
-  es: '112',
-  de: '112',
-  it: '112',
-  zh: '120',
-  pt: '192',
-  he: '101',
-  ar: '997',
-};
-const FALLBACK_EMERGENCY = '112';
 
 type Peer = {
   conversationId: string;
@@ -58,10 +46,6 @@ const startOfToday = (): string => {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 };
 
-/** Jitsi room ids must be URL-safe. */
-const toRoomId = (raw: string): string =>
-  `Caremunicate-${raw.replace(/[^A-Za-z0-9]/g, '-')}`.slice(0, 120);
-
 type DashboardOverviewProps = {
   /** Persisted profiles.role (falls back to sign-up metadata). */
   role?: string;
@@ -69,7 +53,7 @@ type DashboardOverviewProps = {
 
 export default function DashboardOverview({ role = '' }: DashboardOverviewProps) {
   const { user } = useAuth();
-  const { locale, t } = useLang();
+  const { t } = useLang();
 
   const effectiveRole = (role || String(user?.user_metadata?.role ?? '')).toLowerCase();
   // Provider-side cards cover doctor, department and hospital accounts.
@@ -78,7 +62,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
   const [overview, setOverview] = useState<Overview>(EMPTY_OVERVIEW);
   const [loading, setLoading] = useState(true);
-  const [videoRoom, setVideoRoom] = useState<string | null>(null);
+  const { startCall } = useCallContext();
 
   const load = useCallback(async () => {
     if (!user) {
@@ -202,10 +186,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
     void load();
   }, [load]);
 
-  const emergencyNumber = EMERGENCY_NUMBERS[locale] ?? FALLBACK_EMERGENCY;
-
-  // "Care team" is derived: the doctors (then hospitals) I already have an open
-  // conversation with. There is no assignment table to read from.
+  // "Care team" is derived: providers I already have an open conversation with.
   const careTeam = useMemo(() => {
     const byRole = (role: string) => overview.peers.filter((peer) => peer.role === role);
     return [...byRole('doctor'), ...byRole('department'), ...byRole('hospital')][0] ?? null;
@@ -241,7 +222,9 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
     );
   };
 
-  const startVideo = (roomSource: string) => setVideoRoom(toRoomId(roomSource));
+  const startVideo = (peerId?: string) => {
+    if (peerId) void startCall(peerId, 'video');
+  };
 
   return (
     <div className="dashboard-main">
@@ -272,7 +255,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => startVideo(careTeam.conversationId)}
+                    onClick={() => startVideo(careTeam.userId)}
                   >
                     <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
                   </button>
@@ -283,14 +266,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
             )}
           </div>
 
-          <div className="panel">
-            <div className="eyebrow">{t('dash.emergencyTitle')}</div>
-            <p style={styles.muted}>{t('dash.emergencyBody')}</p>
-            <a href={`tel:${emergencyNumber}`} style={styles.emergencyButton}>
-              <Phone size={18} aria-hidden="true" />
-              {t('dash.callNow', { number: emergencyNumber })}
-            </a>
-          </div>
+          <EmergencyCard />
 
           <div className="panel">
             <div className="eyebrow">{t('dash.quickActions')}</div>
@@ -301,7 +277,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
               <button
                 type="button"
                 className="ghost-button"
-                onClick={() => startVideo(user?.id ?? 'consult')}
+                onClick={() => startVideo(careTeam?.userId)}
+                disabled={!careTeam}
               >
                 <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
               </button>
@@ -341,6 +318,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
       ) : (
         /* -------------------------------- DOCTOR ------------------------------ */
         <>
+          <EmergencyAlertBanner />
+
           <div className="panel">
             <div className="eyebrow">{t('dash.todaysStats')}</div>
             <div style={styles.statGrid}>
@@ -366,7 +345,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
               type="button"
               className="primary-button"
               style={{ width: '100%' }}
-              onClick={() => startVideo(user?.id ?? 'consult')}
+              onClick={() => startVideo(overview.peers[0]?.userId)}
+              disabled={overview.peers.length === 0}
             >
               <Video size={16} aria-hidden="true" /> {t('dash.startVideoConsult')}
             </button>
@@ -391,32 +371,6 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           </div>
         </>
       )}
-
-      {videoRoom ? (
-        <div style={styles.modalBackdrop} role="dialog" aria-modal="true" aria-label={t('dash.videoTitle')}>
-          <div style={styles.modal}>
-            <div style={styles.modalHead}>
-              <strong>{t('dash.videoTitle')}</strong>
-              <button
-                type="button"
-                onClick={() => setVideoRoom(null)}
-                aria-label={t('common.close')}
-                style={styles.modalClose}
-              >
-                <X size={16} />
-              </button>
-            </div>
-            {/* Keyless: Jitsi Meet's public instance, no account or API key. */}
-            <iframe
-              title={t('dash.videoTitle')}
-              src={`https://meet.jit.si/${videoRoom}`}
-              style={styles.videoFrame}
-              allow="camera; microphone; fullscreen; display-capture; autoplay"
-            />
-            <p style={styles.hint}>{t('dash.videoHint')}</p>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
@@ -450,23 +404,6 @@ const styles: Record<string, CSSProperties> = {
     letterSpacing: '0.05em',
   },
   teamActions: { display: 'flex', gap: '0.4rem', flexWrap: 'wrap' },
-  emergencyButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: '0.5rem',
-    width: '100%',
-    marginTop: '0.9rem',
-    paddingBlock: '0.95rem',
-    paddingInline: '1rem',
-    borderRadius: '999px',
-    border: 'none',
-    background: 'linear-gradient(120deg, #e0655a, #f0a099)',
-    color: '#4a1610',
-    fontWeight: 800,
-    fontSize: '1rem',
-    textDecoration: 'none',
-  },
   actionGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' },
   progressHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
   progressLabel: { color: '#216e5d', fontSize: '0.74rem', fontWeight: 700 },
