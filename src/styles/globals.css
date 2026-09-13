@@ -1456,3 +1456,105 @@ img {
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Call rooms — the host / join panel and the /call/{code} route.
+   Logical properties only, so the whole panel mirrors under [dir='rtl'].
+   --------------------------------------------------------------------------- */
+.call-rooms-panel {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.call-host-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.call-join-trigger {
+  width: 100%;
+  justify-content: center;
+}
+
+.call-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the Leaflet panes (400-1000) and the sticky topbar (1100). */
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(6, 26, 22, 0.55);
+}
+
+.call-modal {
+  display: grid;
+  gap: 0.7rem;
+  width: min(28rem, 100%);
+  padding: 1.15rem;
+  border-radius: 1.15rem;
+  background: #f7fdf9;
+  border: 1px solid rgba(62, 169, 133, 0.3);
+  box-shadow: 0 28px 64px rgba(6, 26, 22, 0.4);
+}
+
+.call-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.call-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 58, 50, 0.08);
+  color: #216e5d;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.call-modal-field {
+  display: grid;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #216e5d;
+  text-align: start;
+}
+
+.call-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.call-page {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+  padding-block: 3rem;
+}
+
+.call-page-code {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #216e5d;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .call-host-form {
+    grid-template-columns: 1fr;
+  }
+}

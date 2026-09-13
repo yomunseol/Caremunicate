@@ -8,6 +8,7 @@ import { useCallContext } from '../context/CallContext';
 import VerificationBadge from './VerificationBadge';
 import EmergencyAlertBanner from './EmergencyAlertBanner';
 import EmergencyCard from './EmergencyCard';
+import CallRoomsPanel from './CallRoomsPanel';
 
 // ---------------------------------------------------------------------------
 // Dashboard overview — the left column of the profile dashboard.
@@ -281,6 +282,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
           <EmergencyCard />
 
+          <CallRoomsPanel canHost={provider} />
+
           <div className="panel">
             <div className="eyebrow">{t('dash.quickActions')}</div>
             <div style={styles.actionGrid}>
@@ -365,6 +368,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
             </button>
             <p style={styles.hint}>{t('dash.videoHint')}</p>
           </div>
+
+          <CallRoomsPanel canHost={provider} />
 
           <div className="panel">
             <div className="eyebrow">{t('dash.certificationTitle')}</div>

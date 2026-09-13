@@ -22,8 +22,10 @@ import { useLang } from '../i18n';
 // ---------------------------------------------------------------------------
 // Care Places — keyless, credit-card-free map stack.
 //
-//   Search : Overpass API (https://overpass-api.de/api/interpreter) — POST only,
-//            no key, no quota account, OSM data.
+//   Search : same-origin /api/overpass (see server/overpass.ts) — the server
+//            reaches the Overpass mirrors and caches the answer at the edge.
+//            No key, no quota account, OSM data. The browser makes no
+//            cross-origin Overpass request.
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
@@ -31,16 +33,13 @@ import { useLang } from '../i18n';
 // before a query can run (the `around:` filter needs a centre point).
 // ---------------------------------------------------------------------------
 
-// Requests go through the CORS proxy first. It is key-gated server-side (keyless
-// calls answer 403 "keyless_legacy_url"), so the keyless instances stay behind it
-// as fallbacks — the panel keeps working either way.
-const OVERPASS_ENDPOINTS = [
-  'https://corsproxy.io/?https://overpass-api.de/api/interpreter',
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-];
+const OVERPASS_PROXY = '/api/overpass';
 const NEAR_RADIUS_M = 5000;
-const OVERPASS_TIMEOUT_MS = 8000;
+/** Hard client ceiling; the proxy allows 15s per mirror. */
+const OVERPASS_TIMEOUT_MS = 15_000;
+/** Results are cached per rounded centre + filter for ten minutes. */
+const CACHE_PREFIX = 'cp:';
+const CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_CENTER: [number, number] = [30, 0];
 const DEFAULT_ZOOM = 2;
 const FOCUS_ZOOM = 15;
@@ -113,40 +112,56 @@ out center;`;
 };
 
 /**
- * POSTs the query to each keyless Overpass endpoint until one answers.
- * `application/x-www-form-urlencoded` is CORS-safelisted, so this stays a simple
- * request (no preflight). Throws the last failure so the caller can show one
- * user-facing message while the technical detail stays in the console.
+ * Same-origin request to the Overpass proxy. Mirror rotation, the per-mirror
+ * 15s ceiling and the edge cache all live server-side, so this is a single GET.
  */
-const postOverpass = async (
+const fetchOverpass = async (
   query: string,
   signal: AbortSignal,
 ): Promise<{ elements?: OverpassElement[] }> => {
-  let lastError: unknown = null;
+  const response = await fetch(`${OVERPASS_PROXY}?data=${encodeURIComponent(query)}`, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
 
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: `data=${encodeURIComponent(query)}`,
-        signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`${endpoint} responded ${response.status}`);
-      }
-
-      return (await response.json()) as { elements?: OverpassElement[] };
-    } catch (caught) {
-      // A real abort (unmount / superseded request) must not fall through.
-      if ((caught as Error)?.name === 'AbortError') throw caught;
-      console.error('OVERPASS_ERROR:', caught);
-      lastError = caught;
-    }
+  if (!response.ok) {
+    throw new Error(`${OVERPASS_PROXY} responded ${response.status}`);
   }
 
-  throw lastError ?? new Error('No Overpass endpoint reachable.');
+  return (await response.json()) as { elements?: OverpassElement[] };
+};
+
+/** Cache key: `cp:{lat2},{lon2},{filters}` — centre rounded to 2 decimals. */
+const cacheKey = (lat: number, lon: number, amenities: readonly string[]): string =>
+  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)},${[...amenities].sort().join('|')}`;
+
+/** Reads a cached element list, dropping entries older than the TTL. */
+const readCache = (key: string): OverpassElement[] | null => {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as { at?: number; elements?: OverpassElement[] };
+    if (typeof parsed?.at !== 'number') return null;
+
+    if (Date.now() - parsed.at > CACHE_TTL_MS) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+
+    return parsed.elements ?? [];
+  } catch {
+    // Corrupt JSON, or storage blocked (private mode) — behave as a miss.
+    return null;
+  }
+};
+
+const writeCache = (key: string, elements: OverpassElement[]): void => {
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ at: Date.now(), elements }));
+  } catch {
+    // Quota exceeded or storage blocked — caching is best-effort.
+  }
 };
 
 const elementToPlace = (element: OverpassElement): PlaceView | null => {
@@ -270,7 +285,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Hard 8s ceiling: Overpass + a proxy can hang without ever erroring.
+      // Hard 15s ceiling: the proxy can hang without ever erroring.
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
@@ -281,13 +296,33 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
+      const key = cacheKey(at.lat, at.lon, amenityFilter);
+      const cached = readCache(key);
+      if (cached !== null) {
+        // A cache hit is still a finished search: settle immediately, no network.
+        window.clearTimeout(timeoutId);
+        if (abortRef.current === controller) {
+          const places = cached
+            .map(elementToPlace)
+            .filter((place): place is PlaceView => place !== null);
+          setResults(places);
+          setSelectedId(null);
+          setSearched(true);
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
-        const payload = await postOverpass(
+        const payload = await fetchOverpass(
           buildOverpassQuery(at.lat, at.lon, amenityFilter),
           controller.signal,
         );
 
-        const places = (payload.elements ?? [])
+        const elements = payload.elements ?? [];
+        writeCache(key, elements);
+
+        const places = elements
           .map(elementToPlace)
           .filter((place): place is PlaceView => place !== null);
 
@@ -306,7 +341,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         }
 
         console.error('OVERPASS_ERROR:', caught);
-        setError(t('places.loadFailed'));
+        setError(t('places.searchFailed'));
         setResults([]);
       } finally {
         window.clearTimeout(timeoutId);

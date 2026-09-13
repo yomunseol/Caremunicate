@@ -12,7 +12,8 @@ const CallContext = createContext<UseCallResult | null>(null);
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const call = useCall(user?.id);
+  const displayName = String(user?.user_metadata?.fullName ?? user?.email ?? '');
+  const call = useCall(user?.id, displayName);
 
   return (
     <CallContext.Provider value={call}>

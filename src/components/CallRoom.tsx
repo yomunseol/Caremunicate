@@ -26,6 +26,8 @@ export default function CallRoom() {
   const {
     status,
     kind,
+    roomCode,
+    isHost,
     incoming,
     peers,
     localStream,
@@ -40,12 +42,26 @@ export default function CallRoom() {
     acceptCall,
     declineCall,
     endCall,
+    endForAll,
     toggleMic,
     toggleCamera,
+    notify,
     clearNotice,
   } = useCallContext();
 
   const emergency = kind === 'emergency';
+
+  // Copies to the clipboard and surfaces the "Copied!" toast. Clipboard access
+  // can be denied outside a secure context, so the failure is swallowed.
+  const copy = (text: string) => {
+    void navigator.clipboard
+      ?.writeText(text)
+      .then(() => notify('copied'))
+      .catch(() => {});
+  };
+
+  const shareUrl =
+    typeof window === 'undefined' ? '' : `${window.location.origin}${window.location.pathname}#call/${roomCode ?? ''}`;
   const inSession =
     status === 'outgoing' || status === 'connecting' || status === 'active' || status === 'reconnecting';
 
@@ -92,6 +108,27 @@ export default function CallRoom() {
             <div style={styles.emergencyBanner}>
               <span className="emergency-pulse" aria-hidden="true" />
               {t('call.emergencyActive')}
+            </div>
+          ) : roomCode ? (
+            <div style={styles.roomHeader}>
+              <span className="eyebrow" style={styles.roomHeaderLabel}>{t('call.callCode')}</span>
+              <span style={styles.codeChip} dir="ltr">{roomCode}</span>
+              <button
+                type="button"
+                onClick={() => copy(roomCode)}
+                aria-label={t('call.copyCode')}
+                style={styles.headerButton}
+              >
+                📋 {t('call.copyCode')}
+              </button>
+              <button
+                type="button"
+                onClick={() => copy(shareUrl)}
+                aria-label={t('call.shareLink')}
+                style={styles.headerButton}
+              >
+                {t('call.shareLink')}
+              </button>
             </div>
           ) : null}
 
@@ -142,6 +179,12 @@ export default function CallRoom() {
               <PhoneOff size={18} />
             </button>
 
+            {isHost ? (
+              <button type="button" onClick={endForAll} style={styles.endForAll}>
+                {t('call.endForAll')}
+              </button>
+            ) : null}
+
             <button type="button" onClick={toggleStats} aria-label={t('call.stats')} style={styles.iconButton}>
               <Activity size={18} />
             </button>
@@ -158,11 +201,15 @@ export default function CallRoom() {
 
       {notice ? (
         <div style={styles.notice} role="status" aria-live="polite">
-          {notice === 'declined'
-            ? t('call.ended')
-            : notice === 'continue-in-chat'
-              ? t('chat.messages')
-              : t('call.ended')}
+          {notice === 'copied'
+            ? t('call.copied')
+            : notice === 'room-ended'
+              ? t('call.roomEnded')
+              : notice === 'room-not-found'
+                ? t('call.roomNotFound')
+                : notice === 'continue-in-chat'
+                  ? t('chat.messages')
+                  : t('call.ended')}
         </div>
       ) : null}
     </>
@@ -231,6 +278,42 @@ const styles: Record<string, CSSProperties> = {
     color: '#ffd9d4',
     fontWeight: 800,
   },
+  roomHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '0.55rem',
+    flexWrap: 'wrap',
+  },
+  roomHeaderLabel: { margin: 0, color: '#cfe9df' },
+  codeChip: {
+    paddingBlock: '0.4rem',
+    paddingInline: '0.75rem',
+    borderRadius: '0.7rem',
+    background: 'rgba(255, 255, 255, 0.12)',
+    border: '1px solid rgba(255, 255, 255, 0.28)',
+    color: '#f2fffa',
+    fontWeight: 800,
+    letterSpacing: '0.04em',
+    // Codes are read aloud and typed; never let one overflow the header.
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    maxWidth: 'min(90vw, 22rem)',
+  },
+  headerButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    paddingBlock: '0.4rem',
+    paddingInline: '0.75rem',
+    borderRadius: '999px',
+    border: '1px solid rgba(255, 255, 255, 0.28)',
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#f2fffa',
+    fontWeight: 700,
+    fontSize: '0.76rem',
+    cursor: 'pointer',
+  },
   stage: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -266,6 +349,17 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: '50%',
     background: 'linear-gradient(120deg, #e0655a, #f0a099)',
     color: '#4a1610',
+    cursor: 'pointer',
+  },
+  endForAll: {
+    paddingBlock: '0.6rem',
+    paddingInline: '0.9rem',
+    borderRadius: '999px',
+    border: '1px solid rgba(224, 101, 90, 0.55)',
+    background: 'rgba(224, 101, 90, 0.18)',
+    color: '#ffd9d4',
+    fontWeight: 800,
+    fontSize: '0.78rem',
     cursor: 'pointer',
   },
   statsChip: {

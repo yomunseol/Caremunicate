@@ -9,13 +9,14 @@ import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
 import CarePlaces from './components/CarePlaces';
 import DashboardOverview from './components/DashboardOverview';
+import CallPage from './components/CallPage';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
 import { isProvider } from './lib/roles';
 import { useLang } from './i18n';
 
-type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
+type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat' | 'call';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -32,6 +33,7 @@ const FEATURE_CARDS = [
 type ParsedRoute = {
   route: RouteKey;
   conversationId: string | null;
+  callCode: string | null;
   plan: string | null;
 };
 
@@ -39,6 +41,7 @@ type ParsedRoute = {
 //   #home, #signup, #login, #profile, #pricing   (existing routes)
 //   #signup?plan=care-plus                       (plan preselected from pricing)
 //   #/chat/<conversationId>  (chat, set by the chat list and dashboard)
+//   #call/<code> or #/call/<code>  (call room; a leading slash is stripped by clean)
 const parseHash = (hash: string): ParsedRoute => {
   const clean = hash.replace(/^#\/?/, '');
   const [rawName, ...rest] = clean.split('/');
@@ -48,14 +51,22 @@ const parseHash = (hash: string): ParsedRoute => {
   if (name === 'chat') {
     const id = rest.join('/');
     return id
-      ? { route: 'chat', conversationId: id, plan: null }
-      : { route: 'home', conversationId: null, plan: null };
+      ? { route: 'chat', conversationId: id, callCode: null, plan: null }
+      : { route: 'home', conversationId: null, callCode: null, plan: null };
+  }
+
+  if (name === 'call') {
+    const code = rest.join('/');
+    return code
+      ? { route: 'call', conversationId: null, callCode: code, plan: null }
+      : { route: 'home', conversationId: null, callCode: null, plan: null };
   }
 
   const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
+    callCode: null,
     plan: params.get('plan'),
   };
 };
@@ -65,6 +76,9 @@ const getInitialRoute = (): RouteKey =>
 
 const getInitialConversationId = (): string | null =>
   typeof window === 'undefined' ? null : parseHash(window.location.hash).conversationId;
+
+const getInitialCallCode = (): string | null =>
+  typeof window === 'undefined' ? null : parseHash(window.location.hash).callCode;
 
 const getInitialPlan = (): PlanId | null => {
   if (typeof window === 'undefined') return null;
@@ -110,6 +124,7 @@ function App() {
   const { t } = useLang();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
+  const [callCode, setCallCode] = useState<string | null>(getInitialCallCode);
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
   const [signupValues, setSignupValues] = useState<SignupFormValues>({
@@ -160,6 +175,7 @@ function App() {
       const parsed = parseHash(window.location.hash);
       setRoute(parsed.route);
       setConversationId(parsed.conversationId);
+      setCallCode(parsed.callCode);
       setAuthMode(parsed.route === 'login' ? 'login' : 'signup');
       // Only overwrite the selection when the URL actually carries a valid
       // plan (deep link / browser back into #signup?plan=...). A plain #signup
@@ -225,6 +241,7 @@ function App() {
     }
     setRoute(nextRoute);
     setConversationId(null);
+    setCallCode(null);
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -1045,6 +1062,12 @@ function App() {
                 )}
               </ErrorBoundary>
             </section>
+          </ProtectedRoute>
+        )}
+
+        {route === 'call' && (
+          <ProtectedRoute>
+            <CallPage code={callCode ?? ''} />
           </ProtectedRoute>
         )}
 
