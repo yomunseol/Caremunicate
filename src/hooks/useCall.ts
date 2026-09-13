@@ -45,6 +45,121 @@ const PEER_TIMEOUT_MS = 35_000;
 const ANSWER_TIMEOUT_MS = 12_000;
 const EMERGENCY_RETRIES = 3;
 
+// Capture + sender ceilings. 720p30 is the top rung; the adaptive ladder below
+// steps down from here.
+const MAX_WIDTH = 1280;
+const MAX_HEIGHT = 720;
+const MAX_FPS = 30;
+const MAX_BITRATE = 900_000;
+
+/** 720 → 480 → 360 → (video off). */
+const LADDER: Array<{ width: number; height: number }> = [
+  { width: 1280, height: 720 },
+  { width: 854, height: 480 },
+  { width: 640, height: 360 },
+];
+
+const STATS_INTERVAL_MS = 5000;
+const RECOVER_AFTER_MS = 15_000;
+
+export type CallStats = {
+  width: number;
+  height: number;
+  fps: number;
+  kbps: number;
+  limit: string;
+};
+
+/** H.264 first (better hardware support), VP8 as the fallback. */
+const CODEC_ORDER = ['video/H264', 'video/VP8', 'video/VP9'];
+
+const preferH264 = (pc: RTCPeerConnection) => {
+  if (typeof RTCRtpSender === 'undefined' || !RTCRtpSender.getCapabilities) return;
+  const capabilities = RTCRtpSender.getCapabilities('video');
+  if (!capabilities) return;
+
+  const ordered = [...capabilities.codecs].sort((a, b) => {
+    const ai = CODEC_ORDER.indexOf(a.mimeType);
+    const bi = CODEC_ORDER.indexOf(b.mimeType);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
+
+  for (const transceiver of pc.getTransceivers()) {
+    try {
+      transceiver.setCodecPreferences(ordered);
+    } catch (error) {
+      console.error('CALL ERROR:', error);
+    }
+  }
+};
+
+/** Applies the sender ceilings to every video sender on this connection. */
+const tuneSenders = async (pc: RTCPeerConnection) => {
+  preferH264(pc);
+
+  for (const sender of pc.getSenders()) {
+    if (sender.track?.kind !== 'video') continue;
+    try {
+      const params = sender.getParameters();
+      params.degradationPreference = 'balanced';
+      const encodings = params.encodings.length > 0 ? params.encodings : [{}];
+      params.encodings = encodings.map((encoding) => ({
+        ...encoding,
+        maxBitrate: MAX_BITRATE,
+        maxFramerate: MAX_FPS,
+      }));
+      await sender.setParameters(params);
+    } catch (error) {
+      console.error('CALL ERROR:', error);
+    }
+  }
+};
+
+const ladderIndex = (track: MediaStreamTrack | null): number => {
+  const width = track?.getSettings().width ?? MAX_WIDTH;
+  const index = LADDER.findIndex((step) => step.width === width);
+  return index === -1 ? 0 : index;
+};
+
+/** One rung down; the bottom rung turns video off entirely (audio continues). */
+const stepDown = async (track: MediaStreamTrack | null) => {
+  if (!track) return;
+  const index = ladderIndex(track);
+  if (index >= LADDER.length - 1) {
+    track.enabled = false;
+    return;
+  }
+  const next = LADDER[index + 1];
+  try {
+    await track.applyConstraints({
+      width: { ideal: next.width, max: next.width },
+      height: { ideal: next.height, max: next.height },
+    });
+  } catch (error) {
+    console.error('CALL ERROR:', error);
+  }
+};
+
+/** One rung up, re-enabling video if it was switched off. */
+const stepUp = async (track: MediaStreamTrack | null) => {
+  if (!track) return;
+  if (!track.enabled) {
+    track.enabled = true;
+    return;
+  }
+  const index = ladderIndex(track);
+  if (index <= 0) return;
+  const next = LADDER[index - 1];
+  try {
+    await track.applyConstraints({
+      width: { ideal: next.width, max: next.width },
+      height: { ideal: next.height, max: next.height },
+    });
+  } catch (error) {
+    console.error('CALL ERROR:', error);
+  }
+};
+
 type SignalPayload = {
   from: string;
   to?: string;
@@ -79,6 +194,9 @@ export type UseCallResult = {
   cameraOff: boolean;
   quality: CallQuality;
   notice: string | null;
+  stats: CallStats | null;
+  showStats: boolean;
+  toggleStats: () => void;
   /** Pass a peer user id for 'video', or a room id for 'emergency'. */
   startCall: (target: string, kind?: CallKind) => Promise<void>;
   /** Join an existing room (accept an invite, or a provider joining a line). */
@@ -105,6 +223,8 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
   const [cameraOff, setCameraOff] = useState(false);
   const [quality, setQuality] = useState<CallQuality>('good');
   const [notice, setNotice] = useState<string | null>(null);
+  const [stats, setStats] = useState<CallStats | null>(null);
+  const [showStats, setShowStats] = useState(false);
 
   const peers = useRef(new Map<string, Peer>());
   const channel = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -117,6 +237,7 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
   const answerTimer = useRef<number | null>(null);
   const retryCount = useRef(0);
   const alive = useRef(true);
+  const lastBytes = useRef(0);
 
   useEffect(() => {
     alive.current = true;
@@ -135,7 +256,16 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
   const getMedia = useCallback(async (video: boolean): Promise<MediaStream | null> => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return null;
     try {
-      return await navigator.mediaDevices.getUserMedia({ audio: true, video });
+      return await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+        video: video
+          ? {
+              width: { ideal: MAX_WIDTH, max: MAX_WIDTH },
+              height: { ideal: MAX_HEIGHT, max: MAX_HEIGHT },
+              frameRate: { ideal: MAX_FPS, max: MAX_FPS },
+            }
+          : false,
+      });
     } catch (error) {
       console.error('CALL ERROR:', error);
       return null;
@@ -198,6 +328,7 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
       for (const track of stream.current?.getTracks() ?? []) {
         pc.addTrack(track, stream.current as MediaStream);
       }
+      void tuneSenders(pc);
 
       pc.onicecandidate = ({ candidate }) => {
         if (candidate) send('ice', { to: peerId, candidate: candidate.toJSON(), kind: kindRef.current });
@@ -516,6 +647,81 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
     setCameraOff(!track.enabled);
   }, []);
 
+  // Poll outbound video stats every 5s: feeds the demo chip and drives the
+  // adaptive ladder (bandwidth-limited → step down; healthy for 15s → step up).
+  useEffect(() => {
+    if (status !== 'active' && status !== 'connecting') return;
+
+    let cancelled = false;
+    let healthySince: number | null = null;
+
+    const poll = async () => {
+      const peer = [...peers.current.values()][0];
+      const sender = peer?.pc.getSenders().find((item) => item.track?.kind === 'video');
+      if (!sender || !sender.track) return;
+
+      let width = 0;
+      let height = 0;
+      let fps = 0;
+      let bytes = 0;
+      let limit = '';
+
+      try {
+        const report = await sender.getStats();
+        report.forEach((entry) => {
+          const record = entry as RTCStats & {
+            kind?: string;
+            framesPerSecond?: number;
+            bytesSent?: number;
+            qualityLimitationReason?: string;
+            frameWidth?: number;
+            frameHeight?: number;
+          };
+
+          if (record.type === 'outbound-rtp' && record.kind === 'video') {
+            fps = Number(record.framesPerSecond ?? 0);
+            bytes = Number(record.bytesSent ?? 0);
+            limit = String(record.qualityLimitationReason ?? '');
+          }
+          if (record.type === 'media-source') {
+            if (record.frameWidth) width = Number(record.frameWidth);
+            if (record.frameHeight) height = Number(record.frameHeight);
+          }
+        });
+      } catch (error) {
+        console.error('CALL ERROR:', error);
+        return;
+      }
+
+      if (cancelled) return;
+
+      const kbps = Math.max(0, Math.round(((bytes - lastBytes.current) * 8) / 1000 / (STATS_INTERVAL_MS / 1000)));
+      lastBytes.current = bytes;
+      setStats({ width, height, fps, kbps, limit });
+
+      const track = sender.track;
+
+      if (limit === 'bandwidth') {
+        healthySince = null;
+        await stepDown(track);
+        return;
+      }
+
+      if (healthySince === null) {
+        healthySince = Date.now();
+      } else if (Date.now() - healthySince > RECOVER_AFTER_MS) {
+        healthySince = null;
+        await stepUp(track);
+      }
+    };
+
+    const id = window.setInterval(() => void poll(), STATS_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [status]);
+
   // Never leave a session behind on unmount.
   useEffect(() => () => teardown(), [teardown]);
 
@@ -536,6 +742,9 @@ export function useCall(currentUserId: string | null | undefined): UseCallResult
     cameraOff,
     quality,
     notice,
+    stats,
+    showStats,
+    toggleStats: () => setShowStats((previous) => !previous),
     startCall,
     joinCall,
     acceptCall,

@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
-import { Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from 'lucide-react';
+import { Activity, Mic, MicOff, Phone, PhoneOff, Video, VideoOff } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 
@@ -34,6 +34,9 @@ export default function CallRoom() {
     cameraOff,
     quality,
     notice,
+    stats,
+    showStats,
+    toggleStats,
     acceptCall,
     declineCall,
     endCall,
@@ -138,6 +141,17 @@ export default function CallRoom() {
             <button type="button" onClick={endCall} aria-label={t('call.ended')} style={styles.endButton}>
               <PhoneOff size={18} />
             </button>
+
+            <button type="button" onClick={toggleStats} aria-label={t('call.stats')} style={styles.iconButton}>
+              <Activity size={18} />
+            </button>
+
+            {showStats && stats ? (
+              <span style={styles.statsChip}>
+                {stats.width}×{stats.height} · {stats.fps}fps · {stats.kbps}kbps
+                {stats.limit && stats.limit !== 'none' ? ` · ${stats.limit}` : ''}
+              </span>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -253,6 +267,17 @@ const styles: Record<string, CSSProperties> = {
     background: 'linear-gradient(120deg, #e0655a, #f0a099)',
     color: '#4a1610',
     cursor: 'pointer',
+  },
+  statsChip: {
+    paddingBlock: '0.3rem',
+    paddingInline: '0.6rem',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.14)',
+    border: '1px solid rgba(255, 255, 255, 0.25)',
+    color: '#f2fffa',
+    fontSize: '0.7rem',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
   },
   notice: {
     position: 'fixed',

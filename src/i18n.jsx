@@ -443,6 +443,7 @@ const translations = {
     'call.ended': 'Call ended',
     'call.reconnecting': 'Reconnecting…',
     'call.emergencyActive': 'Emergency line active',
+    'call.stats': 'Stats',
   },
 
   fr: {
@@ -859,6 +860,7 @@ const translations = {
     'call.ended': 'Appel terminé',
     'call.reconnecting': 'Reconnexion…',
     'call.emergencyActive': "Ligne d'urgence active",
+    'call.stats': 'Statistiques',
   },
 
   es: {
@@ -1270,6 +1272,7 @@ const translations = {
     'call.ended': 'Llamada finalizada',
     'call.reconnecting': 'Reconectando…',
     'call.emergencyActive': 'Línea de emergencia activa',
+    'call.stats': 'Estadísticas',
   },
 
   ko: {
@@ -1666,6 +1669,7 @@ const translations = {
     'call.ended': '통화 종료',
     'call.reconnecting': '다시 연결 중…',
     'call.emergencyActive': '응급 호출 연결 중',
+    'call.stats': '통계',
   },
 
   zh: {
@@ -2055,6 +2059,7 @@ const translations = {
     'call.ended': '通话已结束',
     'call.reconnecting': '重新连接中…',
     'call.emergencyActive': '紧急呼叫线已激活',
+    'call.stats': '统计',
   },
 
   pt: {
@@ -2465,6 +2470,7 @@ const translations = {
     'call.ended': 'Chamada encerrada',
     'call.reconnecting': 'Reconectando…',
     'call.emergencyActive': 'Linha de emergência ativa',
+    'call.stats': 'Estatísticas',
   },
 
   de: {
@@ -2879,6 +2885,7 @@ const translations = {
     'call.ended': 'Anruf beendet',
     'call.reconnecting': 'Verbinde erneut…',
     'call.emergencyActive': 'Notruf-Linie aktiv',
+    'call.stats': 'Statistiken',
   },
 
   it: {
@@ -3289,6 +3296,7 @@ const translations = {
     'call.ended': 'Chiamata terminata',
     'call.reconnecting': 'Riconnessione…',
     'call.emergencyActive': 'Linea di emergenza attiva',
+    'call.stats': 'Statistiche',
   },
 
   ar: {
@@ -3691,6 +3699,7 @@ const translations = {
     'call.ended': 'انتهت المكالمة',
     'call.reconnecting': 'جارٍ إعادة الاتصال…',
     'call.emergencyActive': 'خط الطوارئ نشط',
+    'call.stats': 'الإحصاءات',
   },
 
   he: {
@@ -4087,6 +4096,7 @@ const translations = {
     'call.ended': 'השיחה הסתיימה',
     'call.reconnecting': 'מתחברים מחדש…',
     'call.emergencyActive': 'קו חירום פעיל',
+    'call.stats': 'סטטיסטיקות',
   },
 };
 
