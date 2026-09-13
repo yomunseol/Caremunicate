@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { roleLabelKey } from '../lib/roles';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
 import { useLang } from '../i18n';
 
@@ -65,12 +66,7 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
   const { t } = useLang();
   const { messages, loading, error, sendMessage } = useRealtimeChat(conversationId);
 
-  const roleLabel = (role: string) => {
-    if (role === 'patient') return t('common.patient');
-    if (role === 'doctor') return t('common.doctor');
-    if (role === 'hospital') return t('common.hospital');
-    return t('chat.careMember');
-  };
+  const roleLabel = (role: string) => t(roleLabelKey(role));
 
   const [participants, setParticipants] = useState<ParticipantMeta[]>([]);
   const [metaLoading, setMetaLoading] = useState(true);

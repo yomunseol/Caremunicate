@@ -16,6 +16,7 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { isProvider } from '../lib/roles';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -30,15 +31,16 @@ import { useLang } from '../i18n';
 // before a query can run (the `around:` filter needs a centre point).
 // ---------------------------------------------------------------------------
 
-// Overpass is public and keyless. The canonical instance throttles heavy traffic,
-// and throttled/failed replies can come back without the CORS header — which the
-// browser then reports as a CORS error. Fall back to a verified keyless mirror
-// instead of putting a third-party proxy (or an API key) in the path.
+// Requests go through the CORS proxy first. It is key-gated server-side (keyless
+// calls answer 403 "keyless_legacy_url"), so the keyless instances stay behind it
+// as fallbacks — the panel keeps working either way.
 const OVERPASS_ENDPOINTS = [
+  'https://corsproxy.io/?https://overpass-api.de/api/interpreter',
   'https://overpass-api.de/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
 ];
 const NEAR_RADIUS_M = 5000;
+const OVERPASS_TIMEOUT_MS = 8000;
 const DEFAULT_CENTER: [number, number] = [30, 0];
 const DEFAULT_ZOOM = 2;
 const FOCUS_ZOOM = 15;
@@ -94,9 +96,9 @@ type CarePlacesProps = {
 };
 
 const AMENITY_KEYS: Record<string, string> = {
-  hospital: 'places.filterHospital',
-  pharmacy: 'places.filterPharmacy',
-  clinic: 'places.filterClinic',
+  hospital: 'places.hospital',
+  pharmacy: 'places.pharmacy',
+  clinic: 'places.clinic',
 };
 
 /** Exact Overpass QL: every medical facility within 5 km, globally. */
@@ -139,7 +141,7 @@ const postOverpass = async (
     } catch (caught) {
       // A real abort (unmount / superseded request) must not fall through.
       if ((caught as Error)?.name === 'AbortError') throw caught;
-      console.log('PLACES ERROR:', endpoint, caught);
+      console.error('OVERPASS_ERROR:', caught);
       lastError = caught;
     }
   }
@@ -202,19 +204,16 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { t } = useLang();
 
   const effectiveRole = (role || String(user?.user_metadata?.role ?? '')).toLowerCase();
-  const titleKey =
-    effectiveRole === 'doctor'
-      ? 'places.titleDoctor'
-      : effectiveRole === 'patient'
-        ? 'places.titlePatient'
-        : 'places.title';
+  // Provider accounts (doctor / department / hospital) get the network heading.
+  const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
   const [query, setQuery] = useState('');
   const [amenities, setAmenities] = useState<Amenity[]>([...AMENITIES]);
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
@@ -266,11 +265,20 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // ---- Overpass search ----------------------------------------------------
   const runSearch = useCallback(
     async (at: LatLon, amenityFilter: readonly string[]) => {
+      // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      setLoading(true);
+      // Hard 8s ceiling: Overpass + a proxy can hang without ever erroring.
+      let timedOut = false;
+      const timeoutId = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, OVERPASS_TIMEOUT_MS);
+
+      setIsLoading(true);
+      setSearched(false);
       setError('');
 
       try {
@@ -285,14 +293,26 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         setResults(places);
         setSelectedId(null);
+        setSearched(true);
       } catch (caught) {
-        if ((caught as Error)?.name === 'AbortError') return;
-        console.log('PLACES ERROR:', caught);
-        // Friendly copy for the user; the cause is already in the console.
+        if ((caught as Error)?.name === 'AbortError') {
+          // Only a timeout is worth surfacing; a superseded request or an
+          // unmount must stay silent.
+          if (timedOut) {
+            console.error('OVERPASS_ERROR:', caught);
+            setError(t('places.searchTimeout'));
+          }
+          return;
+        }
+
+        console.error('OVERPASS_ERROR:', caught);
         setError(t('places.loadFailed'));
         setResults([]);
       } finally {
-        if (abortRef.current === controller) setLoading(false);
+        window.clearTimeout(timeoutId);
+        // Guarded so a superseded request cannot clear the newest one's spinner.
+        // The active request always reaches here, so "Searching…" can never stick.
+        if (abortRef.current === controller) setIsLoading(false);
       }
     },
     [t],
@@ -366,6 +386,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     if (center) return { lat: center.lat, lon: center.lon, focusKey: 'me' };
     return { lat: null, lon: null, focusKey: null };
   }, [results, selectedId, center]);
+
+  const selectedPlace = useMemo(
+    () => results.find((place) => place.placeId === selectedId) ?? null,
+    [results, selectedId],
+  );
 
   // ---- Favorites toggle ---------------------------------------------------
   const isSaved = (placeId: string) => favorites.some((favorite) => favorite.place_id === placeId);
@@ -473,7 +498,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
               onClick={(event) => event.stopPropagation()}
               style={styles.directionsLink}
             >
-              {t('places.directions')}
+              {t('places.getDirections')}
             </a>
           </span>
         </div>
@@ -494,7 +519,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       {/* FAVORITES — newest first, above search. */}
       <div style={styles.section}>
         <div style={styles.sectionHeading}>
-          <h4 style={styles.sectionTitle}>{t('places.savedPlaces')}</h4>
+          <h4 style={styles.sectionTitle}>{t('places.favorites')}</h4>
           {!favoritesLoading && !favoritesError ? (
             <span style={styles.countPill}>{favorites.length}</span>
           ) : null}
@@ -505,7 +530,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         ) : favoritesError ? (
           <p role="alert" style={styles.error}>{favoritesError}</p>
         ) : favorites.length === 0 ? (
-          <p style={styles.muted}>{t('places.noSaved')}</p>
+          <p style={styles.muted}>{t('places.noFavorites')}</p>
         ) : (
           <ul style={styles.favoritesGrid}>
             {favorites.map((favorite) => (
@@ -542,7 +567,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                     rel="noreferrer"
                     style={styles.directionsLink}
                   >
-                    {t('places.directions')}
+                    {t('places.getDirections')}
                   </a>
                 </div>
               </li>
@@ -565,8 +590,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
               style={styles.input}
             />
           </div>
-          <button type="submit" disabled={loading} style={styles.nearMeButton}>
-            {loading ? t('places.searching') : t('places.searchAria')}
+          <button type="submit" disabled={isLoading} style={styles.nearMeButton}>
+            {isLoading ? t('places.searching') : t('places.searchAria')}
           </button>
           <button
             type="button"
@@ -601,24 +626,23 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         </p>
         {locationError ? <p role="alert" style={styles.error}>{locationError}</p> : null}
 
-        {loading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
-        {!loading && error ? <p role="alert" style={styles.error}>{error}</p> : null}
-        {!loading && !error && results.length > 0 && visibleResults.length === 0 ? (
-          <p style={styles.muted}>{t('places.noPlaces', { query: query.trim() })}</p>
+        {isLoading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
+        {!isLoading && error ? <p role="alert" style={styles.error}>{error}</p> : null}
+        {!isLoading && !error && searched && visibleResults.length === 0 ? (
+          <p style={styles.muted}>{t('places.noResults')}</p>
         ) : null}
 
-        {!loading && !error && visibleResults.length > 0 ? (
+        {!isLoading && !error && visibleResults.length > 0 ? (
           <>
             <ul style={styles.results}>{visibleResults.map((place) => renderPlaceCard(place, place.placeId))}</ul>
             <p style={styles.attribution}>
-              ©{' '}
               <a
                 href="https://www.openstreetmap.org/copyright"
                 target="_blank"
                 rel="noreferrer"
                 style={styles.attributionLink}
               >
-                OpenStreetMap contributors
+                {t('places.attribution')}
               </a>
             </p>
           </>
@@ -629,6 +653,16 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       <div style={styles.section}>
         <div style={styles.sectionHeading}>
           <h4 style={styles.sectionTitle}>{t('places.mapPreview')}</h4>
+          {selectedPlace ? (
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${selectedPlace.lat},${selectedPlace.lon}`}
+              target="_blank"
+              rel="noreferrer"
+              style={styles.directionsLink}
+            >
+              {t('places.openInMaps')}
+            </a>
+          ) : null}
         </div>
         {/* Leaflet's own controls are physical-positioned, so keep the map LTR. */}
         <div dir="ltr" style={styles.mapWrap}>
@@ -640,7 +674,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="© OpenStreetMap contributors"
+              attribution={t('places.attribution')}
             />
             {center ? (
               <Marker position={[center.lat, center.lon]}>
@@ -663,7 +697,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                   ) : null}
                   <br />
                   <a href={directionsUrl(place)} target="_blank" rel="noreferrer">
-                    {t('places.directions')}
+                    {t('places.getDirections')}
                   </a>
                 </Popup>
               </Marker>
@@ -676,14 +710,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           </MapContainer>
         </div>
         <p style={styles.attribution}>
-          ©{' '}
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"
             rel="noreferrer"
             style={styles.attributionLink}
           >
-            OpenStreetMap contributors
+            {t('places.attribution')}
           </a>
         </p>
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
 
 export interface SearchUserResult {
@@ -15,12 +16,6 @@ type SearchUsersProps = {
   /** Resolve + open/create a thread. Returning a promise lets this component
    *  show per-row busy/error state instead of allowing duplicate clicks. */
   onPick: (user: SearchUserResult) => Promise<void>;
-};
-
-const ROLE_LABEL_KEYS: Record<string, string> = {
-  patient: 'common.patient',
-  doctor: 'common.doctor',
-  hospital: 'common.hospital',
 };
 
 // Defensive shape for whatever search_users() returns — it may expose
@@ -157,7 +152,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
                     <span style={styles.avatar}>{displayName.charAt(0).toUpperCase()}</span>
                     <span style={styles.resultCopy}>
                       <strong style={styles.resultName}>{displayName}</strong>
-                      <span style={styles.resultRole}>{ROLE_LABEL_KEYS[user.role] ? t(ROLE_LABEL_KEYS[user.role]) : t('chat.careMember')}</span>
+                      <span style={styles.resultRole}>{t(roleLabelKey(user.role))}</span>
                     </span>
                     <span style={styles.resultAction}>
                       {busyId === user.user_id ? t('chat.opening') : t('chat.chatAction')}

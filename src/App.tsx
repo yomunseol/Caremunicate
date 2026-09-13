@@ -8,14 +8,16 @@ import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
 import CarePlaces from './components/CarePlaces';
+import DashboardOverview from './components/DashboardOverview';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
+import { isProvider } from './lib/roles';
 import { useLang } from './i18n';
 
 type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat';
 type AuthMode = 'signup' | 'login';
-type AuthRole = 'patient' | 'doctor';
+type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
 // Feature cards are keyed so every visible string resolves through i18n.
 const FEATURE_CARDS = [
@@ -77,6 +79,10 @@ type SignupFormValues = {
   confirmPassword: string;
   specialty: string;
   clinic: string;
+  departmentName: string;
+  parentHospital: string;
+  hospitalName: string;
+  addressRegion: string;
   role: string;
 };
 
@@ -113,7 +119,12 @@ function App() {
     confirmPassword: '',
     specialty: '',
     clinic: '',
-    role: '',
+    departmentName: '',
+    parentHospital: '',
+    hospitalName: '',
+    addressRegion: '',
+    // Role comes from the tile grid; Patient is the default.
+    role: 'patient',
   });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
   // Fields the user has blurred/edited — only show inline errors for these so
@@ -221,6 +232,7 @@ function App() {
   const openAuth = (mode: AuthMode, role: AuthRole = 'patient') => {
     setAuthMode(mode);
     setAuthRole(role);
+    setSignupValues((previous) => ({ ...previous, role }));
     setRoute(mode === 'login' ? 'login' : 'signup');
     setSignupErrors({});
     setTouchedFields({});
@@ -284,6 +296,20 @@ function App() {
       nextErrors.clinic = t('auth.err.clinic');
     }
 
+    if (authRole === 'department' && !signupValues.departmentName.trim()) {
+      nextErrors.departmentName = t('signup.required');
+    }
+
+    // Parent hospital is optional.
+
+    if (authRole === 'hospital' && !signupValues.hospitalName.trim()) {
+      nextErrors.hospitalName = t('signup.required');
+    }
+
+    if (authRole === 'hospital' && !signupValues.addressRegion.trim()) {
+      nextErrors.addressRegion = t('signup.required');
+    }
+
     const passwordError = getPasswordError(signupValues.password);
     if (passwordError) {
       nextErrors.password = passwordError;
@@ -309,9 +335,11 @@ function App() {
     !getEmailError(signupValues.email) &&
     (authRole !== 'doctor' || Boolean(signupValues.specialty.trim())) &&
     (authRole !== 'doctor' || Boolean(signupValues.clinic.trim())) &&
+    (authRole !== 'department' || Boolean(signupValues.departmentName.trim())) &&
+    (authRole !== 'hospital' || Boolean(signupValues.hospitalName.trim())) &&
+    (authRole !== 'hospital' || Boolean(signupValues.addressRegion.trim())) &&
     !getPasswordError(signupValues.password) &&
-    !getConfirmPasswordError(signupValues.confirmPassword) &&
-    Boolean(signupValues.role);
+    !getConfirmPasswordError(signupValues.confirmPassword);
 
   // Real-time checklist shown under the password field. Empty password shows
   // only neutral (unmet) rows.
@@ -353,10 +381,18 @@ function App() {
         options: {
           data: {
             fullName: signupValues.fullName.trim(),
-            role: signupValues.role,
+            role: authRole,
             ...(authRole === 'doctor' ? {
               specialty: signupValues.specialty.trim(),
               clinic: signupValues.clinic.trim(),
+            } : {}),
+            ...(authRole === 'department' ? {
+              departmentName: signupValues.departmentName.trim(),
+              parentHospital: signupValues.parentHospital.trim(),
+            } : {}),
+            ...(authRole === 'hospital' ? {
+              hospitalName: signupValues.hospitalName.trim(),
+              addressRegion: signupValues.addressRegion.trim(),
             } : {}),
             ...(selectedPlan ? { plan: selectedPlan } : {}),
           },
@@ -366,9 +402,24 @@ function App() {
       if (error) throw error;
 
       if (!data.session) {
+        // No session yet (email confirmation pending) so nothing can be written
+        // under RLS; the role travels in the sign-up metadata until then.
         setAuthMessageType('success');
         setAuthMessage(t('auth.msg.createdConfirm'));
         return;
+      }
+
+      // Persist the selected role onto profiles now that we have a session.
+      if (data.user) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert(
+            { user_id: data.user.id, role: authRole, username: signupValues.fullName.trim() },
+            { onConflict: 'user_id' },
+          );
+
+        console.log('Sign-up profile write:', { role: authRole, error: profileError });
+        if (profileError) console.error('SIGNUP PROFILE ERROR:', profileError);
       }
 
       setAuthMessageType('success');
@@ -392,6 +443,37 @@ function App() {
     navigate('home');
   };
 
+  // Keeps the tile selection and the form value in lockstep.
+  const selectRole = (next: AuthRole) => {
+    setAuthRole(next);
+    setSignupValues((previous) => ({ ...previous, role: next }));
+    setSignupErrors((previous) => ({ ...previous, role: '' }));
+  };
+
+  // One inline renderer for the role-specific inputs, so doctor/department/
+  // hospital fields share validation + error handling.
+  const renderSignupField = (field: keyof SignupFormValues, labelKey: string, required = true) => (
+    <div className="field-wrap">
+      <input
+        className="input"
+        placeholder={t(labelKey)}
+        aria-label={t(labelKey)}
+        value={signupValues[field]}
+        onBlur={() => setTouchedFields((previous) => ({ ...previous, [field]: true }))}
+        onChange={(event) => {
+          const { value } = event.target;
+          setSignupValues((previous) => ({ ...previous, [field]: value }));
+          if (signupErrors[field]) {
+            setSignupErrors((previous) => ({ ...previous, [field]: '' }));
+          }
+        }}
+        aria-invalid={showFieldError(field)}
+        required={required}
+      />
+      {showFieldError(field) ? <span className="field-error">{signupErrors[field]}</span> : null}
+    </div>
+  );
+
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? '');
 
   const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
@@ -400,17 +482,9 @@ function App() {
   const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
   const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
 
-  // Role that gates doctor-only dashboard panels. Prefer the persisted
-  // profiles.role, falling back to the sign-up metadata.
+  // Dashboard role. Prefer the persisted profiles.role, falling back to the
+  // sign-up metadata.
   const profileRole = String(profileData?.role ?? userProfile?.role ?? '').toLowerCase();
-  const profileRoleKey =
-    profileRole === 'doctor'
-      ? 'common.doctor'
-      : profileRole === 'hospital'
-        ? 'common.hospital'
-        : profileRole === 'patient'
-          ? 'common.patient'
-          : 'common.care';
 
   // Pricing CTAs. Logged-out visitors are sent to sign-up with the plan
   // preselected; logged-in users get the plan written to profiles.plan
@@ -489,7 +563,7 @@ function App() {
   // "What you unlock" list varies by mode and role.
   const authBenefitKeys =
     authMode === 'signup'
-      ? authRole === 'doctor'
+      ? isProvider(authRole)
         ? ['auth.doctorBenefit1', 'auth.doctorBenefit2', 'auth.doctorBenefit3']
         : ['auth.patientBenefit1', 'auth.patientBenefit2', 'auth.patientBenefit3']
       : ['auth.loginBenefit1', 'auth.loginBenefit2', 'auth.loginBenefit3'];
@@ -732,35 +806,18 @@ function App() {
                 <div className="eyebrow">{authMode === 'signup' ? t('auth.signupEyebrow') : t('auth.loginEyebrow')}</div>
                 <h2>
                   {authMode === 'signup'
-                    ? authRole === 'doctor'
+                    ? isProvider(authRole)
                       ? t('auth.titleDoctorSignup')
                       : t('auth.titleSignup')
                     : t('auth.titleLogin')}
                 </h2>
                 <p className="auth-copy">
                   {authMode === 'signup'
-                    ? authRole === 'doctor'
+                    ? isProvider(authRole)
                       ? t('auth.copyDoctorSignup')
                       : t('auth.copySignup')
                     : t('auth.copyLogin')}
                 </p>
-
-                <div className="role-toggle" aria-label={t('auth.roleAria')}>
-                  <button
-                    type="button"
-                    className={authRole === 'patient' ? 'role-button active' : 'role-button'}
-                    onClick={() => setAuthRole('patient')}
-                  >
-                    {t('common.patient')}
-                  </button>
-                  <button
-                    type="button"
-                    className={authRole === 'doctor' ? 'role-button active' : 'role-button'}
-                    onClick={() => setAuthRole('doctor')}
-                  >
-                    {t('common.doctor')}
-                  </button>
-                </div>
 
                 {authMode === 'signup' ? (
                   <>
@@ -823,40 +880,22 @@ function App() {
 
                       {authRole === 'doctor' ? (
                         <div className="form-row">
-                          <div className="field-wrap">
-                            <input
-                              className="input"
-                              placeholder={t('auth.specialty')}
-                              aria-label={t('auth.specialty')}
-                              value={signupValues.specialty}
-                              onBlur={() => setTouchedFields((previous) => ({ ...previous, specialty: true }))}
-                              onChange={(event) => {
-                                setSignupValues((previous) => ({ ...previous, specialty: event.target.value }));
-                                if (signupErrors.specialty) {
-                                  setSignupErrors((previous) => ({ ...previous, specialty: '' }));
-                                }
-                              }}
-                              aria-invalid={showFieldError('specialty')}
-                            />
-                            {showFieldError('specialty') ? <span className="field-error">{signupErrors.specialty}</span> : null}
-                          </div>
-                          <div className="field-wrap">
-                            <input
-                              className="input"
-                              placeholder={t('auth.clinic')}
-                              aria-label={t('auth.clinic')}
-                              value={signupValues.clinic}
-                              onBlur={() => setTouchedFields((previous) => ({ ...previous, clinic: true }))}
-                              onChange={(event) => {
-                                setSignupValues((previous) => ({ ...previous, clinic: event.target.value }));
-                                if (signupErrors.clinic) {
-                                  setSignupErrors((previous) => ({ ...previous, clinic: '' }));
-                                }
-                              }}
-                              aria-invalid={showFieldError('clinic')}
-                            />
-                            {showFieldError('clinic') ? <span className="field-error">{signupErrors.clinic}</span> : null}
-                          </div>
+                          {renderSignupField('specialty', 'auth.specialty')}
+                          {renderSignupField('clinic', 'auth.clinic')}
+                        </div>
+                      ) : null}
+
+                      {authRole === 'department' ? (
+                        <div className="form-row">
+                          {renderSignupField('departmentName', 'signup.departmentName')}
+                          {renderSignupField('parentHospital', 'signup.hospitalOptional', false)}
+                        </div>
+                      ) : null}
+
+                      {authRole === 'hospital' ? (
+                        <div className="form-row">
+                          {renderSignupField('hospitalName', 'signup.hospitalName')}
+                          {renderSignupField('addressRegion', 'signup.addressRegion')}
                         </div>
                       ) : null}
 
@@ -920,28 +959,31 @@ function App() {
                         ) : null}
                       </div>
 
-                      <div className="field-wrap">
-                        <select
-                          className="select"
-                          value={signupValues.role}
-                          aria-label={t('auth.selectRoleAria')}
-                          onBlur={() => setTouchedFields((previous) => ({ ...previous, role: true }))}
-                          onChange={(event) => {
-                            setSignupValues((previous) => ({ ...previous, role: event.target.value }));
-                            if (signupErrors.role) {
-                              setSignupErrors((previous) => ({ ...previous, role: '' }));
-                            }
-                          }}
-                          aria-invalid={showFieldError('role')}
-                        >
-                          <option value="" disabled>
-                            {authRole === 'doctor' ? t('auth.professionalType') : t('auth.selectRole')}
-                          </option>
-                          <option value="patient">{t('common.patient')}</option>
-                          <option value="doctor">{t('common.doctor')}</option>
-                          <option value="hospital">{t('common.hospital')}</option>
-                        </select>
-                        {showFieldError('role') ? <span className="field-error">{signupErrors.role}</span> : null}
+                      {/* Role picker: 2x2 tiles, Patient preselected. */}
+                      <div className="role-tiles" role="radiogroup" aria-label={t('auth.roleAria')}>
+                        {(
+                          [
+                            { value: 'patient', icon: '🧑', labelKey: 'roles.patient' },
+                            { value: 'doctor', icon: '🩺', labelKey: 'roles.doctor' },
+                            { value: 'department', icon: '🏢', labelKey: 'roles.department' },
+                            { value: 'hospital', icon: '🏥', labelKey: 'roles.hospital' },
+                          ] as const
+                        ).map((tile) => {
+                          const active = authRole === tile.value;
+                          return (
+                            <button
+                              key={tile.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              className={active ? 'role-tile active' : 'role-tile'}
+                              onClick={() => selectRole(tile.value)}
+                            >
+                              <span className="role-tile-icon" aria-hidden="true">{tile.icon}</span>
+                              {t(tile.labelKey)}
+                            </button>
+                          );
+                        })}
                       </div>
 
                       <button className="primary-button" type="submit" disabled={isAuthLoading || !signupIsValid}>
@@ -970,19 +1012,7 @@ function App() {
         {route === 'profile' && (
           <ProtectedRoute>
             <section className="section profile-grid">
-            <div className="profile-card">
-              <div className="eyebrow">{t('profile.eyebrow')}</div>
-              <h2>{t('profile.welcome', { name: userProfile?.fullName ?? currentUser?.email ?? '' })}</h2>
-              <p className="hero-copy">
-                {t('profile.copy', { role: t(profileRoleKey) })}
-              </p>
-
-              <div className="pill-row">
-                <span className="pill">{t('profile.pill1')}</span>
-                <span className="pill">{t('profile.pill2')}</span>
-                <span className="pill">{t('profile.pill3')}</span>
-              </div>
-            </div>
+            <DashboardOverview role={profileRole} />
 
             <div className="profile-sidebar">
               <div className="panel">

@@ -67,7 +67,10 @@ img {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
+  /* Above Leaflet's panes (400–1000) so the header is never covered by the map.
+     `sticky` is already a positioned value, so z-index applies without switching
+     to `relative` (which would break the sticky behaviour). */
+  z-index: 1100;
   backdrop-filter: blur(18px);
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--line);
@@ -1014,6 +1017,47 @@ img {
   box-shadow: 0 8px 22px rgba(72, 181, 143, 0.2);
 }
 
+/* Signup role picker: 2x2 tiles. Stays 2x2 on mobile; the fields below stack. */
+.role-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.role-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-block: 0.75rem;
+  padding-inline: 0.85rem;
+  border: 1px solid rgba(62, 169, 133, 0.25);
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--text-soft);
+  font-weight: 700;
+  font-size: 0.86rem;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, color 180ms ease;
+}
+
+.role-tile:hover {
+  border-color: rgba(62, 169, 133, 0.45);
+}
+
+.role-tile.active {
+  border-color: rgba(62, 169, 133, 0.55);
+  background: rgba(62, 169, 133, 0.14);
+  color: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(62, 169, 133, 0.16);
+}
+
+.role-tile-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .input,
 .select {
   width: 100%;
@@ -1126,6 +1170,23 @@ img {
   grid-template-columns: 1.1fr 0.9fr;
   gap: 1rem;
   margin-top: 1rem;
+}
+
+/* Dashboard left column. On desktop it sticks below the topbar instead of
+   stretching into empty space; at <=980px .profile-grid is one column and the
+   cards simply stack below the content. */
+.dashboard-main {
+  display: grid;
+  gap: 1rem;
+  width: 100%;
+}
+
+@media (min-width: 981px) {
+  .dashboard-main {
+    position: sticky;
+    top: 6rem;
+    align-self: start;
+  }
 }
 
 .profile-card h2 {

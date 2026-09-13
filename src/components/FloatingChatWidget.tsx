@@ -3,18 +3,12 @@ import { MessageCircle, X, Send } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { roleLabelKey } from '../lib/roles';
 import { createDirectConversation } from '../lib/conversations';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
 import { useLang } from '../i18n';
 import { ChatList, type ChatListItem } from './ChatList';
 import { SearchUsers, type SearchUserResult } from './SearchUsers';
-
-// Role → i18n key. The visible label is resolved with t() at render time.
-const ROLE_LABEL_KEYS: Record<string, string> = {
-  patient: 'common.patient',
-  doctor: 'common.doctor',
-  hospital: 'common.hospital',
-};
 
 // ---------------------------------------------------------------------------
 // Tailwind equivalents for the notes in this file:
@@ -97,7 +91,7 @@ function ThreadView({
         <div style={styles.threadPeer}>
           <strong style={styles.threadPeerName}>{thread.peerName?.trim() || t('chat.participant')}</strong>
           <span style={styles.roleBadge}>
-            {ROLE_LABEL_KEYS[thread.peerRole] ? t(ROLE_LABEL_KEYS[thread.peerRole]) : t('chat.careMember')}
+            {t(roleLabelKey(thread.peerRole))}
           </span>
         </div>
       </div>
@@ -185,6 +179,30 @@ export default function FloatingChatWidget() {
     return () => document.removeEventListener('mousedown', onMouseDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  // Dashboard cards open the widget through a window event, so the messenger
+  // stays the single place that owns chat state.
+  useEffect(() => {
+    const onOpenChat = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ conversationId: string; peerName: string; peerRole: string } | null>
+      ).detail;
+
+      setIsOpen(true);
+      lastSeenRef.current = Date.now();
+
+      if (detail) {
+        setTab('inbox');
+        setThread(detail);
+      } else {
+        setTab('search');
+        setThread(null);
+      }
+    };
+
+    window.addEventListener('caremunicate:open-chat', onOpenChat);
+    return () => window.removeEventListener('caremunicate:open-chat', onOpenChat);
+  }, []);
 
   // Red dot while collapsed: any thread whose last message is from the peer
   // and arrived after the widget was last opened.
