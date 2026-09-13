@@ -1,6 +1,9 @@
 import { useState, type FormEvent } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import { checkRoom, createRoom, normalizeCode } from '../lib/callRooms';
+import { saveCallPrefs, stashPendingPolicy } from '../lib/callPrefs';
+import CallSettingsModal, { type MeetingSettings } from './CallSettingsModal';
 
 // ---------------------------------------------------------------------------
 // Call rooms panel.
@@ -21,12 +24,11 @@ type CallRoomsPanelProps = {
 
 export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
   const { t } = useLang();
+  const { user } = useAuth();
 
-  const [hostPassword, setHostPassword] = useState('');
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [hostBusy, setHostBusy] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
-  // Waiting room defaults ON, as specified.
-  const [waitingRoom, setWaitingRoom] = useState(true);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -49,13 +51,39 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
     setJoinBusy(false);
   };
 
-  const startMeeting = async () => {
+  const startMeeting = async (settings: MeetingSettings) => {
     setHostBusy(true);
     setHostError(null);
     try {
-      const code = await createRoom(hostPassword, waitingRoom);
+      // The plaintext password only travels into createRoom, which hashes it.
+      const password = settings.requirePassword ? settings.password : '';
+      const code = await createRoom({
+        password,
+        lobbyEnabled: settings.waitingRoom,
+        autoMute: settings.autoMute,
+        allowShare: settings.allowScreenShare,
+      });
+
+      // Remember the choices for the next meeting, and hand the live policy to
+      // the call route so the Security panel starts from the real values.
+      if (user?.id) {
+        void saveCallPrefs(user.id, {
+          waitingRoom: settings.waitingRoom,
+          requirePassword: settings.requirePassword,
+          autoMute: settings.autoMute,
+          allowScreenShare: settings.allowScreenShare,
+        });
+      }
+      stashPendingPolicy({
+        lobby_enabled: settings.waitingRoom,
+        locked: false,
+        auto_mute: settings.autoMute,
+        allow_share: settings.allowScreenShare,
+        has_password: Boolean(password.trim()),
+      });
+
+      setSettingsOpen(false);
       enterRoom(code);
-      setHostPassword('');
     } catch (error) {
       console.error('CALL ERROR:', error);
       setHostError('call.roomNotFound');
@@ -103,37 +131,23 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
       <div className="eyebrow">{t('dash.videoTitle')}</div>
 
       {canHost ? (
-        <div className="call-host-form">
-          <input
-            className="input"
-            type="password"
-            autoComplete="new-password"
-            placeholder={t('call.passwordOptional')}
-            aria-label={t('call.passwordOptional')}
-            value={hostPassword}
-            onChange={(event) => setHostPassword(event.target.value)}
-          />
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => void startMeeting()}
-            disabled={hostBusy}
-            aria-busy={hostBusy}
-          >
-            {t('call.startMeeting')}
-          </button>
-        </div>
+        <button
+          className="primary-button call-join-trigger"
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          disabled={hostBusy}
+          aria-busy={hostBusy}
+        >
+          {t('call.startMeeting')}
+        </button>
       ) : null}
 
-      {canHost ? (
-        <label className="call-waiting-toggle">
-          <input
-            type="checkbox"
-            checked={waitingRoom}
-            onChange={(event) => setWaitingRoom(event.target.checked)}
-          />
-          <span>{t('call.waitingForHost')}</span>
-        </label>
+      {settingsOpen ? (
+        <CallSettingsModal
+          busy={hostBusy}
+          onClose={() => setSettingsOpen(false)}
+          onStart={(settings) => void startMeeting(settings)}
+        />
       ) : null}
 
       <button

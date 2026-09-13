@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
-import { checkRoom, normalizeCode } from '../lib/callRooms';
+import { checkRoom, normalizeCode, type CallPolicy } from '../lib/callRooms';
+import { takePendingPolicy } from '../lib/callPrefs';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -63,10 +64,33 @@ export default function CallPage({ code }: CallPageProps) {
         opened.current = normalized;
 
         const isHost = Boolean(user && result.host_id && result.host_id === user.id);
+
+        // Join guard: a locked room turns guests away before any media is
+        // acquired. The host is never blocked.
+        if (result.locked === true && !isHost) {
+          notify('meeting-locked');
+          goHome();
+          return;
+        }
+
         // The waiting room is only enforced when the RPC explicitly says so.
         const lobby = result.lobby_enabled === true;
 
-        await openRoom(normalized, { isHost, code: normalized, lobby });
+        // Host: prefer the policy the host just chose in the settings modal.
+        // Everyone else: take whatever check_call_room echoed back.
+        const pendingPolicy = isHost ? takePendingPolicy() : null;
+        const policy: Partial<CallPolicy> = pendingPolicy ?? {
+          lobby_enabled: result.lobby_enabled === true,
+          locked: result.locked === true,
+          auto_mute: result.auto_mute === true,
+          allow_share: result.allow_share !== false,
+          has_password: Boolean(result.has_password),
+          ...(typeof result.max_participants === 'number'
+            ? { max_participants: result.max_participants }
+            : {}),
+        };
+
+        await openRoom(normalized, { isHost, code: normalized, lobby, policy });
       } catch (error) {
         console.error('CALL ERROR:', error);
         if (cancelled) return;

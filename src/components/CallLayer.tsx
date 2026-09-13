@@ -4,6 +4,7 @@ import {
   Activity,
   Hand,
   LayoutGrid,
+  Lock,
   Maximize,
   Mic,
   MicOff,
@@ -11,10 +12,12 @@ import {
   Phone,
   PhoneOff,
   Settings,
+  ShieldCheck,
   Smile,
   Users,
   Video,
   VideoOff,
+  X,
 } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
@@ -22,6 +25,7 @@ import type { PeerConnState, Reaction } from '../hooks/useCall';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
+import CallSecurityPanel from './CallSecurityPanel';
 import CallDevicePicker from './CallDevicePicker';
 
 // ---------------------------------------------------------------------------
@@ -57,6 +61,7 @@ function Tile({
   pinned,
   reactions,
   self = false,
+  videoSilent = false,
   onDoubleClick,
 }: {
   stream: MediaStream | null;
@@ -72,15 +77,10 @@ function Tile({
   pinned: boolean;
   reactions: Reaction[];
   self?: boolean;
+  /** Connected, camera on, yet not a single inbound frame has decoded. */
+  videoSilent?: boolean;
   onDoubleClick?: () => void;
 }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const element = videoRef.current;
-    if (element) element.srcObject = stream ?? null;
-  }, [stream]);
-
   const initials = (name || '?').trim().charAt(0).toUpperCase();
 
   return (
@@ -90,9 +90,17 @@ function Tile({
       onDoubleClick={onDoubleClick}
       data-self={self ? 'true' : undefined}
     >
-      {/* object-contain on black: letterbox, never crop, never mirror remotes. */}
+      {/* object-contain on black: letterbox, never crop, never mirror remotes.
+          Attached through a ref callback so the stream is bound the instant the
+          element mounts, and only re-bound when the stream object changes. */}
       <video
-        ref={videoRef}
+        ref={(el) => {
+          if (!el || !stream) return;
+          if (el.srcObject !== stream) {
+            el.srcObject = stream;
+            void el.play().catch(() => {});
+          }
+        }}
         autoPlay
         playsInline
         muted={muted}
@@ -104,6 +112,12 @@ function Tile({
           opacity: camOn || sharing ? 1 : 0,
         }}
       />
+
+      {/* Zero inbound frames only means trouble when video was expected: the
+          camera is on and this tile is not carrying a screen share. */}
+      {videoSilent && camOn && !sharing ? (
+        <span style={styles.silentBadge}>Video unavailable — audio only</span>
+      ) : null}
 
       {!camOn && !sharing ? (
         <span className="call-avatar" style={styles.avatar} aria-hidden="true">
@@ -163,6 +177,7 @@ export default function CallLayer() {
   const {
     status,
     kind,
+    roomId,
     roomCode,
     isHost,
     peerName,
@@ -170,6 +185,9 @@ export default function CallLayer() {
     incoming,
     peers,
     peerInfo,
+    peerStats,
+    codeRoom,
+    policy,
     localStream,
     shareStream,
     audioOnly,
@@ -189,6 +207,7 @@ export default function CallLayer() {
     devices,
     micId,
     camId,
+    setLocalSpeaking,
     acceptCall,
     declineCall,
     endCall,
@@ -224,10 +243,35 @@ export default function CallLayer() {
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
+  const [diagOpen, setDiagOpen] = useState(false);
+  const [securityOpen, setSecurityOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
   const duration = useElapsed(connectedAt);
   const activeSpeakerId = useActiveSpeaker(localStream, peers, inSession);
+
+  // Code-chip source chain: the route param (captured by openRoom into
+  // roomCode) -> store state -> the channel name split on ':'. For a code room
+  // one of these always resolves, so the chip can never render empty.
+  const codeChip = (roomCode || roomId || '').split(':').pop() ?? '';
+
+  // Policy enforcement: the host can forbid screen sharing for the room.
+  const shareAllowed = !policy || policy.allow_share;
+
+  // Report our own voice activity so the spotlight guard can spare us.
+  useEffect(() => {
+    setLocalSpeaking(activeSpeakerId === 'me');
+  }, [activeSpeakerId, setLocalSpeaking]);
+
+  // A host who opened a room without the code in the URL gets it written back,
+  // so a refresh — or a shared link — still lands on the right room.
+  useEffect(() => {
+    if (!codeRoom || !codeChip) return;
+    const wanted = `#call/${codeChip}`;
+    if (window.location.hash !== wanted) {
+      window.history.replaceState({}, '', `${window.location.pathname}${wanted}`);
+    }
+  }, [codeRoom, codeChip]);
 
   // ---- scroll lock ---------------------------------------------------------
   const locksScroll = incomingPhase || inSession || stage === 'prejoin' || stage === 'lobby';
@@ -299,7 +343,8 @@ export default function CallLayer() {
         toggleCamera();
       } else if (event.altKey && key === 's') {
         event.preventDefault();
-        void (sharing ? stopShare() : startShare());
+        // Respect the room policy: no share while the host has it disabled.
+        if (sharing || shareAllowed) void (sharing ? stopShare() : startShare());
       } else if (!event.altKey && key === 'f') {
         event.preventDefault();
         toggleFullscreen();
@@ -308,7 +353,7 @@ export default function CallLayer() {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [inSession, sharing, stopShare, startShare, toggleCamera, toggleFullscreen, toggleMic]);
+  }, [inSession, sharing, shareAllowed, stopShare, startShare, toggleCamera, toggleFullscreen, toggleMic]);
 
   // ---- notices -------------------------------------------------------------
   useEffect(() => {
@@ -358,9 +403,15 @@ export default function CallLayer() {
         ? t('call.roomEnded')
         : notice === 'room-not-found'
           ? t('call.roomNotFound')
-          : notice === 'continue-in-chat'
-            ? t('chat.messages')
-            : t('call.ended');
+          : notice === 'meeting-locked'
+            ? t('call.meetingLocked')
+            : notice === 'meeting-full'
+              ? t('call.meetingFull')
+              : notice === 'kicked'
+                ? 'You were removed from the meeting.'
+                : notice === 'continue-in-chat'
+                  ? t('chat.messages')
+                  : t('call.ended');
 
   const layer = (
     <div className="call-layer" style={styles.layer} data-call-phase={stage !== 'idle' ? stage : incomingPhase ? 'incoming' : inSession ? status : 'ended'}>
@@ -411,8 +462,11 @@ export default function CallLayer() {
           aria-modal="true"
           aria-label={emergency ? t('call.emergencyActive') : t('call.connecting')}
         >
+          {/* The top bar always renders while in session: name, quality, timer,
+              participant count, encryption, and (for code rooms) the code chip. */}
           <header style={{ ...styles.topBar, opacity: showControls ? 1 : 0.25 }}>
             <span style={styles.topTitle}>{title}</span>
+
             <span style={styles.topMeta}>
               <span
                 role="img"
@@ -424,12 +478,27 @@ export default function CallLayer() {
               />
               {duration ? <span style={styles.timer} dir="ltr">{duration}</span> : null}
               <span style={styles.count}>{participants.length}</span>
+              {isHost && policy ? (
+                <button
+                  type="button"
+                  aria-pressed={securityOpen}
+                  aria-label={t('call.security')}
+                  title={t('call.security')}
+                  onClick={() => setSecurityOpen((open) => !open)}
+                  style={{ ...styles.topBarButton, ...(securityOpen ? styles.iconOn : null) }}
+                >
+                  <ShieldCheck size={15} aria-hidden="true" />
+                </button>
+              ) : null}
+              <span style={styles.encrypted} aria-label="Encrypted">
+                <Lock size={13} aria-hidden="true" />
+              </span>
             </span>
 
-            {!emergency && roomCode ? (
+            {!emergency && codeChip ? (
               <span style={styles.headerActions}>
-                <span style={styles.codeChip} dir="ltr">{roomCode}</span>
-                <button type="button" style={styles.headerButton} aria-label={t('call.copyCode')} onClick={() => copy(roomCode)}>
+                <span style={styles.codeChip} dir="ltr">{codeChip}</span>
+                <button type="button" style={styles.headerButton} aria-label={t('call.copyCode')} onClick={() => copy(codeChip)}>
                   📋 {t('call.copyCode')}
                 </button>
                 <button type="button" style={styles.headerButton} aria-label={t('call.shareLink')} onClick={() => copy(shareUrl)}>
@@ -451,6 +520,7 @@ export default function CallLayer() {
                     sharing={infoFor(focusedId)?.sharing ?? false}
                     hand={infoFor(focusedId)?.hand ?? false}
                     connection={infoFor(focusedId)?.connection ?? 'new'}
+                    videoSilent={peerStats[focusedId]?.videoSilent ?? false}
                     speaking={activeSpeakerId === focusedId}
                     pinned={pinnedId === focusedId}
                     reactions={reactionsFor(focusedId)}
@@ -493,6 +563,7 @@ export default function CallLayer() {
                         sharing={infoFor(id)?.sharing ?? false}
                         hand={infoFor(id)?.hand ?? false}
                         connection={infoFor(id)?.connection ?? 'new'}
+                        videoSilent={peerStats[id]?.videoSilent ?? false}
                         speaking={activeSpeakerId === id}
                         pinned={pinnedId === id}
                         reactions={reactionsFor(id)}
@@ -520,6 +591,7 @@ export default function CallLayer() {
                       sharing={infoFor(id)?.sharing ?? false}
                       hand={infoFor(id)?.hand ?? false}
                       connection={infoFor(id)?.connection ?? 'new'}
+                      videoSilent={peerStats[id]?.videoSilent ?? false}
                       speaking={activeSpeakerId === id}
                       pinned={pinnedId === id}
                       reactions={reactionsFor(id)}
@@ -575,8 +647,10 @@ export default function CallLayer() {
 
           {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
 
+          {securityOpen && isHost ? <CallSecurityPanel onClose={() => setSecurityOpen(false)} /> : null}
+
           {settingsOpen ? (
-            <div style={styles.settings} role="dialog" aria-label={t('call.participants')}>
+            <div style={styles.settings} role="dialog" aria-label="Settings">
               <CallDevicePicker
                 compact
                 mics={devices.mics}
@@ -586,6 +660,53 @@ export default function CallLayer() {
                 onSelectMic={(id) => void selectMic(id)}
                 onSelectCamera={(id) => void selectCamera(id)}
               />
+              <button
+                type="button"
+                style={{ ...styles.statsToggle, ...(diagOpen ? styles.statsToggleOn : null) }}
+                aria-pressed={diagOpen}
+                onClick={() => setDiagOpen((open) => !open)}
+              >
+                {diagOpen ? '▾' : '▸'} Call stats
+              </button>
+            </div>
+          ) : null}
+
+          {/* Diagnostics drawer: per-peer connection + video counters. */}
+          {diagOpen ? (
+            <div style={styles.diag} role="dialog" aria-label="Call stats">
+              <div style={styles.diagHead}>
+                <strong>Call stats</strong>
+                <button
+                  type="button"
+                  style={styles.diagClose}
+                  aria-label={t('common.close')}
+                  onClick={() => setDiagOpen(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+
+              <ul style={styles.diagList}>
+                {Object.entries(peerStats).map(([id, entry]) => (
+                  <li key={id} style={styles.diagRow}>
+                    <strong style={styles.diagName}>{peerInfo[id]?.name || id}</strong>
+                    <span style={styles.diagLine}>connectionState: {entry.connectionState}</span>
+                    <span style={styles.diagLine}>iceConnectionState: {entry.iceConnectionState}</span>
+                    <span style={styles.diagLine}>
+                      out: {entry.outboundFrames} frames · {entry.outboundBytes} B sent
+                    </span>
+                    <span style={styles.diagLine}>
+                      in: {entry.inboundFrames} frames · {entry.inboundBytes} B received
+                    </span>
+                    <span style={styles.diagLine}>
+                      frame: {entry.frameWidth}×{entry.frameHeight}
+                    </span>
+                  </li>
+                ))}
+                {Object.keys(peerStats).length === 0 ? (
+                  <li style={styles.diagLine}>No peer stats yet.</li>
+                ) : null}
+              </ul>
             </div>
           ) : null}
 
@@ -638,9 +759,19 @@ export default function CallLayer() {
               <button
                 type="button"
                 onClick={() => void (sharing ? stopShare() : startShare())}
-                title={`${sharing ? t('call.stopShare') : t('call.screenShare')} (Alt+S)`}
+                disabled={!sharing && !shareAllowed}
+                title={
+                  !sharing && !shareAllowed
+                    ? t('call.allowScreenShare')
+                    : `${sharing ? t('call.stopShare') : t('call.screenShare')} (Alt+S)`
+                }
+                aria-label={sharing ? t('call.stopShare') : t('call.screenShare')}
                 aria-pressed={sharing}
-                style={{ ...styles.iconButton, ...(sharing ? styles.iconOn : null) }}
+                style={{
+                  ...styles.iconButton,
+                  ...(sharing ? styles.iconOn : null),
+                  ...(!sharing && !shareAllowed ? styles.iconDisabled : null),
+                }}
               >
                 <MonitorUp size={18} />
               </button>
@@ -990,6 +1121,19 @@ const styles: Record<string, CSSProperties> = {
     color: '#f2fffa',
     cursor: 'pointer',
   },
+  topBarButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: '50%',
+    border: '1px solid rgba(255, 255, 255, 0.25)',
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#f2fffa',
+    cursor: 'pointer',
+  },
+  iconDisabled: { opacity: 0.4, cursor: 'not-allowed' },
   iconOff: { background: 'rgba(224, 101, 90, 0.22)', borderColor: 'rgba(224, 101, 90, 0.5)', color: '#ffd9d4' },
   iconOn: { background: 'rgba(62, 169, 133, 0.28)', borderColor: 'rgba(62, 169, 133, 0.6)', color: '#d9fff0' },
   endButton: {
@@ -1031,6 +1175,68 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     whiteSpace: 'nowrap',
   },
+  encrypted: { display: 'inline-flex', alignItems: 'center', color: '#8fd8bd' },
+  silentBadge: {
+    position: 'absolute',
+    insetBlockStart: '0.4rem',
+    insetInlineStart: '0.4rem',
+    maxWidth: '85%',
+    paddingBlock: '0.15rem',
+    paddingInline: '0.5rem',
+    borderRadius: '999px',
+    background: 'rgba(216, 161, 58, 0.92)',
+    color: '#3a2b06',
+    fontSize: '0.66rem',
+    fontWeight: 800,
+  },
+  statsToggle: {
+    display: 'block',
+    width: '100%',
+    marginBlockStart: '0.5rem',
+    paddingBlock: '0.35rem',
+    paddingInline: '0.5rem',
+    borderRadius: '0.6rem',
+    border: '1px solid rgba(255, 255, 255, 0.22)',
+    background: 'transparent',
+    color: '#f2fffa',
+    fontSize: '0.76rem',
+    textAlign: 'start',
+    cursor: 'pointer',
+  },
+  statsToggleOn: { background: 'rgba(62, 169, 133, 0.25)', borderColor: 'rgba(62, 169, 133, 0.6)' },
+  diag: {
+    position: 'absolute',
+    insetBlockStart: '3.4rem',
+    insetInlineEnd: '0.85rem',
+    width: 'min(26rem, 92vw)',
+    maxHeight: '60vh',
+    overflowY: 'auto',
+    pointerEvents: 'auto',
+    display: 'grid',
+    gap: '0.4rem',
+    padding: '0.75rem',
+    borderRadius: '0.9rem',
+    background: 'rgba(6, 22, 19, 0.97)',
+    border: '1px solid rgba(255, 255, 255, 0.16)',
+    color: '#f2fffa',
+  },
+  diagHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
+  diagClose: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: '50%',
+    border: 'none',
+    background: 'rgba(255, 255, 255, 0.12)',
+    color: '#f2fffa',
+    cursor: 'pointer',
+  },
+  diagList: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' },
+  diagRow: { display: 'grid', gap: '0.1rem', fontSize: '0.72rem', lineHeight: 1.45 },
+  diagName: { fontSize: '0.78rem', overflowWrap: 'anywhere' },
+  diagLine: { color: '#cfe9df', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' },
   notice: {
     position: 'absolute',
     insetBlockEnd: '1.5rem',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
@@ -26,14 +26,8 @@ export default function CallPreJoin() {
     cancelPrejoin,
   } = useCallContext();
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
-
-  useEffect(() => {
-    const element = videoRef.current;
-    if (element) element.srcObject = localStream ?? null;
-  }, [localStream]);
 
   // Toggling here flips the preview track itself; the same track is handed to
   // the peer connections on join, so the choice carries into the call.
@@ -58,7 +52,21 @@ export default function CallPreJoin() {
         ) : null}
 
         <div style={styles.previewWrap}>
-          <video ref={videoRef} autoPlay playsInline muted style={styles.preview} />
+          {/* Ref-callback attach: the element is bound to the stream the moment
+              it mounts, and only re-attached when the stream object changes. */}
+          <video
+            ref={(el) => {
+              if (!el || !localStream) return;
+              if (el.srcObject !== localStream) {
+                el.srcObject = localStream;
+                void el.play().catch(() => {});
+              }
+            }}
+            autoPlay
+            playsInline
+            muted
+            style={styles.preview}
+          />
           {!camOn ? <span style={styles.cameraOff}>{t('call.prejoinTitle')}</span> : null}
         </div>
 

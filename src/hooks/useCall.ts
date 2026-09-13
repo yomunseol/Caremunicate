@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { normalizeCode, setRoomStatus } from '../lib/callRooms';
+import {
+  DEFAULT_POLICY,
+  normalizeCode,
+  setRoomPassword,
+  setRoomStatus,
+  updateRoomPolicy,
+  type CallPolicy,
+} from '../lib/callRooms';
 
 // ---------------------------------------------------------------------------
 // First-party calling engine over Supabase Realtime broadcast.
@@ -56,6 +63,12 @@ const DC_PING_MS = 3_000;
 /** How long an emoji reaction floats over a tile before it retires. */
 const REACTION_MS = 2_600;
 
+/** Per-peer diagnostics poll (connection + inbound/outbound video). */
+const PEER_STATS_INTERVAL_MS = 4_000;
+
+/** Connected-but-zero-frames must persist this long before we blame the video. */
+const VIDEO_SILENT_MS = 5_000;
+
 /** Broadcast event names. Every room signal carries the `call:` namespace. */
 const EV = {
   join: 'call:join',
@@ -69,6 +82,8 @@ const EV = {
   lobby: 'call:lobby',
   admit: 'call:admit',
   deny: 'call:deny',
+  policy: 'call:policy',
+  kick: 'call:kick',
 } as const;
 
 // Capture + sender ceilings. 720p30 is the top rung; the adaptive ladder below
@@ -158,6 +173,8 @@ const tuneSenders = async (pc: RTCPeerConnection) => {
       const encodings = params.encodings.length > 0 ? params.encodings : [{}];
       params.encodings = encodings.map((encoding) => ({
         ...encoding,
+        // Encoding starts active; the spotlight guard may park it later.
+        active: true,
         maxBitrate: MAX_BITRATE,
         maxFramerate: MAX_FPS,
       }));
@@ -216,8 +233,12 @@ const stepUp = async (track: MediaStreamTrack | null) => {
 type SignalPayload = {
   from: string;
   to?: string;
-  /** Target of a lobby admit/deny. */
+  /** Target of a lobby admit/deny or a kick. */
   for?: string;
+  /** Why a peer was turned away: 'removed' | 'locked' | 'full'. */
+  reason?: string;
+  /** Full room policy. Carries `has_password` as a boolean — never the hash. */
+  policy?: CallPolicy;
   name?: string;
   kind?: CallKind;
   description?: RTCSessionDescriptionInit;
@@ -272,6 +293,22 @@ export type PeerInfo = {
 /** A transient emoji burst, rendered over the sender's tile. */
 export type Reaction = { id: string; emoji: string; from: string; self: boolean };
 
+/** Rolling per-peer diagnostics, refreshed on a 4s poll. */
+export type PeerStats = {
+  connectionState: string;
+  iceConnectionState: string;
+  outboundFrames: number;
+  outboundBytes: number;
+  inboundFrames: number;
+  inboundBytes: number;
+  frameWidth: number;
+  frameHeight: number;
+  /** Epoch ms inbound video has been stuck at zero frames while connected. */
+  zeroSince: number | null;
+  /** True once that silence has lasted long enough to be worth surfacing. */
+  videoSilent: boolean;
+};
+
 /** Someone waiting in the lobby to be admitted (host side). */
 export type LobbyGuest = { id: string; name: string };
 
@@ -299,6 +336,8 @@ export type OpenRoomOptions = {
   isHost?: boolean;
   code?: string;
   lobby?: boolean;
+  /** Host-side seed for the room policy (from the pre-meeting settings). */
+  policy?: Partial<CallPolicy>;
 };
 
 export type UseCallResult = {
@@ -339,6 +378,20 @@ export type UseCallResult = {
   camId: string | null;
   /** Self first, then remotes — feeds the participants panel. */
   participants: Participant[];
+  /** Rolling per-peer diagnostics for the stats drawer. */
+  peerStats: Record<string, PeerStats>;
+  /** True when this call is a code room (drives the always-on code chip). */
+  codeRoom: boolean;
+  /** Live room policy (null outside a code room). Never contains a hash. */
+  policy: CallPolicy | null;
+  /** Host only: merge + persist + broadcast a policy change. */
+  updatePolicy: (patch: Partial<CallPolicy>) => void;
+  /** Host only: remove a participant from the meeting. */
+  kickPeer: (peerId: string) => void;
+  /** Host only: set or clear the room password (hash written, never kept). */
+  setMeetingPassword: (password: string) => Promise<void>;
+  /** Reported by the VAD so the spotlight guard can spare the active speaker. */
+  setLocalSpeaking: (speaking: boolean) => void;
   /** Pass a peer user id for 'video', or a room id for 'emergency'. */
   startCall: (target: string, kind?: CallKind, peerName?: string) => Promise<void>;
   /** Join an existing room (accept an invite, or a provider joining a line). */
@@ -408,6 +461,10 @@ export function useCall(
   const [cams, setCams] = useState<DeviceOption[]>([]);
   const [micId, setMicId] = useState<string | null>(() => readStoredDevice('mic'));
   const [camId, setCamId] = useState<string | null>(() => readStoredDevice('cam'));
+  const [peerStats, setPeerStats] = useState<Record<string, PeerStats>>({});
+  const [codeRoom, setCodeRoom] = useState(false);
+  const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [policy, setPolicy] = useState<CallPolicy | null>(null);
 
   const peers = useRef(new Map<string, Peer>());
   const channel = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -434,6 +491,10 @@ export function useCall(
   const enterPrejoinRef = useRef<() => Promise<void>>(async () => {});
   /** Set after stopShare is defined; the display-track 'ended' handler uses it. */
   const stopShareRef = useRef<() => Promise<void>>(async () => {});
+  /** Readable from stable channel handlers. */
+  const policyRef = useRef<CallPolicy | null>(null);
+  /** One-shot: the join guards only fire on the first policy of a session. */
+  const policyBootRef = useRef(true);
   const reactionTimers = useRef<number[]>([]);
   const stream = useRef<MediaStream | null>(null);
   const room = useRef<string | null>(null);
@@ -479,6 +540,7 @@ export function useCall(
   useEffect(() => { stageRef.current = stage; }, [stage]);
   useEffect(() => { micIdRef.current = micId; }, [micId]);
   useEffect(() => { camIdRef.current = camId; }, [camId]);
+  useEffect(() => { policyRef.current = policy; }, [policy]);
 
   const send = useCallback((event: string, payload: Partial<SignalPayload>) => {
     const ch = channel.current;
@@ -601,6 +663,12 @@ export function useCall(
       setReactions([]);
       setStage('idle');
       setLobby([]);
+      setPeerStats({});
+      setCodeRoom(false);
+      setLocalSpeaking(false);
+      policyRef.current = null;
+      policyBootRef.current = true;
+      setPolicy(null);
       if (noticeKey) setNotice(noticeKey);
       setStatus(nextStatus);
     },
@@ -797,8 +865,13 @@ export function useCall(
       setPeerIds([...peers.current.keys()]);
       mergePeerInfo(peerId, { connection: 'new' });
 
+      // Local tracks go in BEFORE any offer, as explicit sendrecv transceivers,
+      // so the very first negotiation already carries our media.
       for (const track of stream.current?.getTracks() ?? []) {
-        pc.addTrack(track, stream.current as MediaStream);
+        pc.addTransceiver(track, {
+          direction: 'sendrecv',
+          streams: [stream.current as MediaStream],
+        });
       }
       void tuneSenders(pc);
 
@@ -817,10 +890,18 @@ export function useCall(
         if (candidate) send(EV.ice, { to: peerId, candidate: candidate.toJSON(), kind: kindRef.current });
       };
 
-      pc.ontrack = ({ streams: remote }) => {
-        const [first] = remote;
-        if (!first) return;
-        peer.stream = first;
+      pc.ontrack = ({ track }) => {
+        // Never gate on event.streams: a track can arrive with no stream
+        // association (addTransceiver / replaceTrack paths), and a second
+        // stream — a screen share — must not replace the first. Accumulate
+        // every inbound track into one MediaStream that we own.
+        const target = peer.stream ?? new MediaStream();
+        if (!target.getTracks().some((existing) => existing.id === track.id)) {
+          target.addTrack(track);
+        }
+        peer.stream = target;
+
+        // Re-render so the tile attaches the (possibly new) stream.
         setPeerIds([...peers.current.keys()]);
       };
 
@@ -948,6 +1029,21 @@ export function useCall(
         if (!data?.from || data.from === me) return;
         if (peers.current.size >= MAX_MESH) return;
 
+        // Host-side admission: a locked or full room turns newcomers away
+        // before any media is negotiated. Only the host speaks for the room.
+        const current = policyRef.current;
+        if (hostRef.current && current && statusRef.current !== 'idle' && stageRef.current === 'idle') {
+          if (current.locked) {
+            send(EV.kick, { for: data.from, reason: 'locked' });
+            return;
+          }
+          // participants = host + every connected peer.
+          if (peers.current.size + 1 >= current.max_participants) {
+            send(EV.kick, { for: data.from, reason: 'full' });
+            return;
+          }
+        }
+
         // Only connect when we are actually in session WITH media. Someone in
         // the green room or the waiting room has no tracks yet, so a call:join
         // must not trigger a peer connection for them.
@@ -1053,6 +1149,27 @@ export function useCall(
         finish(null, 'ended');
       });
 
+      ch.on('broadcast', { event: EV.policy }, ({ payload }) => {
+        const data = payload as SignalPayload;
+        if (!data?.from || data.from === me || !data.policy) return;
+        // Defensive: has_password is coerced to a boolean so a malformed (or
+        // hostile) payload can never smuggle a digest into the client.
+        setPolicy({
+          ...DEFAULT_POLICY,
+          ...data.policy,
+          has_password: Boolean(data.policy.has_password),
+        });
+      });
+
+      ch.on('broadcast', { event: EV.kick }, ({ payload }) => {
+        const data = payload as SignalPayload;
+        if (!data?.for || data.for !== me) return;
+        const reason = data.reason;
+        finish(
+          reason === 'locked' ? 'meeting-locked' : reason === 'full' ? 'meeting-full' : 'kicked',
+        );
+      });
+
       // Publish the channel before subscribing so the SUBSCRIBED callback can
       // broadcast over it.
       channel.current = ch;
@@ -1070,6 +1187,12 @@ export function useCall(
         if (stageRef.current === 'prejoin') return;
 
         send(EV.join, { name: myName, kind: kindRef.current });
+
+        // The host also publishes the room policy so joiners can enforce it
+        // (locked / full / auto-mute / share-gating) without a second round-trip.
+        if (hostRef.current && policyRef.current) {
+          send(EV.policy, { policy: policyRef.current });
+        }
 
         // Host promotes the room out of 'waiting' once signaling is live.
         if (hostRef.current && !promoted.current && room.current) {
@@ -1256,6 +1379,7 @@ export function useCall(
 
       setRoomId(key);
       setRoomCode(options?.code ? key : null);
+      setCodeRoom(Boolean(options?.code));
       setIsHost(Boolean(options?.isHost));
       setKind('video');
       setNotice(null);
@@ -1263,6 +1387,14 @@ export function useCall(
       setPeerName(null);
       setLobbyEnabled(Boolean(options?.lobby));
       setLobby([]);
+
+      // Seed the policy (host) / accept the defaults (guest); the host's real
+      // values are broadcast the moment signaling comes up.
+      const seeded = { ...DEFAULT_POLICY, ...(options?.policy ?? {}) };
+      policyRef.current = seeded;
+      policyBootRef.current = true;
+      setPolicy(seeded);
+
       void refreshDevices();
 
       // Guests wait in the lobby; the host bypasses it entirely.
@@ -1296,6 +1428,7 @@ export function useCall(
 
     setRoomId(todo.key);
     setRoomCode(todo.options.code ? todo.key : null);
+    setCodeRoom(Boolean(todo.options.code));
     setKind('video');
     setAudioOnly(false);
     setIsHost(Boolean(todo.options.isHost));
@@ -1323,6 +1456,9 @@ export function useCall(
 
     // Consume the pending room so a second "Join now" cannot re-join.
     pending.current = null;
+
+    // The join guards get exactly one shot, on the first policy of the session.
+    policyBootRef.current = true;
 
     startTimers();
     attachChannel(todo.key);
@@ -1423,6 +1559,64 @@ export function useCall(
     [send],
   );
 
+  // ---- room policy (host) --------------------------------------------------
+  /** Merge, persist and broadcast a policy change. Host only. */
+  const updatePolicy = useCallback(
+    (patch: Partial<CallPolicy>) => {
+      if (!hostRef.current) return;
+
+      const merged: CallPolicy = {
+        ...(policyRef.current ?? DEFAULT_POLICY),
+        ...patch,
+        // has_password stays a boolean flag; a patch can never carry a digest.
+        has_password: patch.has_password ?? policyRef.current?.has_password ?? false,
+      };
+
+      policyRef.current = merged;
+      setPolicy(merged);
+      send(EV.policy, { policy: merged });
+
+      const code = room.current;
+      if (code) void updateRoomPolicy(code, patch).catch((error) => console.error('CALL ERROR:', error));
+    },
+    [send],
+  );
+
+  /** Host only: remove a participant; they leave cleanly on call:kick. */
+  const kickPeer = useCallback(
+    (peerId: string) => {
+      if (!hostRef.current) return;
+      send(EV.kick, { for: peerId, reason: 'removed' });
+      closePeer(peerId);
+      setPeerIds([...peers.current.keys()]);
+    },
+    [send, closePeer],
+  );
+
+  /**
+   * Host only: set or clear the room password. The plaintext never leaves this
+   * function — it is hashed and written; only the `has_password` flag is kept
+   * and broadcast, so current peers are unaffected.
+   */
+  const setMeetingPassword = useCallback(
+    async (password: string) => {
+      if (!hostRef.current) return;
+      const code = room.current;
+      if (!code) return;
+
+      await setRoomPassword(code, password);
+
+      const merged: CallPolicy = {
+        ...(policyRef.current ?? DEFAULT_POLICY),
+        has_password: Boolean((password ?? '').trim()),
+      };
+      policyRef.current = merged;
+      setPolicy(merged);
+      send(EV.policy, { policy: merged });
+    },
+    [send],
+  );
+
   // Keep the device list current when hardware is plugged or unplugged.
   useEffect(() => {
     void refreshDevices();
@@ -1455,6 +1649,7 @@ export function useCall(
       setAudioOnly(false);
       setIsHost(Boolean(options?.isHost));
       setRoomCode(options?.code ? key : null);
+      setCodeRoom(Boolean(options?.code));
       setNotice(null);
       setIncoming(null);
       setStatus('connecting');
@@ -1686,6 +1881,146 @@ export function useCall(
     return [self, ...remotes];
   }, [me, myName, isHost, muted, cameraOff, sharing, handRaised, peerIds, peerInfo]);
 
+  // Per-peer diagnostics, plus the no-silent-black watchdog: a peer can be
+  // "connected" while its inbound video never decodes a single frame.
+  useEffect(() => {
+    if (status !== 'active' && status !== 'connecting' && status !== 'reconnecting') return;
+
+    let cancelled = false;
+
+    const poll = async () => {
+      const collected: Record<string, PeerStats> = {};
+
+      for (const [id, peer] of peers.current) {
+        const stats: PeerStats = {
+          connectionState: peer.pc.connectionState,
+          iceConnectionState: peer.pc.iceConnectionState,
+          outboundFrames: 0,
+          outboundBytes: 0,
+          inboundFrames: 0,
+          inboundBytes: 0,
+          frameWidth: 0,
+          frameHeight: 0,
+          zeroSince: null,
+          videoSilent: false,
+        };
+
+        try {
+          const report = await peer.pc.getStats();
+          report.forEach((entry) => {
+            const record = entry as RTCStats & {
+              kind?: string;
+              framesEncoded?: number;
+              bytesSent?: number;
+              framesDecoded?: number;
+              bytesReceived?: number;
+              frameWidth?: number;
+              frameHeight?: number;
+            };
+
+            if (record.type === 'outbound-rtp' && record.kind === 'video') {
+              stats.outboundFrames = Number(record.framesEncoded ?? 0);
+              stats.outboundBytes = Number(record.bytesSent ?? 0);
+            }
+            if (record.type === 'inbound-rtp' && record.kind === 'video') {
+              stats.inboundFrames = Number(record.framesDecoded ?? 0);
+              stats.inboundBytes = Number(record.bytesReceived ?? 0);
+              if (record.frameWidth) stats.frameWidth = Number(record.frameWidth);
+              if (record.frameHeight) stats.frameHeight = Number(record.frameHeight);
+            }
+          });
+        } catch (error) {
+          console.error('CALL ERROR:', error);
+        }
+
+        collected[id] = stats;
+      }
+
+      if (cancelled) return;
+
+      setPeerStats((previous) => {
+        const merged: Record<string, PeerStats> = {};
+        for (const [id, stats] of Object.entries(collected)) {
+          const before = previous[id];
+          const silent = stats.connectionState === 'connected' && stats.inboundFrames === 0;
+          const since = silent ? before?.zeroSince ?? Date.now() : null;
+          merged[id] = {
+            ...stats,
+            zeroSince: since,
+            videoSilent: silent && since !== null && Date.now() - since >= VIDEO_SILENT_MS,
+          };
+        }
+        return merged;
+      });
+    };
+
+    void poll();
+    const id = window.setInterval(() => void poll(), PEER_STATS_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [status, peerIds]);
+
+  // Peer-side policy enforcement. It fires once per session — on the first
+  // policy the host publishes — so locking or capping a room only ever affects
+  // INCOMING joiners; peers already in the call are left alone.
+  useEffect(() => {
+    if (!policy || !policyBootRef.current) return;
+    policyBootRef.current = false;
+    if (hostRef.current) return;
+
+    if (policy.locked) {
+      finish('meeting-locked');
+      return;
+    }
+
+    // "Others" = everyone but me; the room is full once that reaches the cap.
+    const others = participants.filter((person) => !person.self).length;
+    if (others >= policy.max_participants) {
+      finish('meeting-full');
+      return;
+    }
+
+    if (policy.auto_mute) {
+      const track = stream.current?.getAudioTracks()[0];
+      if (track && track.enabled) {
+        track.enabled = false;
+        mutedRef.current = true;
+        setMuted(true);
+      }
+    }
+  }, [policy, participants, finish]);
+
+  // Spotlight guard: park the camera encoding ONLY with a real audience (3+
+  // participants) and only while we are not the one speaking. Every other case
+  // — including joining — stays active, so a 1:1 call never starves its video.
+  useEffect(() => {
+    const shouldBeActive = participants.length < 3 || localSpeaking;
+
+    for (const peer of peers.current.values()) {
+      for (const sender of peer.pc.getSenders()) {
+        if (sender.track?.kind !== 'video') continue;
+        try {
+          const params = sender.getParameters();
+          const encodings =
+            params.encodings.length > 0 ? params.encodings : [{} as RTCRtpEncodingParameters];
+          let changed = false;
+          params.encodings = encodings.map((encoding) => {
+            if (encoding.active === shouldBeActive) return encoding;
+            changed = true;
+            return { ...encoding, active: shouldBeActive };
+          });
+          if (changed) {
+            void sender.setParameters(params).catch((error) => console.error('CALL ERROR:', error));
+          }
+        } catch (error) {
+          console.error('CALL ERROR:', error);
+        }
+      }
+    }
+  }, [participants.length, localSpeaking, peerIds]);
+
   return {
     status,
     kind,
@@ -1717,6 +2052,13 @@ export function useCall(
     micId,
     camId,
     participants,
+    peerStats,
+    codeRoom,
+    policy,
+    updatePolicy,
+    kickPeer,
+    setMeetingPassword,
+    setLocalSpeaking,
     startCall,
     joinCall,
     openRoom,

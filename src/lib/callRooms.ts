@@ -47,6 +47,35 @@ export type CheckRoomResult = {
   host_id?: string;
   /** True when the room holds guests in a waiting room. Optional in the RPC. */
   lobby_enabled?: boolean | null;
+  locked?: boolean | null;
+  auto_mute?: boolean | null;
+  allow_share?: boolean | null;
+  max_participants?: number | null;
+};
+
+/**
+ * Live room policy, broadcast as `call:policy` and mirrored into `call_rooms`.
+ *
+ * `has_password` is a BOOLEAN: the password hash never leaves the database and
+ * is never put in this object, broadcast, or rendered.
+ */
+export type CallPolicy = {
+  lobby_enabled: boolean;
+  locked: boolean;
+  auto_mute: boolean;
+  allow_share: boolean;
+  max_participants: number;
+  has_password: boolean;
+};
+
+export const DEFAULT_POLICY: CallPolicy = {
+  lobby_enabled: true,
+  locked: false,
+  auto_mute: false,
+  allow_share: true,
+  // Aligns with the mesh cap the engine enforces.
+  max_participants: 4,
+  has_password: false,
 };
 
 /** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
@@ -91,48 +120,110 @@ export const hashCallPassword = async (code: string, password: string): Promise<
  * collisions (Postgres 23505) — 16.7M codes make that vanishingly rare, but a
  * collision must never surface as a failed "Start meeting".
  */
-export const createRoom = async (password?: string, lobbyEnabled = true): Promise<string> => {
+export type CreateRoomOptions = {
+  /** Optional room password. Only its SHA-256 ever leaves the client. */
+  password?: string;
+  lobbyEnabled?: boolean;
+  autoMute?: boolean;
+  allowShare?: boolean;
+  maxParticipants?: number;
+};
+
+export const createRoom = async (options: CreateRoomOptions = {}): Promise<string> => {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
 
   const hostId = sessionData.session?.user?.id;
   if (!hostId) throw new Error('createRoom requires an authenticated session');
 
-  const trimmed = (password ?? '').trim();
+  const trimmed = (options.password ?? '').trim();
 
-  // Some projects predate the waiting-room column. If the insert rejects it we
-  // drop the field and retry rather than blocking "Start meeting".
-  let includeLobby = true;
+  const policyColumns = {
+    lobby_enabled: options.lobbyEnabled ?? true,
+    locked: false,
+    auto_mute: options.autoMute ?? false,
+    allow_share: options.allowShare ?? true,
+    max_participants: options.maxParticipants ?? DEFAULT_POLICY.max_participants,
+  };
+
+  // Field groups, richest first. If this project predates a policy column the
+  // insert is retried with a smaller shape instead of blocking "Start meeting".
+  const shapes: Array<Record<string, unknown>> = [
+    policyColumns,
+    { lobby_enabled: policyColumns.lobby_enabled },
+    {},
+  ];
+
   let lastError: unknown = null;
 
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const code = generateRoomCode();
+  for (const shape of shapes) {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = generateRoomCode();
 
-    const { data, error } = await supabase
-      .from('call_rooms')
-      .insert({
-        code,
-        host_id: hostId,
-        status: 'waiting',
-        password_hash: trimmed ? await hashCallPassword(code, trimmed) : null,
-        ...(includeLobby ? { lobby_enabled: lobbyEnabled } : {}),
-      })
-      .select('code')
-      .single();
+      const { data, error } = await supabase
+        .from('call_rooms')
+        .insert({
+          code,
+          host_id: hostId,
+          status: 'waiting',
+          // Only the digest is written; the plaintext password is dropped here.
+          password_hash: trimmed ? await hashCallPassword(code, trimmed) : null,
+          ...shape,
+        })
+        .select('code')
+        .single();
 
-    if (!error) return String(data?.code ?? code);
+      if (!error) return String(data?.code ?? code);
 
-    // 42703 = undefined_column, PGRST204 = column not found in the schema cache.
-    if (includeLobby && (error.code === '42703' || error.code === 'PGRST204')) {
-      includeLobby = false;
-      continue;
+      // 42703 = undefined_column, PGRST204 = column not found in the schema cache.
+      if (error.code === '42703' || error.code === 'PGRST204') {
+        lastError = error;
+        break; // fall through to the next, smaller shape
+      }
+
+      lastError = error;
+      if (error.code !== '23505') throw error;
     }
-
-    lastError = error;
-    if (error.code !== '23505') throw error;
   }
 
   throw lastError ?? new Error('Could not allocate a unique room code');
+};
+
+/** Mirrors a policy change into the room row. Never writes `has_password`. */
+export const updateRoomPolicy = async (code: string, patch: Partial<CallPolicy>): Promise<void> => {
+  const normalized = normalizeCode(code);
+  if (!normalized) return;
+
+  const columns: Record<string, unknown> = {};
+  if (typeof patch.lobby_enabled === 'boolean') columns.lobby_enabled = patch.lobby_enabled;
+  if (typeof patch.locked === 'boolean') columns.locked = patch.locked;
+  if (typeof patch.auto_mute === 'boolean') columns.auto_mute = patch.auto_mute;
+  if (typeof patch.allow_share === 'boolean') columns.allow_share = patch.allow_share;
+  if (typeof patch.max_participants === 'number') columns.max_participants = patch.max_participants;
+  if (Object.keys(columns).length === 0) return;
+
+  const { error } = await supabase.from('call_rooms').update(columns).eq('code', normalized);
+  // A project without the policy columns simply keeps them in memory only.
+  if (error && error.code !== '42703' && error.code !== 'PGRST204') throw error;
+};
+
+/**
+ * Sets (or clears) the room password. The digest is written and discarded —
+ * it is never returned, stored in state, logged, or broadcast.
+ */
+export const setRoomPassword = async (code: string, password: string): Promise<void> => {
+  const normalized = normalizeCode(code);
+  if (!normalized) return;
+
+  const trimmed = (password ?? '').trim();
+  const { error } = await supabase
+    .from('call_rooms')
+    .update({
+      password_hash: trimmed ? await hashCallPassword(normalized, trimmed) : null,
+    })
+    .eq('code', normalized);
+
+  if (error) throw error;
 };
 
 /** Resolves the room for a code, or null when no such room exists. */

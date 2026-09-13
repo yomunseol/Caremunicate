@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { Crown, Hand, MicOff, VideoOff, X } from 'lucide-react';
+import { Crown, Hand, MicOff, UserMinus, VideoOff, X } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 
@@ -14,7 +14,7 @@ type CallParticipantsPanelProps = {
 
 export default function CallParticipantsPanel({ onClose }: CallParticipantsPanelProps) {
   const { t } = useLang();
-  const { participants, isHost, lowerPeerHand } = useCallContext();
+  const { participants, isHost, lowerPeerHand, kickPeer } = useCallContext();
 
   return (
     <aside className="call-participants" style={styles.panel} role="dialog" aria-label={t('call.participants')}>
@@ -49,6 +49,18 @@ export default function CallParticipantsPanel({ onClose }: CallParticipantsPanel
                   style={styles.lower}
                 >
                   {t('call.raiseHand')}
+                </button>
+              ) : null}
+
+              {isHost && !person.self ? (
+                <button
+                  type="button"
+                  onClick={() => kickPeer(person.id)}
+                  style={styles.remove}
+                  title={t('call.removeParticipant')}
+                  aria-label={`${t('call.removeParticipant')} — ${person.name}`}
+                >
+                  <UserMinus size={14} aria-hidden="true" />
                 </button>
               ) : null}
             </span>
@@ -103,6 +115,18 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(255, 255, 255, 0.1)',
     color: '#f2fffa',
     fontSize: '0.68rem',
+    cursor: 'pointer',
+  },
+  remove: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 26,
+    height: 26,
+    borderRadius: '50%',
+    border: '1px solid rgba(224, 101, 90, 0.5)',
+    background: 'rgba(224, 101, 90, 0.18)',
+    color: '#ffd9d4',
     cursor: 'pointer',
   },
 };

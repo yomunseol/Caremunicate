@@ -1639,3 +1639,133 @@ img {
     width: 100%;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Meeting settings / security — switch-style toggles + password rows.
+   Logical properties only, so everything mirrors under [dir='rtl'].
+   --------------------------------------------------------------------------- */
+.call-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.call-switch-label {
+  color: #133b35;
+  font-size: 0.84rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.call-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(15, 58, 50, 0.2);
+  border-radius: 999px;
+  background: #dce9e4;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.call-switch.is-on {
+  background: linear-gradient(120deg, #48b58f, #7adab1);
+  border-color: rgba(62, 169, 133, 0.6);
+}
+
+.call-switch-knob {
+  position: absolute;
+  inset-block-start: 2px;
+  inset-inline-start: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(6, 26, 22, 0.3);
+  transition: transform 160ms ease;
+}
+
+.call-switch.is-on .call-switch-knob {
+  transform: translateX(20px);
+}
+
+/* RTL: the knob travels the other way. */
+[dir='rtl'] .call-switch.is-on .call-switch-knob {
+  transform: translateX(-20px);
+}
+
+.call-password-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.call-password-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.call-password-toggle {
+  flex-shrink: 0;
+}
+
+.call-settings {
+  max-height: min(90vh, 40rem);
+  overflow-y: auto;
+}
+
+.call-security {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  z-index: 1;
+  width: min(22rem, 88vw);
+  pointer-events: auto;
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+  padding: 0.9rem;
+  background: rgba(9, 32, 27, 0.96);
+  border-inline-end: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f2fffa;
+  overflow-y: auto;
+}
+
+.call-security-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.call-security-head strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.call-security .call-switch-label {
+  color: #f2fffa;
+}
+
+.call-security-password {
+  display: grid;
+  gap: 0.4rem;
+  padding-block-start: 0.5rem;
+  border-block-start: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.call-security-save {
+  justify-self: start;
+}
+
+@media (max-width: 720px) {
+  .call-security {
+    width: 100%;
+  }
+}
