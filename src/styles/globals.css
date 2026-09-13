@@ -1558,3 +1558,84 @@ img {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Call surfaces — tiles, speaking ring, reactions, device pickers.
+   Logical properties only, so everything mirrors under [dir='rtl'].
+   --------------------------------------------------------------------------- */
+.call-tile {
+  transition: box-shadow 160ms ease;
+}
+
+.call-tile.is-speaking {
+  /* Mint speaking ring. */
+  box-shadow: inset 0 0 0 2px #48b58f, 0 0 0 2px rgba(72, 181, 143, 0.35);
+}
+
+.call-tile.is-pinned {
+  box-shadow: inset 0 0 0 2px #f0d27a;
+}
+
+.call-avatar {
+  pointer-events: none;
+}
+
+@keyframes callReactionFloat {
+  0% { opacity: 0; transform: translate(-50%, 0.5rem) scale(0.8); }
+  20% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%, -3.2rem) scale(1); }
+}
+
+.call-reaction {
+  animation: callReactionFloat 2.6s ease-out forwards;
+  pointer-events: none;
+}
+
+.call-devices {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.call-devices.is-compact {
+  min-width: min(20rem, 78vw);
+}
+
+.call-device {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.call-device-select {
+  flex: 1;
+  min-width: 0;
+  paddingBlock: 0.35rem;
+  paddingInline: 0.5rem;
+  border: 1px solid rgba(62, 169, 133, 0.3);
+  border-radius: 0.6rem;
+  background: #fff;
+  color: #133b35;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.call-waiting-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #557b76;
+  font-size: 0.8rem;
+  cursor: pointer;
+  text-align: start;
+}
+
+.call-participants {
+  box-shadow: -20px 0 40px rgba(6, 26, 22, 0.35);
+}
+
+@media (max-width: 720px) {
+  .call-participants {
+    width: 100%;
+  }
+}

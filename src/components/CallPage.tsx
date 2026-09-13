@@ -7,9 +7,9 @@ import { useLang } from '../i18n';
 // ---------------------------------------------------------------------------
 // /call/{code} — the entry point for a code room.
 //
-// The code is validated against check_call_room before the media engine is
-// started, so a bad code, an ended room, or a wrong password can never open a
-// call. On failure we surface the reason as a toast and return home.
+// check_call_room gates entry, then the room opens into the GREEN ROOM (or the
+// waiting room for a guest when the room has one). No media is announced and no
+// peer connection is built here — that happens on "Join now" in CallLayer.
 // ---------------------------------------------------------------------------
 
 type CallPageProps = {
@@ -23,12 +23,14 @@ const goHome = () => {
 export default function CallPage({ code }: CallPageProps) {
   const { t } = useLang();
   const { user } = useAuth();
-  const { status, roomCode, notify, joinCall } = useCallContext();
+  const { status, stage, roomCode, notify, openRoom } = useCallContext();
   const [checking, setChecking] = useState(true);
 
-  // Keyed by normalized code so a re-run never joins twice.
-  const started = useRef<string | null>(null);
-  const joined = useRef(false);
+  // Keyed by normalized code so a re-run never opens the room twice.
+  const opened = useRef<string | null>(null);
+  // Only redirect once we have actually been somewhere (green room / lobby /
+  // session), so the initial idle state does not bounce us straight home.
+  const sawActivity = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -57,12 +59,14 @@ export default function CallPage({ code }: CallPageProps) {
 
         setChecking(false);
 
-        if (started.current === normalized) return;
-        started.current = normalized;
-        joined.current = true;
+        if (opened.current === normalized) return;
+        opened.current = normalized;
 
         const isHost = Boolean(user && result.host_id && result.host_id === user.id);
-        await joinCall(normalized, 'video', { isHost, code: normalized });
+        // The waiting room is only enforced when the RPC explicitly says so.
+        const lobby = result.lobby_enabled === true;
+
+        await openRoom(normalized, { isHost, code: normalized, lobby });
       } catch (error) {
         console.error('CALL ERROR:', error);
         if (cancelled) return;
@@ -76,28 +80,28 @@ export default function CallPage({ code }: CallPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [code, user, joinCall, notify]);
+  }, [code, user, openRoom, notify]);
 
-  // The engine left the room (hang up, or the host ended it for everyone); the
-  // /call route has nothing left to show.
+  // Track that we left the entry state at least once.
   useEffect(() => {
-    if (!joined.current) return;
-    if (status === 'ended' || status === 'idle') {
-      joined.current = false;
+    if (stage !== 'idle' || status !== 'idle') sawActivity.current = true;
+  }, [stage, status]);
+
+  // The room ended (host ended it, or we were denied) → nothing left to show.
+  useEffect(() => {
+    if (status === 'ended') {
+      goHome();
+      return;
+    }
+    // Backed out of the green room / lobby: idle again with no room attached.
+    if (sawActivity.current && stage === 'idle' && status === 'idle' && !roomCode) {
       goHome();
     }
-  }, [status]);
+  }, [status, stage, roomCode]);
 
   return (
     <section className="section call-page">
-      <p className="hero-copy" aria-busy={checking}>
-        {t('call.connecting')}
-      </p>
-      {roomCode ? (
-        <span className="call-page-code" dir="ltr">
-          {roomCode}
-        </span>
-      ) : null}
+      <p className="hero-copy" aria-busy={checking}>{t('call.connecting')}</p>
     </section>
   );
 }

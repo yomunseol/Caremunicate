@@ -25,6 +25,8 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
   const [hostPassword, setHostPassword] = useState('');
   const [hostBusy, setHostBusy] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
+  // Waiting room defaults ON, as specified.
+  const [waitingRoom, setWaitingRoom] = useState(true);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -51,7 +53,7 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
     setHostBusy(true);
     setHostError(null);
     try {
-      const code = await createRoom(hostPassword);
+      const code = await createRoom(hostPassword, waitingRoom);
       enterRoom(code);
       setHostPassword('');
     } catch (error) {
@@ -121,6 +123,17 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
             {t('call.startMeeting')}
           </button>
         </div>
+      ) : null}
+
+      {canHost ? (
+        <label className="call-waiting-toggle">
+          <input
+            type="checkbox"
+            checked={waitingRoom}
+            onChange={(event) => setWaitingRoom(event.target.checked)}
+          />
+          <span>{t('call.waitingForHost')}</span>
+        </label>
       ) : null}
 
       <button

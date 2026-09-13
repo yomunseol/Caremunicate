@@ -45,6 +45,8 @@ export type CheckRoomResult = {
   status?: string;
   room_id?: string;
   host_id?: string;
+  /** True when the room holds guests in a waiting room. Optional in the RPC. */
+  lobby_enabled?: boolean | null;
 };
 
 /** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
@@ -89,7 +91,7 @@ export const hashCallPassword = async (code: string, password: string): Promise<
  * collisions (Postgres 23505) — 16.7M codes make that vanishingly rare, but a
  * collision must never surface as a failed "Start meeting".
  */
-export const createRoom = async (password?: string): Promise<string> => {
+export const createRoom = async (password?: string, lobbyEnabled = true): Promise<string> => {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
 
@@ -98,8 +100,12 @@ export const createRoom = async (password?: string): Promise<string> => {
 
   const trimmed = (password ?? '').trim();
 
+  // Some projects predate the waiting-room column. If the insert rejects it we
+  // drop the field and retry rather than blocking "Start meeting".
+  let includeLobby = true;
   let lastError: unknown = null;
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
     const code = generateRoomCode();
 
     const { data, error } = await supabase
@@ -109,11 +115,18 @@ export const createRoom = async (password?: string): Promise<string> => {
         host_id: hostId,
         status: 'waiting',
         password_hash: trimmed ? await hashCallPassword(code, trimmed) : null,
+        ...(includeLobby ? { lobby_enabled: lobbyEnabled } : {}),
       })
       .select('code')
       .single();
 
     if (!error) return String(data?.code ?? code);
+
+    // 42703 = undefined_column, PGRST204 = column not found in the schema cache.
+    if (includeLobby && (error.code === '42703' || error.code === 'PGRST204')) {
+      includeLobby = false;
+      continue;
+    }
 
     lastError = error;
     if (error.code !== '23505') throw error;

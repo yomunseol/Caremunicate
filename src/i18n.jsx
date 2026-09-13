@@ -6,7 +6,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 // - Locale resolution: localStorage (manual choice) > navigator.language
 //   prefix (e.g. ko-KR -> ko) > 'en'.
 // - Missing-key safety: t() falls back to the English string, then to the key.
-// - t() supports {token} interpolation via the optional second argument.
+// - t() supports {{token}} (and legacy {token}) interpolation via the optional
+//   second argument. A token whose value is missing is removed entirely, so a
+//   raw {{...}} can never render; dev builds warn about it.
 // ---------------------------------------------------------------------------
 
 export const LOCALES = [
@@ -28,6 +30,11 @@ const resolveDirection = (locale) => (RTL_LOCALES.includes(locale) ? 'rtl' : 'lt
 
 const STORAGE_KEY = 'caremunicate:locale';
 const DIRECTION_KEY = 'caremunicate:dir';
+
+// Interpolation mistakes only surface in development; production stays quiet.
+const warn = (message) => {
+  if (import.meta.env?.DEV) console.warn(`[i18n] ${message}`);
+};
 
 const translations = {
   en: {
@@ -386,7 +393,7 @@ const translations = {
     'places.removeSaved': 'Remove {name} from saved places',
     'places.saveTitle': 'Save place',
     'places.removeTitle': 'Remove from saved places',
-    'places.searchFailed': 'Search failed ({status}).',
+    'places.searchFailed': 'Search failed.',
 
     'errors.conversationTitle': 'Something went wrong loading this conversation.',
     'errors.checkingAccount': 'Checking your account...',
@@ -472,6 +479,18 @@ const translations = {
     'call.endForAll': 'End for all',
     'call.copied': 'Copied!',
     'call.roomEnded': 'This call has ended for everyone.',
+    'call.joinNow': 'Join now',
+    'call.prejoinTitle': 'Ready to join?',
+    'call.leave': 'Leave',
+    'call.screenShare': 'Share screen',
+    'call.stopShare': 'Stop sharing',
+    'call.raiseHand': 'Raise hand',
+    'call.participants': 'Participants',
+    'call.waitingForHost': 'Waiting for the host to admit you…',
+    'call.admit': 'Admit',
+    'call.deny': 'Deny',
+    'call.galleryView': 'Gallery view',
+    'call.speakerView': 'Speaker view',
   },
 
   fr: {
@@ -832,7 +851,7 @@ const translations = {
     'places.removeSaved': 'Retirer {name} des lieux enregistrés',
     'places.saveTitle': 'Enregistrer le lieu',
     'places.removeTitle': 'Retirer des lieux enregistrés',
-    'places.searchFailed': 'Échec de la recherche ({status}).',
+    'places.searchFailed': 'Échec de la recherche.',
     'errors.conversationTitle': 'Une erreur est survenue lors du chargement de cette conversation.',
     'errors.checkingAccount': 'Vérification de votre compte...',
     'errors.redirecting': 'Redirection vers la connexion...',
@@ -917,6 +936,18 @@ const translations = {
     'call.endForAll': 'Terminer pour tous',
     'call.copied': 'Copié !',
     'call.roomEnded': 'Cet appel est terminé pour tout le monde.',
+    'call.joinNow': 'Rejoindre',
+    'call.prejoinTitle': 'Prêt à rejoindre ?',
+    'call.leave': 'Quitter',
+    'call.screenShare': "Partager l'écran",
+    'call.stopShare': 'Arrêter le partage',
+    'call.raiseHand': 'Lever la main',
+    'call.participants': 'Participants',
+    'call.waitingForHost': "En attente d'admission par l'hôte…",
+    'call.admit': 'Admettre',
+    'call.deny': 'Refuser',
+    'call.galleryView': 'Vue galerie',
+    'call.speakerView': 'Vue orateur',
   },
 
   es: {
@@ -1272,7 +1303,7 @@ const translations = {
     'places.removeSaved': 'Quitar {name} de los lugares guardados',
     'places.saveTitle': 'Guardar lugar',
     'places.removeTitle': 'Quitar de lugares guardados',
-    'places.searchFailed': 'La búsqueda falló ({status}).',
+    'places.searchFailed': 'La búsqueda falló.',
     'errors.conversationTitle': 'Algo salió mal al cargar esta conversación.',
     'errors.checkingAccount': 'Comprobando tu cuenta...',
     'errors.redirecting': 'Redirigiendo al inicio de sesión...',
@@ -1357,6 +1388,18 @@ const translations = {
     'call.endForAll': 'Finalizar para todos',
     'call.copied': '¡Copiado!',
     'call.roomEnded': 'La llamada finalizó para todos.',
+    'call.joinNow': 'Unirse',
+    'call.prejoinTitle': '¿Listo para unirte?',
+    'call.leave': 'Salir',
+    'call.screenShare': 'Compartir pantalla',
+    'call.stopShare': 'Dejar de compartir',
+    'call.raiseHand': 'Levantar la mano',
+    'call.participants': 'Participantes',
+    'call.waitingForHost': 'Esperando a que el anfitrión te admita…',
+    'call.admit': 'Admitir',
+    'call.deny': 'Rechazar',
+    'call.galleryView': 'Vista de galería',
+    'call.speakerView': 'Vista del orador',
   },
 
   ko: {
@@ -1697,7 +1740,7 @@ const translations = {
     'places.removeSaved': '저장한 장소에서 {name} 삭제',
     'places.saveTitle': '장소 저장',
     'places.removeTitle': '저장한 장소에서 삭제',
-    'places.searchFailed': '검색 실패 ({status}).',
+    'places.searchFailed': '검색 실패.',
     'errors.conversationTitle': '이 대화를 불러오는 중 문제가 발생했습니다.',
     'errors.checkingAccount': '계정 확인 중...',
     'errors.redirecting': '로그인으로 이동 중...',
@@ -1782,6 +1825,18 @@ const translations = {
     'call.endForAll': '모두에 대해 종료',
     'call.copied': '복사됨!',
     'call.roomEnded': '모두에 대해 통화가 종료되었습니다.',
+    'call.joinNow': '지금 참여',
+    'call.prejoinTitle': '참여 준비되셨나요?',
+    'call.leave': '나가기',
+    'call.screenShare': '화면 공유',
+    'call.stopShare': '공유 중지',
+    'call.raiseHand': '손 들기',
+    'call.participants': '참석자',
+    'call.waitingForHost': '진행자가 입장해 줄 때까지 기다리는 중…',
+    'call.admit': '입장 승인',
+    'call.deny': '거절',
+    'call.galleryView': '갤러리 보기',
+    'call.speakerView': '발표자 보기',
   },
 
   zh: {
@@ -2115,7 +2170,7 @@ const translations = {
     'places.removeSaved': '从已保存地点中移除 {name}',
     'places.saveTitle': '保存地点',
     'places.removeTitle': '从已保存地点移除',
-    'places.searchFailed': '搜索失败（{status}）。',
+    'places.searchFailed': '搜索失败。',
     'errors.conversationTitle': '加载此对话时出错。',
     'errors.checkingAccount': '正在检查您的账户...',
     'errors.redirecting': '正在跳转到登录...',
@@ -2200,6 +2255,18 @@ const translations = {
     'call.endForAll': '为所有人结束',
     'call.copied': '已复制！',
     'call.roomEnded': '该通话已对所有人结束。',
+    'call.joinNow': '立即加入',
+    'call.prejoinTitle': '准备好加入了吗？',
+    'call.leave': '离开',
+    'call.screenShare': '共享屏幕',
+    'call.stopShare': '停止共享',
+    'call.raiseHand': '举手',
+    'call.participants': '参与者',
+    'call.waitingForHost': '等待主持人允许您加入…',
+    'call.admit': '允许加入',
+    'call.deny': '拒绝',
+    'call.galleryView': '画廊视图',
+    'call.speakerView': '演讲者视图',
   },
 
   pt: {
@@ -2554,7 +2621,7 @@ const translations = {
     'places.removeSaved': 'Remover {name} dos locais salvos',
     'places.saveTitle': 'Salvar local',
     'places.removeTitle': 'Remover dos locais salvos',
-    'places.searchFailed': 'A busca falhou ({status}).',
+    'places.searchFailed': 'A busca falhou.',
     'errors.conversationTitle': 'Algo deu errado ao carregar esta conversa.',
     'errors.checkingAccount': 'Verificando sua conta...',
     'errors.redirecting': 'Redirecionando para o login...',
@@ -2639,6 +2706,18 @@ const translations = {
     'call.endForAll': 'Encerrar para todos',
     'call.copied': 'Copiado!',
     'call.roomEnded': 'A chamada foi encerrada para todos.',
+    'call.joinNow': 'Entrar agora',
+    'call.prejoinTitle': 'Pronto para entrar?',
+    'call.leave': 'Sair',
+    'call.screenShare': 'Compartilhar tela',
+    'call.stopShare': 'Parar de compartilhar',
+    'call.raiseHand': 'Levantar a mão',
+    'call.participants': 'Participantes',
+    'call.waitingForHost': 'Aguardando o anfitrião admitir você…',
+    'call.admit': 'Admitir',
+    'call.deny': 'Recusar',
+    'call.galleryView': 'Visão em galeria',
+    'call.speakerView': 'Visão do palestrante',
   },
 
   de: {
@@ -2997,7 +3076,7 @@ const translations = {
     'places.removeSaved': '{name} aus gespeicherten Orten entfernen',
     'places.saveTitle': 'Ort speichern',
     'places.removeTitle': 'Aus gespeicherten Orten entfernen',
-    'places.searchFailed': 'Suche fehlgeschlagen ({status}).',
+    'places.searchFailed': 'Suche fehlgeschlagen.',
     'errors.conversationTitle': 'Beim Laden dieser Unterhaltung ist ein Fehler aufgetreten.',
     'errors.checkingAccount': 'Ihr Konto wird geprüft...',
     'errors.redirecting': 'Weiterleitung zur Anmeldung...',
@@ -3082,6 +3161,18 @@ const translations = {
     'call.endForAll': 'Für alle beenden',
     'call.copied': 'Kopiert!',
     'call.roomEnded': 'Der Anruf wurde für alle beendet.',
+    'call.joinNow': 'Jetzt beitreten',
+    'call.prejoinTitle': 'Bereit zum Beitreten?',
+    'call.leave': 'Verlassen',
+    'call.screenShare': 'Bildschirm teilen',
+    'call.stopShare': 'Teilen beenden',
+    'call.raiseHand': 'Hand heben',
+    'call.participants': 'Teilnehmer',
+    'call.waitingForHost': 'Warten auf Zulassung durch den Host…',
+    'call.admit': 'Zulassen',
+    'call.deny': 'Ablehnen',
+    'call.galleryView': 'Galerieansicht',
+    'call.speakerView': 'Sprecheransicht',
   },
 
   it: {
@@ -3436,7 +3527,7 @@ const translations = {
     'places.removeSaved': 'Rimuovi {name} dai luoghi salvati',
     'places.saveTitle': 'Salva luogo',
     'places.removeTitle': 'Rimuovi dai luoghi salvati',
-    'places.searchFailed': 'Ricerca non riuscita ({status}).',
+    'places.searchFailed': 'Ricerca non riuscita.',
     'errors.conversationTitle': 'Si è verificato un errore durante il caricamento di questa conversazione.',
     'errors.checkingAccount': 'Verifica del tuo account...',
     'errors.redirecting': "Reindirizzamento all'accesso...",
@@ -3521,6 +3612,18 @@ const translations = {
     'call.endForAll': 'Termina per tutti',
     'call.copied': 'Copiato!',
     'call.roomEnded': 'La chiamata è terminata per tutti.',
+    'call.joinNow': 'Entra ora',
+    'call.prejoinTitle': 'Pronto a entrare?',
+    'call.leave': 'Esci',
+    'call.screenShare': 'Condividi schermo',
+    'call.stopShare': 'Interrompi condivisione',
+    'call.raiseHand': 'Alza la mano',
+    'call.participants': 'Partecipanti',
+    'call.waitingForHost': "In attesa che l'host ti ammetta…",
+    'call.admit': 'Ammetti',
+    'call.deny': 'Rifiuta',
+    'call.galleryView': 'Vista galleria',
+    'call.speakerView': 'Vista relatore',
   },
 
   ar: {
@@ -3867,7 +3970,7 @@ const translations = {
     'places.removeSaved': 'إزالة {name} من الأماكن المحفوظة',
     'places.saveTitle': 'حفظ المكان',
     'places.removeTitle': 'إزالة من الأماكن المحفوظة',
-    'places.searchFailed': 'فشل البحث ({status}).',
+    'places.searchFailed': 'فشل البحث.',
     'errors.conversationTitle': 'حدث خطأ أثناء تحميل هذه المحادثة.',
     'errors.checkingAccount': 'جارٍ التحقق من حسابك...',
     'errors.redirecting': 'جارٍ التحويل إلى تسجيل الدخول...',
@@ -3952,6 +4055,18 @@ const translations = {
     'call.endForAll': 'إنهاء للجميع',
     'call.copied': 'تم النسخ!',
     'call.roomEnded': 'انتهت المكالمة للجميع.',
+    'call.joinNow': 'انضم الآن',
+    'call.prejoinTitle': 'جاهز للانضمام؟',
+    'call.leave': 'مغادرة',
+    'call.screenShare': 'مشاركة الشاشة',
+    'call.stopShare': 'إيقاف المشاركة',
+    'call.raiseHand': 'رفع اليد',
+    'call.participants': 'المشاركون',
+    'call.waitingForHost': 'بانتظار سماح المضيف بالدخول…',
+    'call.admit': 'السماح بالدخول',
+    'call.deny': 'رفض',
+    'call.galleryView': 'عرض المعرض',
+    'call.speakerView': 'عرض المتحدث',
   },
 
   he: {
@@ -4292,7 +4407,7 @@ const translations = {
     'places.removeSaved': 'הסרת {name} מהמקומות השמורים',
     'places.saveTitle': 'שמירת מקום',
     'places.removeTitle': 'הסרה מהמקומות השמורים',
-    'places.searchFailed': 'החיפוש נכשל ({status}).',
+    'places.searchFailed': 'החיפוש נכשל.',
     'errors.conversationTitle': 'משהו השתבש בטעינת השיחה הזו.',
     'errors.checkingAccount': 'בודק את חשבונך...',
     'errors.redirecting': 'מעביר להתחברות...',
@@ -4377,6 +4492,18 @@ const translations = {
     'call.endForAll': 'סיום עבור כולם',
     'call.copied': 'הועתק!',
     'call.roomEnded': 'השיחה הסתיימה עבור כולם.',
+    'call.joinNow': 'הצטרפות עכשיו',
+    'call.prejoinTitle': 'מוכנים להצטרף?',
+    'call.leave': 'עזיבה',
+    'call.screenShare': 'שיתוף מסך',
+    'call.stopShare': 'הפסקת שיתוף',
+    'call.raiseHand': 'הרמת יד',
+    'call.participants': 'משתתפים',
+    'call.waitingForHost': 'ממתינים לאישור כניסה מהמארח…',
+    'call.admit': 'אישור כניסה',
+    'call.deny': 'דחייה',
+    'call.galleryView': 'תצוגת גלריה',
+    'call.speakerView': 'תצוגת דובר',
   },
 };
 
@@ -4453,12 +4580,31 @@ export function LangProvider({ children }) {
       if (value === undefined) value = translations.en[key];
       if (value === undefined) return key;
 
-      if (vars) {
-        return value.replace(/\{(\w+)\}/g, (match, token) =>
-          Object.prototype.hasOwnProperty.call(vars, token) ? String(vars[token]) : match,
+      const hasVars = vars !== undefined && vars !== null;
+      const hasToken = /\{\{?\s*\w+\s*\}?\}/.test(value);
+
+      if (!hasVars && value.includes('{{')) {
+        warn(`"${key}" (${locale}) contains a {{token}} but no vars were passed.`);
+      }
+
+      if (hasToken) {
+        // Supports both {{name}} and the legacy {name}. A token with no value is
+        // dropped entirely — a missing var must never leave a raw token behind.
+        value = value.replace(
+          /\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}/g,
+          (match, double, single) => {
+            const token = double ?? single;
+            if (hasVars && Object.prototype.hasOwnProperty.call(vars, token)) {
+              return String(vars[token]);
+            }
+            warn(`"${key}" (${locale}) has no value for {${token}}; the token was removed.`);
+            return '';
+          },
         );
       }
-      return value;
+
+      // Belt and braces: no {{...}} fragment may ever reach the UI.
+      return value.replace(/\{\{[\s\S]*?\}\}/g, '').replace(/\{\{|\}\}/g, '');
     },
     [locale],
   );

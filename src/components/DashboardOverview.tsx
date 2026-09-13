@@ -236,8 +236,10 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
     );
   };
 
-  const startVideo = (peerId?: string) => {
-    if (peerId) void startCall(peerId, 'video');
+  // Starts the call; all call UI renders in CallLayer. The peer name only feeds
+  // CallLayer's top bar.
+  const startVideo = (peerId?: string, peerName?: string) => {
+    if (peerId) void startCall(peerId, 'video', peerName);
   };
 
   return (
@@ -269,7 +271,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => startVideo(careTeam.userId)}
+                    onClick={() => startVideo(careTeam.userId, careTeam.name)}
                   >
                     <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
                   </button>
@@ -293,7 +295,7 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
               <button
                 type="button"
                 className="ghost-button"
-                onClick={() => startVideo(careTeam?.userId)}
+                onClick={() => startVideo(careTeam?.userId, careTeam?.name)}
                 disabled={!careTeam}
               >
                 <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
@@ -361,12 +363,11 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
               type="button"
               className="primary-button"
               style={{ width: '100%' }}
-              onClick={() => startVideo(overview.peers[0]?.userId)}
+              onClick={() => startVideo(overview.peers[0]?.userId, overview.peers[0]?.name)}
               disabled={overview.peers.length === 0}
             >
               <Video size={16} aria-hidden="true" /> {t('dash.startVideoConsult')}
             </button>
-            <p style={styles.hint}>{t('dash.videoHint')}</p>
           </div>
 
           <CallRoomsPanel canHost={provider} />
@@ -446,54 +447,4 @@ const styles: Record<string, CSSProperties> = {
   statValue: { fontSize: '1.35rem', color: '#216e5d' },
   statLabel: { color: '#557b76', fontSize: '0.68rem', fontWeight: 700, lineHeight: 1.3 },
   badgeRow: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
-  statusBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.4rem',
-    paddingBlock: '0.45rem',
-    paddingInline: '0.75rem',
-    borderRadius: '999px',
-    fontSize: '0.78rem',
-    fontWeight: 800,
-  },
-  statusOk: { background: 'rgba(62, 169, 133, 0.16)', color: '#216e5d' },
-  statusPending: { background: 'rgba(240, 210, 122, 0.28)', color: '#8a6d1a' },
-  modalBackdrop: {
-    position: 'fixed',
-    inset: 0,
-    zIndex: 80,
-    display: 'grid',
-    placeItems: 'center',
-    padding: '1rem',
-    background: 'rgba(6, 26, 22, 0.55)',
-  },
-  modal: {
-    width: 'min(52rem, 100%)',
-    padding: '1rem',
-    borderRadius: '1.15rem',
-    background: '#f7fdf9',
-    border: '1px solid rgba(62, 169, 133, 0.25)',
-    boxShadow: '0 28px 64px rgba(6, 26, 22, 0.35)',
-  },
-  modalHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem' },
-  modalClose: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 30,
-    height: 30,
-    borderRadius: '50%',
-    border: 'none',
-    background: 'rgba(15, 58, 50, 0.08)',
-    color: '#216e5d',
-    cursor: 'pointer',
-  },
-  videoFrame: {
-    width: '100%',
-    height: 'min(60vh, 30rem)',
-    marginTop: '0.7rem',
-    border: '1px solid rgba(15, 58, 50, 0.12)',
-    borderRadius: '0.9rem',
-    background: '#000',
-  },
 };

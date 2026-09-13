@@ -1,11 +1,12 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useCall, type UseCallResult } from '../hooks/useCall';
-import CallRoom from '../components/CallRoom';
+import CallLayer from '../components/CallLayer';
 
 // ---------------------------------------------------------------------------
-// One call session for the whole app: any component can start/join a call and
-// CallRoom renders the UI exactly once, above everything else.
+// One call session for the whole app. This provider is the single owner of call
+// state: any component may start/join a call, but CallLayer is the only thing
+// that renders call UI, and it does so exactly once, above everything else.
 // ---------------------------------------------------------------------------
 
 const CallContext = createContext<UseCallResult | null>(null);
@@ -18,7 +19,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
   return (
     <CallContext.Provider value={call}>
       {children}
-      <CallRoom />
+      <CallLayer />
     </CallContext.Provider>
   );
 }

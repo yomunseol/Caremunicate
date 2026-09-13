@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { PhoneOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
@@ -8,25 +7,26 @@ import { useCallContext } from '../context/CallContext';
 // ---------------------------------------------------------------------------
 // Emergency line — patient side.
 //
-// States: idle → confirming → connecting → active → ended (→ idle). Every async
-// step is guarded by a mounted ref and the flow always settles, so the card can
-// never get stuck in "Connecting…".
+// This card only *starts* an emergency call and owns the DB alert row. It
+// renders no call UI and holds no call state: whether a line is live is derived
+// from the single call store, and every in-call control lives in CallLayer.
 //
 // Geolocation is best-effort: a denial is skipped silently and the alert still
 // goes out. The room is em-{user_id} so the patient's own providers land in the
 // same call.
 // ---------------------------------------------------------------------------
 
-type EmergencyState = 'idle' | 'confirming' | 'connecting' | 'active' | 'ended';
+/** Local UI only — the call lifecycle lives in the store. */
+type UiState = 'idle' | 'confirming' | 'starting';
 
 const roomFor = (userId: string): string => `em-${userId}`;
 
 export default function EmergencyCard() {
   const { user } = useAuth();
   const { t } = useLang();
-  const { startCall, endCall } = useCallContext();
+  const { startCall, status, kind } = useCallContext();
 
-  const [state, setState] = useState<EmergencyState>('idle');
+  const [uiState, setUiState] = useState<UiState>('idle');
   const [alertId, setAlertId] = useState<string | null>(null);
 
   const mounted = useRef(true);
@@ -55,10 +55,18 @@ export default function EmergencyCard() {
     [],
   );
 
+  // Derived from the store — this card never mirrors call state locally.
+  const isActive =
+    kind === 'emergency' &&
+    (status === 'outgoing' ||
+      status === 'connecting' ||
+      status === 'active' ||
+      status === 'reconnecting');
+
   const startLine = useCallback(async () => {
     if (!user) return;
 
-    setState('connecting');
+    setUiState('starting');
     const room = roomFor(user.id);
 
     try {
@@ -82,36 +90,39 @@ export default function EmergencyCard() {
 
       if (data?.id) setAlertId(String(data.id));
       await startCall(room, 'emergency');
-      setState('active');
     } catch (error) {
       console.error('EMERGENCY ERROR:', error);
       if (!mounted.current) return;
       // The call is the point of the feature — open the room even if the row failed.
       await startCall(room, 'emergency');
-      setState('active');
+    } finally {
+      if (mounted.current) setUiState('idle');
     }
-  }, [user, getPosition]);
+  }, [user, getPosition, startCall]);
 
-  const endLine = useCallback(async () => {
-    endCall();
-    setState('ended');
+  // The line is ended from CallLayer (the only place with call controls); close
+  // the alert row here when the call leaves the session.
+  useEffect(() => {
+    if (isActive || !alertId) return;
 
-    if (alertId) {
+    let cancelled = false;
+    void (async () => {
       const { error } = await supabase
         .from('emergency_alerts')
         .update({ status: 'resolved', resolved_at: new Date().toISOString() })
         .eq('id', alertId)
         .eq('user_id', user?.id ?? '');
 
-      if (error) console.error('EMERGENCY_ERROR:', error);
-    }
+      if (error) console.error('EMERGENCY ERROR:', error);
+      if (!cancelled && mounted.current) setAlertId(null);
+    })();
 
-    setAlertId(null);
-    if (mounted.current) setState('idle');
-  }, [alertId, user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [isActive, alertId, user]);
 
-  const room = user ? roomFor(user.id) : '';
-  const isActive = state === 'active';
+  const isStarting = uiState === 'starting' || (kind === 'emergency' && status === 'outgoing');
 
   return (
     <div className="panel">
@@ -121,33 +132,28 @@ export default function EmergencyCard() {
       </div>
 
       {isActive ? (
-        <>
-          <p style={styles.activeText}>{t('emergency.activeBody')}</p>
-          <button type="button" className="ghost-button" style={styles.endButton} onClick={() => void endLine()}>
-            <PhoneOff size={16} aria-hidden="true" /> {t('emergency.end')}
-          </button>
-        </>
+        <p style={styles.activeText}>{t('emergency.activeBody')}</p>
       ) : (
         <>
           <p style={styles.muted}>{t('emergency.subtitle')}</p>
           <button
             type="button"
             style={styles.connectButton}
-            disabled={state === 'connecting'}
-            onClick={() => setState('confirming')}
+            disabled={isStarting}
+            onClick={() => setUiState('confirming')}
           >
-            {state === 'connecting' ? t('emergency.connecting') : t('emergency.connect')}
+            {isStarting ? t('emergency.connecting') : t('emergency.connect')}
           </button>
         </>
       )}
 
-      {state === 'confirming' ? (
+      {uiState === 'confirming' ? (
         <div style={styles.backdrop} role="dialog" aria-modal="true" aria-label={t('emergency.confirmTitle')}>
           <div style={styles.modal}>
             <strong>{t('emergency.confirmTitle')}</strong>
             <p style={styles.muted}>{t('emergency.confirmBody')}</p>
             <div style={styles.modalActions}>
-              <button type="button" className="ghost-button" onClick={() => setState('idle')}>
+              <button type="button" className="ghost-button" onClick={() => setUiState('idle')}>
                 {t('common.cancel')}
               </button>
               <button type="button" style={styles.connectButton} onClick={() => void startLine()}>
@@ -157,7 +163,6 @@ export default function EmergencyCard() {
           </div>
         </div>
       ) : null}
-
     </div>
   );
 }
@@ -179,7 +184,6 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '1rem',
     cursor: 'pointer',
   },
-  endButton: { marginTop: '0.9rem', width: '100%', justifyContent: 'center', gap: '0.5rem' },
   backdrop: {
     position: 'fixed',
     inset: 0,
