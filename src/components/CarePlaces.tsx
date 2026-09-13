@@ -7,7 +7,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from 'react';
-import { MapPin, Search, Star } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -30,7 +30,14 @@ import { useLang } from '../i18n';
 // before a query can run (the `around:` filter needs a centre point).
 // ---------------------------------------------------------------------------
 
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+// Overpass is public and keyless. The canonical instance throttles heavy traffic,
+// and throttled/failed replies can come back without the CORS header — which the
+// browser then reports as a CORS error. Fall back to a verified keyless mirror
+// instead of putting a third-party proxy (or an API key) in the path.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+];
 const NEAR_RADIUS_M = 5000;
 const DEFAULT_CENTER: [number, number] = [30, 0];
 const DEFAULT_ZOOM = 2;
@@ -101,6 +108,43 @@ const buildOverpassQuery = (lat: number, lon: number, amenities: readonly string
   way['amenity'~'${filter}'](around:${NEAR_RADIUS_M},${lat},${lon});
 );
 out center;`;
+};
+
+/**
+ * POSTs the query to each keyless Overpass endpoint until one answers.
+ * `application/x-www-form-urlencoded` is CORS-safelisted, so this stays a simple
+ * request (no preflight). Throws the last failure so the caller can show one
+ * user-facing message while the technical detail stays in the console.
+ */
+const postOverpass = async (
+  query: string,
+  signal: AbortSignal,
+): Promise<{ elements?: OverpassElement[] }> => {
+  let lastError: unknown = null;
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `data=${encodeURIComponent(query)}`,
+        signal,
+      });
+
+      if (!response.ok) {
+        throw new Error(`${endpoint} responded ${response.status}`);
+      }
+
+      return (await response.json()) as { elements?: OverpassElement[] };
+    } catch (caught) {
+      // A real abort (unmount / superseded request) must not fall through.
+      if ((caught as Error)?.name === 'AbortError') throw caught;
+      console.log('PLACES ERROR:', endpoint, caught);
+      lastError = caught;
+    }
+  }
+
+  throw lastError ?? new Error('No Overpass endpoint reachable.');
 };
 
 const elementToPlace = (element: OverpassElement): PlaceView | null => {
@@ -230,18 +274,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setError('');
 
       try {
-        const response = await fetch(OVERPASS_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `data=${encodeURIComponent(buildOverpassQuery(at.lat, at.lon, amenityFilter))}`,
-          signal: controller.signal,
-        });
+        const payload = await postOverpass(
+          buildOverpassQuery(at.lat, at.lon, amenityFilter),
+          controller.signal,
+        );
 
-        if (!response.ok) {
-          throw new Error(t('places.searchFailed', { status: response.status }));
-        }
-
-        const payload = (await response.json()) as { elements?: OverpassElement[] };
         const places = (payload.elements ?? [])
           .map(elementToPlace)
           .filter((place): place is PlaceView => place !== null);
@@ -251,7 +288,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       } catch (caught) {
         if ((caught as Error)?.name === 'AbortError') return;
         console.log('PLACES ERROR:', caught);
-        setError(caught instanceof Error ? caught.message : String(caught));
+        // Friendly copy for the user; the cause is already in the console.
+        setError(t('places.loadFailed'));
         setResults([]);
       } finally {
         if (abortRef.current === controller) setLoading(false);
@@ -528,7 +566,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             />
           </div>
           <button type="submit" disabled={loading} style={styles.nearMeButton}>
-            {t('places.searchAria')}
+            {loading ? t('places.searching') : t('places.searchAria')}
           </button>
           <button
             type="button"

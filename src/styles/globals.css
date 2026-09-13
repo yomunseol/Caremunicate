@@ -778,9 +778,11 @@ img {
   line-height: 1.55;
 }
 
+/* Pushed to the bottom of the card so every CTA sits on the same baseline,
+   no matter how many bullets a plan has. */
 .cta-button {
   width: 100%;
-  margin-top: 0.75rem;
+  margin-top: auto;
   font-weight: 700;
   font-size: 0.95rem;
 }
