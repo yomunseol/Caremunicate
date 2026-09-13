@@ -1130,6 +1130,43 @@ img {
   text-align: center;
 }
 
+/* Verification badges. Only --verified uses the mint "certified" treatment. */
+.verify-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-block: 0.35rem;
+  padding-inline: 0.7rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.verify-badge--verified {
+  background: rgba(62, 169, 133, 0.18);
+  border: 1px solid rgba(62, 169, 133, 0.45);
+  color: var(--accent-strong);
+}
+
+.verify-badge--pending {
+  background: rgba(240, 210, 122, 0.28);
+  border: 1px solid rgba(240, 210, 122, 0.6);
+  color: #8a6d1a;
+}
+
+.verify-badge--rejected {
+  background: rgba(224, 101, 90, 0.18);
+  border: 1px solid rgba(224, 101, 90, 0.5);
+  color: #9c3636;
+}
+
+.verify-badge--neutral {
+  background: rgba(15, 58, 50, 0.07);
+  border: 1px solid rgba(15, 58, 50, 0.14);
+  color: var(--text-muted);
+}
+
 /* Emergency line: mint-to-red pulse while a line is active. */
 .emergency-pulse {
   display: inline-block;

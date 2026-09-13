@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
 import { useCallContext } from '../context/CallContext';
+import VerificationBadge from './VerificationBadge';
 import EmergencyAlertBanner from './EmergencyAlertBanner';
 import EmergencyCard from './EmergencyCard';
 
@@ -31,6 +32,8 @@ type Overview = {
   messagesToday: number;
   favoriteCount: number;
   hasProfile: boolean;
+  verificationStatus: string;
+  isAdmin: boolean;
 };
 
 const EMPTY_OVERVIEW: Overview = {
@@ -39,6 +42,8 @@ const EMPTY_OVERVIEW: Overview = {
   messagesToday: 0,
   favoriteCount: 0,
   hasProfile: false,
+  verificationStatus: 'unverified',
+  isAdmin: false,
 };
 
 const startOfToday = (): string => {
@@ -86,11 +91,15 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
       // 2) Profile row (drives the onboarding step) — a missing row is normal.
       const { data: profileRow, error: profileError } = await supabase
         .from('profiles')
-        .select('user_id')
+        .select('user_id, verification_status, is_admin')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (profileError) throw profileError;
+
+      const selfRow = profileRow as
+        | { user_id: string; verification_status?: string | null; is_admin?: boolean | null }
+        | null;
 
       // 3) Saved places count.
       const { data: favorites, error: favoritesError } = await supabase
@@ -107,6 +116,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           messagesToday: 0,
           favoriteCount: (favorites ?? []).length,
           hasProfile: Boolean(profileRow),
+          verificationStatus: String(selfRow?.verification_status ?? 'unverified'),
+          isAdmin: Boolean(selfRow?.is_admin),
         });
         return;
       }
@@ -172,6 +183,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
         messagesToday,
         favoriteCount: (favorites ?? []).length,
         hasProfile: Boolean(profileRow),
+        verificationStatus: String(selfRow?.verification_status ?? 'unverified'),
+        isAdmin: Boolean(selfRow?.is_admin),
       });
     } catch (error) {
       // Degrade to zeros rather than blocking the dashboard.
@@ -355,19 +368,14 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
           <div className="panel">
             <div className="eyebrow">{t('dash.certificationTitle')}</div>
-            {/* No certification schema exists, so this reflects the signals we
-                actually have: a doctor role plus a confirmed email. */}
+            {/* Driven solely by profiles.verification_status — never by email
+                confirmation or profile completeness. */}
             <div style={styles.badgeRow}>
-              {provider && user?.email_confirmed_at ? (
-                <span style={{ ...styles.statusBadge, ...styles.statusOk }}>
-                  <ShieldCheck size={14} aria-hidden="true" /> {t('dash.certificationVerified')}
-                </span>
-              ) : (
-                <span style={{ ...styles.statusBadge, ...styles.statusPending }}>
-                  <Calendar size={14} aria-hidden="true" /> {t('dash.certificationPending')}
-                </span>
-              )}
+              <VerificationBadge status={overview.verificationStatus} ownerView />
             </div>
+            {overview.isAdmin ? (
+              <p style={styles.hint}>{t('verify.reviewQueue')}</p>
+            ) : null}
           </div>
         </>
       )}
