@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
-import { checkRoom, normalizeCode, resolveRoom, type CallPolicy } from '../lib/callRooms';
+import { checkRoom, resolveRoom, type CallPolicy } from '../lib/callRooms';
+import { normalizeCode } from '../lib/wordcode';
 import { takePendingPolicy } from '../lib/callPrefs';
 import { useLang } from '../i18n';
 

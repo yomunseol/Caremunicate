@@ -1567,14 +1567,8 @@ img {
   transition: box-shadow 160ms ease;
 }
 
-.call-tile.is-speaking {
-  /* Mint speaking ring. */
-  box-shadow: inset 0 0 0 2px #48b58f, 0 0 0 2px rgba(72, 181, 143, 0.35);
-}
-
-.call-tile.is-pinned {
-  box-shadow: inset 0 0 0 2px #f0d27a;
-}
+/* Superseded by the outline-based ring in the CallLayer restyle section below,
+   which cannot be overridden by the tile's inline soft shadow. */
 
 .call-avatar {
   pointer-events: none;

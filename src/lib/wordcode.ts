@@ -1,66 +1,122 @@
+import { WORD_BANK, WORD_BANK_LENGTH } from './wordBank';
+
 // ---------------------------------------------------------------------------
 // Word codes.
 //
-// A room's PUBLIC identifier is four words — "mint-fox-river-halo". Everything
-// inside the transport addresses rooms by their call_rooms UUID instead, so
-// words appear only at the UI edge and the database is the translation layer.
-//
-// PERSONAL rooms derive their code deterministically from the owner's user id,
-// so a user's code is stable without any lookup.
+// A room's PUBLIC identifier is four words — "willow-echo-river-sage". Codes are
+// drawn at random from the local WORD_BANK, never derived from anything, and
+// everything inside the transport addresses rooms by their call_rooms UUID
+// instead: words appear only at the UI edge and the database is the translation
+// layer (see lib/callRooms.ts -> resolveRoom).
 // ---------------------------------------------------------------------------
-
-/** Exactly 64 words — 4 independent picks give 64^4 ≈ 16.7M codes. */
-export const WORDS = [
-  'mint', 'fox', 'dove', 'fern', 'halo', 'iris', 'jade', 'kite', 'luna', 'nova', 'olive', 'pine',
-  'rose', 'sage', 'tulip', 'willow', 'amber', 'birch', 'cedar', 'echo', 'flint', 'hazel', 'juniper',
-  'lemon', 'meadow', 'onyx', 'pearl', 'quartz', 'river', 'silver', 'thyme', 'maple', 'delta',
-  'ginger', 'indigo', 'kelp', 'nectar', 'orchid', 'poppy', 'reed', 'stone', 'umber', 'violet',
-  'wave', 'brook', 'cove', 'dune', 'cloud', 'aster', 'briar', 'clover', 'drift', 'ember', 'frost',
-  'glade', 'honey', 'ivory', 'jasper', 'lark', 'moss', 'night', 'opal', 'petal', 'rain',
-] as const;
-
-/** Plain array view — tuple literals are awkward to index with a number. */
-const LIST: readonly string[] = WORDS;
 
 export const CODE_SEGMENTS = 4;
 
-/** SHA-256 output size, in bytes. */
-const HASH_BYTES = 32;
+const BANK: readonly string[] = WORD_BANK;
+const BANK_SET: ReadonlySet<string> = new Set<string>(WORD_BANK);
 
-/** Words drawn from each hash segment. */
-const BYTES_PER_SEGMENT = CODE_SEGMENTS;
-
-/** How many distinct 4-word candidates one digest can yield. */
-const MAX_ATTEMPTS = Math.floor(HASH_BYTES / BYTES_PER_SEGMENT);
-
-const sha256Bytes = async (value: string): Promise<Uint8Array> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-  return new Uint8Array(digest);
+/** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
+const randomIndex = (max: number): number => {
+  const limit = Math.floor(0x100000000 / max) * max;
+  const bucket = new Uint32Array(1);
+  for (;;) {
+    crypto.getRandomValues(bucket);
+    if (bucket[0] < limit) return bucket[0] % max;
+  }
 };
 
 /**
- * Deterministic code for a UUID: SHA-256(uuid), take four bytes, index the word
- * list with each.
+ * Four DISTINCT words joined by dashes, drawn with crypto.getRandomValues.
  *
- * `attempt` walks the digest four bytes at a time, so an insert that collides on
- * the unique code retries with the NEXT four hash bytes — still fully
- * deterministic for that room, never random.
+ * Sampling is without replacement: an index already drawn is rejected, so a
+ * word can never repeat inside one code ("mint-mint-..."). Because nothing is
+ * derived from an identifier, two rooms created in the same millisecond are
+ * still independent.
  */
-export const codeFromUuid = async (uuid: string, attempt = 0): Promise<string> => {
-  const bytes = await sha256Bytes(uuid);
-  const step = Math.max(0, Math.floor(attempt)) % MAX_ATTEMPTS;
-  const offset = step * BYTES_PER_SEGMENT;
+export const generateWordCode = (): string => {
+  const picked: string[] = [];
+  const used = new Set<number>();
 
-  return Array.from(
-    { length: CODE_SEGMENTS },
-    (_, index) => LIST[bytes[offset + index] % LIST.length],
-  ).join('-');
+  while (picked.length < CODE_SEGMENTS) {
+    const index = randomIndex(BANK.length);
+    if (used.has(index)) continue;
+    used.add(index);
+    picked.push(BANK[index]);
+  }
+
+  return picked.join('-');
 };
 
-/** True when a value is exactly four words from the list. */
-export const isWordCode = (value: string | null | undefined): boolean => {
-  const parts = String(value ?? '').trim().toLowerCase().split('-');
+/**
+ * Trim, lowercase, spaces/underscores → dashes, collapse repeated dashes, and
+ * drop the dashes that collapsing pushes to either end.
+ */
+export const normalizeCode = (input: string): string =>
+  String(input ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+/** Exactly four words, every one of them in WORD_BANK, and all four distinct. */
+export const isValidWordCode = (value: string | null | undefined): boolean => {
+  const parts = normalizeCode(String(value ?? '')).split('-');
   if (parts.length !== CODE_SEGMENTS) return false;
-  const allowed = new Set<string>(WORDS);
-  return parts.every((part) => allowed.has(part));
+  if (new Set(parts).size !== CODE_SEGMENTS) return false;
+  return parts.every((part) => BANK_SET.has(part));
 };
+
+// ---------------------------------------------------------------------------
+// Dev-only validation. A malformed bank throws at import time so it can never
+// ship — the failure is loud and names exactly what is wrong.
+// ---------------------------------------------------------------------------
+if (import.meta.env?.DEV) {
+  const problems: string[] = [];
+
+  if (BANK.length !== WORD_BANK_LENGTH) {
+    problems.push(`word count is ${BANK.length}, expected ${WORD_BANK_LENGTH}`);
+  }
+
+  const unique = new Set(BANK);
+  if (unique.size !== BANK.length) {
+    const duplicates = BANK.filter((word, index) => BANK.indexOf(word) !== index);
+    problems.push(`duplicate words: ${[...new Set(duplicates)].slice(0, 20).join(', ')}`);
+  }
+  if (unique.size !== WORD_BANK_LENGTH) {
+    problems.push(`unique words are ${unique.size}, expected ${WORD_BANK_LENGTH}`);
+  }
+
+  const malformed = BANK.filter((word) => !/^[a-z]{3,8}$/.test(word));
+  if (malformed.length > 0) {
+    problems.push(`words outside /^[a-z]{3,8}$/: ${malformed.slice(0, 20).join(', ')}`);
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`WORD_BANK is invalid — refusing to run:\n  - ${problems.join('\n  - ')}`);
+  }
+
+  // Generated codes: four words, all distinct, all in the bank.
+  const SAMPLES = 250;
+  for (let i = 0; i < SAMPLES; i += 1) {
+    const code = generateWordCode();
+    const parts = code.split('-');
+
+    if (parts.length !== CODE_SEGMENTS) {
+      throw new Error(`generateWordCode produced ${parts.length} segments: ${code}`);
+    }
+    if (new Set(parts).size !== CODE_SEGMENTS) {
+      throw new Error(`generateWordCode repeated a word: ${code}`);
+    }
+    if (!isValidWordCode(code)) {
+      throw new Error(`generateWordCode produced a code outside WORD_BANK: ${code}`);
+    }
+  }
+
+  const normalized = normalizeCode('Willow Echo River Sage');
+  if (normalized !== 'willow-echo-river-sage') {
+    throw new Error(`normalizeCode('Willow Echo River Sage') returned "${normalized}"`);
+  }
+
+  console.info(`WORDCODE OK — bank of ${BANK.length}, ${SAMPLES} generated codes validated`);
+}

@@ -36,6 +36,16 @@ export default function CallPreJoin() {
 
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = () => {
+    if (!roomCode) return;
+    setCopied(true);
+    void navigator.clipboard
+      ?.writeText(roomCode)
+      .catch(() => {})
+      .finally(() => window.setTimeout(() => setCopied(false), 2000));
+  };
 
   // Toggling flips the preview track itself; the same track is handed to the
   // peer connections on join, so the choice carries into the call.
@@ -107,15 +117,26 @@ export default function CallPreJoin() {
         </div>
 
         <div style={styles.infoCard}>
+          {/* The code leads the card, top-left (inline-start), with its own copy. */}
           {roomCode ? (
-            <span style={styles.infoRow}>
-              <span style={styles.infoLabel}>{t('call.callCode')}</span>
-              <span style={styles.infoValue} dir="ltr">{roomCode}</span>
+            <span style={styles.codeRow}>
+              <span className="call-code-chip" style={styles.codeChip} dir="ltr" title={roomCode}>
+                {roomCode}
+              </span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={copyCode}
+                title={t('call.copyCode')}
+                aria-label={`${t('call.copyCode')} — ${roomCode}`}
+              >
+                {copied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+              </button>
             </span>
           ) : null}
           {displayName ? (
             <span style={styles.infoRow}>
-              <span style={styles.infoLabel}>{isHost ? t('call.hostControls') : t('call.participants')}</span>
+              <span style={styles.infoLabel}>{t('chat.participant')}</span>
               <span style={styles.infoValue}>{displayName}</span>
             </span>
           ) : null}
@@ -218,6 +239,14 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: '1rem',
     background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
     border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
+  },
+  // The code row leads the card and hugs the inline-start edge.
+  codeRow: { display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '0.5rem', flexWrap: 'wrap' },
+  codeChip: {
+    // Light-surface skin; layout comes from .call-code-chip.
+    background: '#fff',
+    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
+    color: 'var(--accent-strong, #216e5d)',
   },
   infoRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem' },
   infoLabel: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', fontWeight: 700 },

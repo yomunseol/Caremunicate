@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, LayoutGrid, Link2, Lock, LockOpen, Maximize, UserMinus, Users, X } from 'lucide-react';
+import { Activity, LayoutGrid, Lock, LockOpen, Maximize, UserMinus, Users, X } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import CallDevicePicker from './CallDevicePicker';
@@ -20,8 +20,6 @@ type CallOverflowMenuProps = {
   onToggleView: () => void;
   onFullscreen: () => void;
   onToggleStats: () => void;
-  /** Copies the invite link. The top bar only copies the bare code. */
-  onCopyLink: () => void;
   onClose: () => void;
 };
 
@@ -49,7 +47,6 @@ export default function CallOverflowMenu({
   onToggleView,
   onFullscreen,
   onToggleStats,
-  onCopyLink,
   onClose,
 }: CallOverflowMenuProps) {
   const { t } = useLang();
@@ -102,11 +99,6 @@ export default function CallOverflowMenu({
       <button type="button" className="call-overflow-item" onClick={onFullscreen}>
         <Maximize size={16} />
         <span>Fullscreen</span>
-      </button>
-
-      <button type="button" className="call-overflow-item" onClick={onCopyLink}>
-        <Link2 size={16} />
-        <span>{t('call.shareLink')}</span>
       </button>
 
       <div className="call-overflow-section">

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   Hand,
   LayoutGrid,
+  Link2,
   Mic,
   MicOff,
   MonitorUp,
@@ -499,6 +500,21 @@ export default function CallLayer() {
                   {codeChip}
                 </button>
               ) : null}
+
+              {/* Share icon sits between the code chip and the timer. */}
+              {!emergency && codeChip ? (
+                <button
+                  type="button"
+                  className="call-chip"
+                  style={styles.chip}
+                  aria-label={t('call.shareLink')}
+                  title={t('call.shareLink')}
+                  onClick={() => copy(shareUrl)}
+                >
+                  <Link2 size={15} aria-hidden="true" />
+                </button>
+              ) : null}
+
               {duration ? <span style={styles.timer} dir="ltr">{duration}</span> : null}
             </div>
 
@@ -672,7 +688,6 @@ export default function CallLayer() {
                 onToggleView={() => setView((previous) => (previous === 'gallery' ? 'speaker' : 'gallery'))}
                 onFullscreen={toggleFullscreen}
                 onToggleStats={() => setStatsOpen((open) => !open)}
-                onCopyLink={() => copy(shareUrl)}
                 onClose={() => setOverflowOpen(false)}
               />
             ) : null}

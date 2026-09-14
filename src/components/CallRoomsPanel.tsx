@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
-import { checkRoom, createRoom, normalizeCode, resolveRoom } from '../lib/callRooms';
+import { checkRoom, createRoom, resolveRoom } from '../lib/callRooms';
+import { normalizeCode } from '../lib/wordcode';
 import { saveCallPrefs, stashPendingPolicy } from '../lib/callPrefs';
 import CallSettingsModal, { type MeetingSettings } from './CallSettingsModal';
 

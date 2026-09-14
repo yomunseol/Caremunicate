@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { CODE_SEGMENTS, WORDS, codeFromUuid, isWordCode } from './wordcode';
+import { generateWordCode, isValidWordCode, normalizeCode } from './wordcode';
 
 // ---------------------------------------------------------------------------
 // Call rooms.
@@ -18,7 +18,10 @@ import { CODE_SEGMENTS, WORDS, codeFromUuid, isWordCode } from './wordcode';
 // fields named in the spec (code / host_id / password_hash / status / ended_at).
 // ---------------------------------------------------------------------------
 
-export { WORDS } from './wordcode';
+export { WORD_BANK } from './wordBank';
+
+/** How many times a fresh code is drawn before giving up on a unique insert. */
+const COLLISION_RETRIES = 10;
 
 export type CallRoom = {
   id?: string;
@@ -112,7 +115,7 @@ export const resolveRoom = async (input: string): Promise<RoomResolution> => {
 
   // Synthetic peer (dm-<uuid>-<uuid>) and emergency (em-<uuid>) rooms have no
   // call_rooms row and are already valid channel keys.
-  if (!byId && !isWordCode(value)) {
+  if (!byId && !isValidWordCode(value)) {
     return { key: value, code: '', ...SYNTHETIC_RESOLUTION };
   }
 
@@ -147,30 +150,8 @@ export const resolveRoom = async (input: string): Promise<RoomResolution> => {
   };
 };
 
-/** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
-const randomIndex = (max: number): number => {
-  const limit = Math.floor(0x100000000 / max) * max;
-  const bucket = new Uint32Array(1);
-  for (;;) {
-    crypto.getRandomValues(bucket);
-    if (bucket[0] < limit) return bucket[0] % max;
-  }
-};
-
-export const generateRoomCode = (): string =>
-  Array.from({ length: CODE_SEGMENTS }, () => WORDS[randomIndex(WORDS.length)]).join('-');
-
-/**
- * Trim, lowercase, spaces/underscores → dashes, collapse repeats, and drop the
- * dashes that replacement pushes to either end.
- */
-export const normalizeCode = (input: string): string =>
-  String(input ?? '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+// generateWordCode / normalizeCode / isValidWordCode all live in lib/wordcode.ts
+// alongside the WORD_BANK they are built from.
 
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer))
@@ -226,8 +207,10 @@ export const createRoom = async (options: CreateRoomOptions = {}): Promise<strin
   let lastError: unknown = null;
 
   for (const shape of shapes) {
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const code = generateRoomCode();
+    // A meeting room gets a FRESH random code every time; a unique collision
+    // simply draws another one (up to COLLISION_RETRIES times).
+    for (let attempt = 0; attempt < COLLISION_RETRIES; attempt += 1) {
+      const code = generateWordCode();
 
       const { data, error } = await supabase
         .from('call_rooms')
@@ -372,8 +355,11 @@ export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom |
 
   if (!findError && existing) return shape(existing as Record<string, unknown>);
 
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const code = await codeFromUuid(owner, attempt);
+  // The code is drawn ONCE, at first creation, and then lives in that row
+  // forever — the same user always returns to the same code across refreshes,
+  // and no two users share one. Only a unique collision draws a new code.
+  for (let attempt = 0; attempt < COLLISION_RETRIES; attempt += 1) {
+    const code = generateWordCode();
 
     const { data, error } = await supabase
       .from('call_rooms')
@@ -392,11 +378,10 @@ export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom |
     if (!error && data) return shape(data as Record<string, unknown>);
 
     if (error && error.code !== '23505') {
-      // No `personal` column, or RLS — the line simply is not offered.
       console.error('CALL ERROR:', error.message);
       return null;
     }
-    // 23505 -> next hash segment.
+    // 23505 -> draw another code.
   }
 
   return null;
