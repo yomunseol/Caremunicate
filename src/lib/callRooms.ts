@@ -335,15 +335,10 @@ export const checkRoom = async (input: string, password = ''): Promise<CheckRoom
   const code = resolution.code || value;
   const hash = password ? await hashCallPassword(code, password) : null;
 
-  const call = (params: Record<string, unknown>) => supabase.rpc('check_call_room', params);
-
-  let { data, error } = await call({ p_input: value, hash });
-
-  // Legacy signature: a project that still exposes check_call_room(p_code,
-  // p_password_hash). Keeps joins working until the RPC is migrated.
-  if (error && (error.code === 'PGRST202' || error.code === '42883')) {
-    ({ data, error } = await call({ p_code: code, p_password_hash: hash }));
-  }
+  const { data, error } = await supabase.rpc('check_call_room', {
+    p_input: value,
+    p_password_hash: hash,
+  });
 
   if (error) throw error;
   return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;

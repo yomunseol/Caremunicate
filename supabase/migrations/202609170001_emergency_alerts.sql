@@ -2,7 +2,7 @@
 -- Caremunicate — emergency line
 --
 -- Backs the dashboard emergency card: a patient raises an alert, providers see
--- it in realtime and can join the Jitsi room or resolve it.
+-- it in realtime and can join the call room or resolve it.
 --
 -- NOTE ON ACCESS: this project has no per-patient assignment table, so "your
 -- care team" cannot be scoped server-side. Any authenticated provider can read
@@ -19,7 +19,7 @@ create table if not exists public.emergency_alerts (
   status     text not null default 'active' check (status in ('active', 'resolved')),
   latitude   double precision,
   longitude  double precision,
-  -- Jitsi room the patient opened, so providers can join the same call.
+  -- Call room the patient opened, so providers can join the same call.
   room       text,
   created_at timestamptz not null default now(),
   resolved_at timestamptz
