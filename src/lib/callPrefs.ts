@@ -57,6 +57,56 @@ export const saveCallPrefs = async (userId: string, prefs: CallPrefs): Promise<v
   if (error) console.error('CALL PREFS ERROR:', error.message);
 };
 
+// ---------------------------------------------------------------------------
+// Local, per-device call UI state.
+// ---------------------------------------------------------------------------
+
+const SOUNDS_KEY = 'caremunicate:sounds';
+
+/** Event chimes are on unless the user turned them off. Default: on. */
+export const readSoundsEnabled = (): boolean => {
+  try {
+    return window.localStorage.getItem(SOUNDS_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+};
+
+export const storeSoundsEnabled = (enabled: boolean): void => {
+  try {
+    window.localStorage.setItem(SOUNDS_KEY, enabled ? 'on' : 'off');
+  } catch {
+    /* storage blocked — the in-memory choice still applies */
+  }
+};
+
+// The room this tab is currently in, so a reload can offer to rejoin it.
+const ACTIVE_ROOM_KEY = 'caremunicate:active-room';
+
+export const rememberActiveRoom = (code: string): void => {
+  try {
+    if (code) window.sessionStorage.setItem(ACTIVE_ROOM_KEY, code);
+  } catch {
+    /* storage blocked */
+  }
+};
+
+export const forgetActiveRoom = (): void => {
+  try {
+    window.sessionStorage.removeItem(ACTIVE_ROOM_KEY);
+  } catch {
+    /* storage blocked */
+  }
+};
+
+export const readActiveRoom = (): string | null => {
+  try {
+    return window.sessionStorage.getItem(ACTIVE_ROOM_KEY);
+  } catch {
+    return null;
+  }
+};
+
 // The host's chosen policy for the room they are about to open. Handed to
 // CallPage through sessionStorage so the in-call Security panel starts from the
 // real values even when check_call_room does not echo them back.

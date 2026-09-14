@@ -21,10 +21,14 @@ import { useCallContext } from '../context/CallContext';
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
 import type { PeerConnState } from '../hooks/useCall';
 import { looksLikeUuid, resolveRoom } from '../lib/callRooms';
+import { playHandChime, playJoinChime, playLeaveChime } from '../lib/chime';
+import { roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
+import CallInviteDrawer from './CallInviteDrawer';
 import CallOverflowMenu from './CallOverflowMenu';
+import ShortcutsOverlay from './ShortcutsOverlay';
 
 // ---------------------------------------------------------------------------
 // CallLayer — the one and only call surface.
@@ -60,6 +64,9 @@ function Tile({
   speaking,
   pinned,
   videoSilent = false,
+  role = '',
+  verified = false,
+  sinkId = null,
   onDoubleClick,
 }: {
   stream: MediaStream | null;
@@ -74,8 +81,15 @@ function Tile({
   speaking: boolean;
   pinned: boolean;
   videoSilent?: boolean;
+  /** profiles.role — rendered as a small badge when known. */
+  role?: string;
+  /** Only ever true when verification_status === 'verified'. */
+  verified?: boolean;
+  /** Chosen audio output; applied where setSinkId is supported. */
+  sinkId?: string | null;
   onDoubleClick?: () => void;
 }) {
+  const { t } = useLang();
   const initials = (name || '?').trim().charAt(0).toUpperCase();
 
   return (
@@ -88,10 +102,17 @@ function Tile({
           callback so the stream binds the moment the element mounts. */}
       <video
         ref={(el) => {
-          if (!el || !stream) return;
-          if (el.srcObject !== stream) {
+          if (!el) return;
+          if (stream && el.srcObject !== stream) {
             el.srcObject = stream;
             void el.play().catch(() => {});
+          }
+          // Route audio to the chosen output where the browser allows it.
+          const sinkable = el as HTMLVideoElement & {
+            setSinkId?: (id: string) => Promise<void>;
+          };
+          if (sinkId && typeof sinkable.setSinkId === 'function') {
+            void sinkable.setSinkId(sinkId).catch(() => {});
           }
         }}
         autoPlay
@@ -117,7 +138,21 @@ function Tile({
         </span>
       ) : null}
 
-      <span className="call-name" style={styles.nameChip}>{name}</span>
+      <span className="call-name" style={styles.nameChip}>
+        {name}
+        {/* Role badge, then the mint certified badge — only ever lit by an
+            explicit verified flag from the peer's profile row. */}
+        {role ? (
+          <span className="call-role-badge" style={styles.roleBadge}>
+            {t(roleLabelKey(role))}
+          </span>
+        ) : null}
+        {verified ? (
+          <span className="call-verified-badge" style={styles.verifiedBadge} title="Verified">
+            ✓
+          </span>
+        ) : null}
+      </span>
 
       <span style={styles.tileFlags}>
         {hand ? <Hand size={14} aria-label="hand" /> : null}
@@ -173,6 +208,8 @@ export default function CallLayer() {
     peerStats,
     codeRoom,
     policy,
+    sounds,
+    sinkId,
     localStream,
     shareStream,
     audioOnly,
@@ -226,6 +263,14 @@ export default function CallLayer() {
   const [fullscreen, setFullscreen] = useState(false);
   /** Set only if a UUID is caught in the chip slot and the code is recovered. */
   const [recoveredCode, setRecoveredCode] = useState('');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  /** Transient join/leave/hand toast, translated at the call site. */
+  const [liveToast, setLiveToast] = useState<{ id: number; text: string } | null>(null);
+  /** Screen-reader announcements (join / leave / mute), aria-live polite. */
+  const [announcement, setAnnouncement] = useState('');
+  /** Who was in the call last render, so we can tell joins from leaves. */
+  const peerSnapshot = useRef(new Map<string, { name: string; hand: boolean }>());
 
   const duration = useElapsed(connectedAt);
   const activeSpeakerId = useActiveSpeaker(localStream, peers, inSession);
@@ -368,6 +413,74 @@ export default function CallLayer() {
     return () => window.clearTimeout(id);
   }, [notice, clearNotice]);
 
+  // A live toast is purely local: it carries an already-translated string so it
+  // can say "Ada joined" rather than a fixed key.
+  useEffect(() => {
+    if (!liveToast) return;
+    const id = window.setTimeout(() => setLiveToast(null), 4000);
+    return () => window.clearTimeout(id);
+  }, [liveToast]);
+
+  // Join / leave / hand-raise cues: a WebAudio chime plus a toast, diffed
+  // against the previous peer snapshot so each event fires exactly once.
+  useEffect(() => {
+    const previous = peerSnapshot.current;
+    const current = new Map<string, { name: string; hand: boolean }>();
+
+    for (const peer of peers) {
+      current.set(peer.id, {
+        name: peerInfo[peer.id]?.name || t('chat.participant'),
+        hand: peerInfo[peer.id]?.hand === true,
+      });
+    }
+
+    const joined = [...current].find(([id]) => !previous.has(id));
+    const left = [...previous].find(([id]) => !current.has(id));
+    const raised = [...current].find(([id, info]) => info.hand && !previous.get(id)?.hand);
+
+    // The toast itself carries role="status", so it IS the announcement —
+    // announcing twice would double-speak every event.
+    if (joined) {
+      if (sounds) playJoinChime();
+      setLiveToast({ id: Date.now(), text: t('call.personJoined', { name: joined[1].name }) });
+    } else if (left) {
+      if (sounds) playLeaveChime();
+      setLiveToast({ id: Date.now(), text: t('call.personLeft', { name: left[1].name }) });
+    } else if (raised) {
+      if (sounds) playHandChime();
+      setLiveToast({ id: Date.now(), text: t('call.raiseHand') });
+    }
+
+    peerSnapshot.current = current;
+  }, [peers, peerInfo, sounds, t]);
+
+  // Announce our own mute state for screen readers.
+  useEffect(() => {
+    setAnnouncement(muted ? 'Microphone muted' : 'Microphone on');
+  }, [muted]);
+
+  // "?" opens the shortcuts overlay; Escape closes whatever is open.
+  useEffect(() => {
+    if (!inSession) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+      if (event.key === '?') {
+        event.preventDefault();
+        setShortcutsOpen(true);
+      } else if (event.key === 'Escape') {
+        setShortcutsOpen(false);
+        setInviteOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [inSession]);
+
   const copy = (text: string) => {
     void navigator.clipboard?.writeText(text).then(() => notify('copied')).catch(() => {});
   };
@@ -501,15 +614,18 @@ export default function CallLayer() {
                 </button>
               ) : null}
 
-              {/* Share icon sits between the code chip and the timer. */}
+              {/* Share icon sits between the code chip and the timer and opens
+                  the invite drawer (code, copy, link, QR). */}
               {!emergency && codeChip ? (
                 <button
                   type="button"
                   className="call-chip"
                   style={styles.chip}
-                  aria-label={t('call.shareLink')}
-                  title={t('call.shareLink')}
-                  onClick={() => copy(shareUrl)}
+                  aria-label={t('call.invite')}
+                  title={t('call.invite')}
+                  aria-haspopup="dialog"
+                  aria-expanded={inviteOpen}
+                  onClick={() => setInviteOpen(true)}
                 >
                   <Link2 size={15} aria-hidden="true" />
                 </button>
@@ -561,6 +677,9 @@ export default function CallLayer() {
                       hand={infoFor(focusedId)?.hand ?? false}
                       connection={infoFor(focusedId)?.connection ?? 'new'}
                       videoSilent={peerStats[focusedId]?.videoSilent ?? false}
+                      role={infoFor(focusedId)?.role ?? ''}
+                      verified={infoFor(focusedId)?.verified ?? false}
+                      sinkId={sinkId}
                       speaking={activeSpeakerId === focusedId}
                       pinned={pinnedId === focusedId}
                       onDoubleClick={() => setPinnedId((previous) => (previous === focusedId ? null : focusedId))}
@@ -585,6 +704,9 @@ export default function CallLayer() {
                         hand={infoFor(id)?.hand ?? false}
                         connection={infoFor(id)?.connection ?? 'new'}
                         videoSilent={peerStats[id]?.videoSilent ?? false}
+                        role={infoFor(id)?.role ?? ''}
+                        verified={infoFor(id)?.verified ?? false}
+                        sinkId={sinkId}
                         speaking={activeSpeakerId === id}
                         pinned={pinnedId === id}
                         onDoubleClick={() => setPinnedId((previous) => (previous === id ? null : id))}
@@ -614,6 +736,9 @@ export default function CallLayer() {
                         hand={infoFor(id)?.hand ?? false}
                         connection={infoFor(id)?.connection ?? 'new'}
                         videoSilent={peerStats[id]?.videoSilent ?? false}
+                        role={infoFor(id)?.role ?? ''}
+                        verified={infoFor(id)?.verified ?? false}
+                        sinkId={sinkId}
                         speaking={activeSpeakerId === id}
                         pinned={pinnedId === id}
                         onDoubleClick={() => setPinnedId((previous) => (previous === id ? null : id))}
@@ -823,7 +948,9 @@ export default function CallLayer() {
         </div>
       ) : null}
 
-      {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
+          {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
+
+          {inviteOpen ? <CallInviteDrawer onClose={() => setInviteOpen(false)} /> : null}
 
       {/* Diagnostics slide-over (same panel chrome as the participant list). */}
       {statsOpen ? (
@@ -853,6 +980,16 @@ export default function CallLayer() {
       {notice ? (
         <div style={styles.notice} role="status" aria-live="polite">{noticeText}</div>
       ) : null}
+
+      {/* Join / leave / hand events. role="status" makes this the announcement. */}
+      {liveToast ? (
+        <div style={styles.notice} role="status" aria-live="polite">{liveToast.text}</div>
+      ) : null}
+
+      {shortcutsOpen ? <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /> : null}
+
+      {/* Screen-reader only: mic state, which has no visible toast. */}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</span>
     </div>
   );
 
@@ -1005,6 +1142,30 @@ const styles: Record<string, CSSProperties> = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
+  },
+  roleBadge: {
+    marginInlineStart: '0.35rem',
+    paddingBlock: '0.05rem',
+    paddingInline: '0.4rem',
+    borderRadius: '999px',
+    background: 'rgba(255, 255, 255, 0.18)',
+    fontSize: '0.6rem',
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  verifiedBadge: {
+    marginInlineStart: '0.3rem',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 14,
+    height: 14,
+    borderRadius: '50%',
+    background: 'var(--accent, #3ea985)',
+    color: '#06231d',
+    fontSize: '0.6rem',
+    fontWeight: 900,
   },
   tileFlags: {
     position: 'absolute',

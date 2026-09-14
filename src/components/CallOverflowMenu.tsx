@@ -62,7 +62,15 @@ export default function CallOverflowMenu({
     camId,
     selectMic,
     selectCamera,
+    sounds,
+    toggleSounds,
+    sinkId,
+    selectSink,
   } = useCallContext();
+
+  // Output selection only exists where the browser implements setSinkId.
+  const canPickSink =
+    typeof HTMLMediaElement !== 'undefined' && 'setSinkId' in HTMLMediaElement.prototype;
 
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -112,6 +120,28 @@ export default function CallOverflowMenu({
           onSelectMic={(id) => void selectMic(id)}
           onSelectCamera={(id) => void selectCamera(id)}
         />
+
+        {/* Audio output — only where setSinkId is implemented (Chrome/Edge). */}
+        {canPickSink && devices.sinks.length > 0 ? (
+          <label className="call-device">
+            <span className="call-device-label">Speaker</span>
+            <select
+              className="call-device-select"
+              value={sinkId ?? ''}
+              aria-label="Speaker"
+              onChange={(event) => selectSink(event.target.value)}
+            >
+              <option value="">Default</option>
+              {devices.sinks.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        <Switch label="Sounds" checked={sounds} onChange={toggleSounds} />
       </div>
 
       <button

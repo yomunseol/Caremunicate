@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
+  forgetActiveRoom,
+  readSoundsEnabled,
+  rememberActiveRoom,
+  storeSoundsEnabled,
+} from '../lib/callPrefs';
+import {
   DEFAULT_POLICY,
   resolveRoom,
   setRoomPassword,
@@ -68,6 +74,9 @@ const PEER_STATS_INTERVAL_MS = 4_000;
 
 /** Connected-but-zero-frames must persist this long before we blame the video. */
 const VIDEO_SILENT_MS = 5_000;
+
+/** A tab hidden this long stops sending video until it is visible again. */
+const HIDDEN_PAUSE_MS = 10_000;
 
 /** Broadcast event names. Every room signal carries the `call:` namespace. */
 const EV = {
@@ -284,6 +293,10 @@ export type PeerConnState =
 /** What we know about a remote participant, including what they broadcast. */
 export type PeerInfo = {
   name: string;
+  /** profiles.role as broadcast by the peer — drives the tile role badge. */
+  role: string;
+  /** True only when the peer's profiles.verification_status is 'verified'. */
+  verified: boolean;
   micOn: boolean;
   camOn: boolean;
   sharing: boolean;
@@ -377,7 +390,13 @@ export type UseCallResult = {
   stage: Stage;
   lobby: LobbyGuest[];
   lobbyEnabled: boolean;
-  devices: { mics: DeviceOption[]; cams: DeviceOption[] };
+  devices: { mics: DeviceOption[]; cams: DeviceOption[]; sinks: DeviceOption[] };
+  /** Event chimes on/off (default on). */
+  sounds: boolean;
+  toggleSounds: () => void;
+  /** Chosen audio output; only meaningful where setSinkId is supported. */
+  sinkId: string | null;
+  selectSink: (deviceId: string) => void;
   micId: string | null;
   camId: string | null;
   /** Self first, then remotes — feeds the participants panel. */
@@ -431,12 +450,22 @@ export type UseCallResult = {
   clearNotice: () => void;
 };
 
+/** The signed-in user's broadcastable identity, for tile badges. */
+export type CallIdentity = {
+  role?: string | null;
+  verified?: boolean | null;
+};
+
 export function useCall(
   currentUserId: string | null | undefined,
   currentUserName?: string | null,
+  currentUserIdentity?: CallIdentity,
 ): UseCallResult {
   const me = currentUserId ?? '';
   const myName = currentUserName ?? '';
+  const myRole = String(currentUserIdentity?.role ?? '');
+  // Only a literal 'verified' status may light the badge — nothing else.
+  const myVerified = currentUserIdentity?.verified === true;
 
   const [status, setStatus] = useState<CallStatus>('idle');
   const [kind, setKind] = useState<CallKind>('video');
@@ -473,6 +502,9 @@ export function useCall(
   const [personal, setPersonal] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [policy, setPolicy] = useState<CallPolicy | null>(null);
+  const [sounds, setSounds] = useState<boolean>(() => readSoundsEnabled());
+  const [sinkId, setSinkId] = useState<string | null>(null);
+  const [sinks, setSinks] = useState<DeviceOption[]>([]);
 
   const peers = useRef(new Map<string, Peer>());
   const channel = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -503,6 +535,10 @@ export function useCall(
   const policyRef = useRef<CallPolicy | null>(null);
   /** One-shot: the join guards only fire on the first policy of a session. */
   const policyBootRef = useRef(true);
+  /** True while the tab is hidden — the spotlight guard must not re-enable video. */
+  const hiddenRef = useRef(false);
+  /** Lowest ladder rung we have already warned about (one toast per step-down). */
+  const notifiedRung = useRef(0);
   const reactionTimers = useRef<number[]>([]);
   const stream = useRef<MediaStream | null>(null);
   const room = useRef<string | null>(null);
@@ -678,6 +714,8 @@ export function useCall(
       policyRef.current = null;
       policyBootRef.current = true;
       setPolicy(null);
+      // Leaving means there is no room to rejoin.
+      forgetActiveRoom();
       if (noticeKey) setNotice(noticeKey);
       setStatus(nextStatus);
     },
@@ -727,17 +765,21 @@ export function useCall(
   const broadcastState = useCallback(() => {
     sendDataChannel({
       t: 'state',
+      role: myRole,
+      verified: myVerified,
       micOn: !mutedRef.current,
       camOn: !cameraOffRef.current,
       hand: handRef.current,
       sharing: sharingRef.current,
     });
-  }, [sendDataChannel]);
+  }, [sendDataChannel, myRole, myVerified]);
 
   const mergePeerInfo = useCallback((peerId: string, patch: Partial<PeerInfo>) => {
     setPeerInfo((previous) => {
       const current = previous[peerId] ?? {
         name: '',
+        role: '',
+        verified: false,
         micOn: true,
         camOn: true,
         sharing: false,
@@ -761,6 +803,8 @@ export function useCall(
         dc.send(JSON.stringify({
           t: 'hello',
           name: myName,
+          role: myRole,
+          verified: myVerified,
           micOn: !mutedRef.current,
           camOn: !cameraOffRef.current,
           hand: handRef.current,
@@ -801,6 +845,8 @@ export function useCall(
         const data = JSON.parse(String(event.data)) as {
           t?: string;
           name?: string;
+          role?: string;
+          verified?: boolean;
           micOn?: boolean;
           camOn?: boolean;
           hand?: boolean;
@@ -816,6 +862,9 @@ export function useCall(
         if (data?.t === 'hello' || data?.t === 'state') {
           mergePeerInfo(peer.id, {
             ...(typeof data.name === 'string' && data.name ? { name: data.name } : {}),
+            ...(typeof data.role === 'string' ? { role: data.role } : {}),
+            // Only an explicit true may light the certified badge.
+            verified: data.verified === true,
             micOn: data.micOn !== false,
             camOn: data.camOn !== false,
             hand: data.hand === true,
@@ -846,7 +895,7 @@ export function useCall(
       // A dropped data channel means we need signaling again.
       if (channelReleased.current) reattachRef.current();
     };
-  }, [finish, myName, mergePeerInfo, pushReaction]);
+  }, [finish, myName, myRole, myVerified, mergePeerInfo, pushReaction]);
 
   const ensurePeer = useCallback(
     (peerId: string): Peer => {
@@ -1273,6 +1322,15 @@ export function useCall(
             label: device.label || `Camera ${index + 1}`,
           })),
       );
+      // Audio OUTPUT devices — only exposed where setSinkId is supported.
+      setSinks(
+        all
+          .filter((device) => device.kind === 'audiooutput')
+          .map((device, index) => ({
+            deviceId: device.deviceId,
+            label: device.label || `Speaker ${index + 1}`,
+          })),
+      );
     } catch (error) {
       console.error('CALL ERROR:', error);
     }
@@ -1397,6 +1455,8 @@ export function useCall(
       setRoomCode(code || null);
       setCodeRoom(Boolean(code));
       setPersonal(personal);
+      // Remember the room so a reload can offer to rejoin it.
+      if (code) rememberActiveRoom(code);
       setIsHost(Boolean(options?.isHost));
       setKind('video');
       setNotice(null);
@@ -1800,6 +1860,72 @@ export function useCall(
   const notify = useCallback((messageKey: string) => setNotice(messageKey), []);
   const clearNotice = useCallback(() => setNotice(null), []);
 
+  /** Event chimes on/off. Defaults on; the choice survives a reload. */
+  const toggleSounds = useCallback(() => {
+    setSounds((previous) => {
+      const next = !previous;
+      storeSoundsEnabled(next);
+      return next;
+    });
+  }, []);
+
+  /** Pick an audio output (speaker). Only meaningful where setSinkId exists. */
+  const selectSink = useCallback((deviceId: string) => {
+    setSinkId(deviceId || null);
+  }, []);
+
+  // Bandwidth kindness: a tab hidden for a while stops sending video, and
+  // resumes the moment it is visible again.
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    let hiddenTimer: number | null = null;
+
+    const setVideoActive = (active: boolean) => {
+      for (const peer of peers.current.values()) {
+        for (const sender of peer.pc.getSenders()) {
+          if (sender.track?.kind !== 'video') continue;
+          try {
+            const params = sender.getParameters();
+            const encodings =
+              params.encodings.length > 0 ? params.encodings : [{} as RTCRtpEncodingParameters];
+            let changed = false;
+            params.encodings = encodings.map((encoding) => {
+              if ((encoding.active ?? true) === active) return encoding;
+              changed = true;
+              return { ...encoding, active };
+            });
+            if (changed) {
+              void sender.setParameters(params).catch(() => {});
+            }
+          } catch {
+            /* sender already gone */
+          }
+        }
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        hiddenRef.current = true;
+        if (hiddenTimer) window.clearTimeout(hiddenTimer);
+        hiddenTimer = window.setTimeout(() => setVideoActive(false), HIDDEN_PAUSE_MS);
+      } else {
+        hiddenRef.current = false;
+        if (hiddenTimer) {
+          window.clearTimeout(hiddenTimer);
+          hiddenTimer = null;
+        }
+        setVideoActive(true);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      if (hiddenTimer) window.clearTimeout(hiddenTimer);
+    };
+  }, []);
+
   // Poll outbound video stats every 5s: feeds the demo chip and drives the
   // adaptive ladder (bandwidth-limited → step down; healthy for 15s → step up).
   useEffect(() => {
@@ -1856,7 +1982,15 @@ export function useCall(
 
       if (limit === 'bandwidth') {
         healthySince = null;
+        const before = ladderIndex(track);
         await stepDown(track);
+        const after = ladderIndex(track);
+
+        // Warn once per rung, not once per 5s poll.
+        if (after > before && notifiedRung.current < after) {
+          notifiedRung.current = after;
+          setNotice('poor-connection');
+        }
         return;
       }
 
@@ -1864,6 +1998,8 @@ export function useCall(
         healthySince = Date.now();
       } else if (Date.now() - healthySince > RECOVER_AFTER_MS) {
         healthySince = null;
+        // Recovered — let a later step-down warn again.
+        notifiedRung.current = 0;
         await stepUp(track);
       }
     };
@@ -2032,7 +2168,8 @@ export function useCall(
   // participants) and only while we are not the one speaking. Every other case
   // — including joining — stays active, so a 1:1 call never starves its video.
   useEffect(() => {
-    const shouldBeActive = participants.length < 3 || localSpeaking;
+    // A hidden tab stays parked regardless of who is speaking.
+    const shouldBeActive = !hiddenRef.current && (participants.length < 3 || localSpeaking);
 
     for (const peer of peers.current.values()) {
       for (const sender of peer.pc.getSenders()) {
@@ -2084,7 +2221,11 @@ export function useCall(
     stage,
     lobby,
     lobbyEnabled,
-    devices: { mics, cams },
+    devices: { mics, cams, sinks },
+    sounds,
+    toggleSounds,
+    sinkId,
+    selectSink,
     micId,
     camId,
     participants,

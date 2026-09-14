@@ -508,6 +508,12 @@ const translations = {
     'call.openLine': 'Open my line',
     'call.lineClosed': 'This person is not available right now.',
     'call.callHub': 'Calls',
+    'call.invite': 'Invite',
+    'call.scanToJoin': 'Scan to join',
+    'call.rejoinMeeting': 'Rejoin meeting?',
+    'call.poorConnection': 'Poor connection — lowering video quality',
+    'call.personJoined': '{{name}} joined',
+    'call.personLeft': '{{name}} left',
   },
 
   fr: {
@@ -982,6 +988,12 @@ const translations = {
     'call.openLine': 'Ouvrir ma ligne',
     'call.lineClosed': "Cette personne n'est pas disponible pour le moment.",
     'call.callHub': 'Appels',
+    'call.invite': 'Inviter',
+    'call.scanToJoin': 'Scanner pour rejoindre',
+    'call.rejoinMeeting': 'Rejoindre la réunion ?',
+    'call.poorConnection': 'Connexion faible — réduction de la qualité vidéo',
+    'call.personJoined': '{{name}} a rejoint',
+    'call.personLeft': '{{name}} est parti',
   },
 
   es: {
@@ -1451,6 +1463,12 @@ const translations = {
     'call.openLine': 'Abrir mi línea',
     'call.lineClosed': 'Esta persona no está disponible ahora.',
     'call.callHub': 'Llamadas',
+    'call.invite': 'Invitar',
+    'call.scanToJoin': 'Escanea para unirte',
+    'call.rejoinMeeting': '¿Volver a unirte a la reunión?',
+    'call.poorConnection': 'Conexión débil: reduciendo la calidad de video',
+    'call.personJoined': '{{name}} se unió',
+    'call.personLeft': '{{name}} salió',
   },
 
   ko: {
@@ -1905,6 +1923,12 @@ const translations = {
     'call.openLine': '내 회선 열기',
     'call.lineClosed': '지금 이 사람은 응답할 수 없습니다.',
     'call.callHub': '통화',
+    'call.invite': '초대',
+    'call.scanToJoin': '스캔하여 참여',
+    'call.rejoinMeeting': '회의에 다시 참여할까요?',
+    'call.poorConnection': '연결 상태가 좋지 않아 비디오 품질을 낮춥니다',
+    'call.personJoined': '{{name}}님이 참여했습니다',
+    'call.personLeft': '{{name}}님이 나갔습니다',
   },
 
   zh: {
@@ -2352,6 +2376,12 @@ const translations = {
     'call.openLine': '开放我的线路',
     'call.lineClosed': '此人当前不在线。',
     'call.callHub': '通话',
+    'call.invite': '邀请',
+    'call.scanToJoin': '扫码加入',
+    'call.rejoinMeeting': '重新加入会议？',
+    'call.poorConnection': '连接不佳——正在降低视频质量',
+    'call.personJoined': '{{name}} 已加入',
+    'call.personLeft': '{{name}} 已离开',
   },
 
   pt: {
@@ -2820,6 +2850,12 @@ const translations = {
     'call.openLine': 'Abrir minha linha',
     'call.lineClosed': 'Esta pessoa não está disponível agora.',
     'call.callHub': 'Chamadas',
+    'call.invite': 'Convidar',
+    'call.scanToJoin': 'Escaneie para entrar',
+    'call.rejoinMeeting': 'Reentrar na reunião?',
+    'call.poorConnection': 'Conexão fraca — reduzindo a qualidade de vídeo',
+    'call.personJoined': '{{name}} entrou',
+    'call.personLeft': '{{name}} saiu',
   },
 
   de: {
@@ -3292,6 +3328,12 @@ const translations = {
     'call.openLine': 'Meine Leitung öffnen',
     'call.lineClosed': 'Diese Person ist gerade nicht erreichbar.',
     'call.callHub': 'Anrufe',
+    'call.invite': 'Einladen',
+    'call.scanToJoin': 'Zum Beitreten scannen',
+    'call.rejoinMeeting': 'Meeting erneut beitreten?',
+    'call.poorConnection': 'Schwache Verbindung — Videoqualität wird reduziert',
+    'call.personJoined': '{{name}} ist beigetreten',
+    'call.personLeft': '{{name}} hat verlassen',
   },
 
   it: {
@@ -3760,6 +3802,12 @@ const translations = {
     'call.openLine': 'Apri la mia linea',
     'call.lineClosed': 'Questa persona non è disponibile al momento.',
     'call.callHub': 'Chiamate',
+    'call.invite': 'Invita',
+    'call.scanToJoin': 'Scansiona per entrare',
+    'call.rejoinMeeting': 'Rientrare nella riunione?',
+    'call.poorConnection': 'Connessione debole — riduzione della qualità video',
+    'call.personJoined': '{{name}} è entrato',
+    'call.personLeft': '{{name}} è uscito',
   },
 
   ar: {
@@ -4220,6 +4268,12 @@ const translations = {
     'call.openLine': 'افتح خطي',
     'call.lineClosed': 'هذا الشخص غير متاح حاليًا.',
     'call.callHub': 'المكالمات',
+    'call.invite': 'دعوة',
+    'call.scanToJoin': 'امسح للانضمام',
+    'call.rejoinMeeting': 'الانضمام إلى الاجتماع مجددًا؟',
+    'call.poorConnection': 'اتصال ضعيف — خفض جودة الفيديو',
+    'call.personJoined': 'انضم {{name}}',
+    'call.personLeft': 'غادر {{name}}',
   },
 
   he: {
@@ -4674,6 +4728,12 @@ const translations = {
     'call.openLine': 'פתיחת הקו שלי',
     'call.lineClosed': 'אדם זה אינו זמין כרגע.',
     'call.callHub': 'שיחות',
+    'call.invite': 'הזמנה',
+    'call.scanToJoin': 'סרקו כדי להצטרף',
+    'call.rejoinMeeting': 'להצטרף מחדש לפגישה?',
+    'call.poorConnection': 'חיבור חלש — מורידים את איכות הווידאו',
+    'call.personJoined': '{{name}} הצטרף',
+    'call.personLeft': '{{name}} עזב',
   },
 };
 

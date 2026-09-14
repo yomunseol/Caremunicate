@@ -11,6 +11,7 @@ import CarePlaces from './components/CarePlaces';
 import DashboardOverview from './components/DashboardOverview';
 import CallPage from './components/CallPage';
 import CallHub from './components/CallHub';
+import RejoinBanner from './components/RejoinBanner';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
@@ -724,6 +725,9 @@ function App() {
           )}
         </div>
       </header>
+
+      {/* Offers to drop back into the room this tab was last in. */}
+      <RejoinBanner />
 
       <main className="main-content">
         {route === 'home' && (
