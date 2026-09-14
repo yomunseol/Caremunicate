@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   DEFAULT_POLICY,
-  normalizeCode,
+  resolveRoom,
   setRoomPassword,
   setRoomStatus,
   updateRoomPolicy,
@@ -269,6 +269,8 @@ export type JoinOptions = {
   code?: string;
   /** True when the room's waiting room is enabled (guests are held in a lobby). */
   lobby?: boolean;
+  /** True when this is someone's personal line rather than a meeting room. */
+  personal?: boolean;
 };
 
 export type PeerConnState =
@@ -336,6 +338,8 @@ export type OpenRoomOptions = {
   isHost?: boolean;
   code?: string;
   lobby?: boolean;
+  /** True when this is someone's personal line rather than a meeting room. */
+  personal?: boolean;
   /** Host-side seed for the room policy (from the pre-meeting settings). */
   policy?: Partial<CallPolicy>;
 };
@@ -382,6 +386,8 @@ export type UseCallResult = {
   peerStats: Record<string, PeerStats>;
   /** True when this call is a code room (drives the always-on code chip). */
   codeRoom: boolean;
+  /** True when this room is someone's personal line — a person, not a meeting. */
+  personal: boolean;
   /** Live room policy (null outside a code room). Never contains a hash. */
   policy: CallPolicy | null;
   /** Host only: merge + persist + broadcast a policy change. */
@@ -463,6 +469,8 @@ export function useCall(
   const [camId, setCamId] = useState<string | null>(() => readStoredDevice('cam'));
   const [peerStats, setPeerStats] = useState<Record<string, PeerStats>>({});
   const [codeRoom, setCodeRoom] = useState(false);
+  /** True when the current room is someone's personal line. */
+  const [personal, setPersonal] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [policy, setPolicy] = useState<CallPolicy | null>(null);
 
@@ -665,6 +673,7 @@ export function useCall(
       setLobby([]);
       setPeerStats({});
       setCodeRoom(false);
+      setPersonal(false);
       setLocalSpeaking(false);
       policyRef.current = null;
       policyBootRef.current = true;
@@ -1365,21 +1374,29 @@ export function useCall(
   const openRoom = useCallback(
     async (targetRoom: string, options?: OpenRoomOptions) => {
       if (!me) return;
-      const key = normalizeCode(targetRoom);
+
+      // Words -> UUID. A word code that resolves to nothing must never open a
+      // channel (channels are keyed by the UUID), so bail out instead.
+      const resolution = await resolveRoom(targetRoom);
+      const key = resolution.key;
       if (!key) return;
       if (room.current === key) return;
 
-      pending.current = { key, options: options ?? {} };
+      const code = options?.code ?? resolution.code;
+      const personal = options?.personal === true || resolution.personal;
+
+      pending.current = { key, options: { ...(options ?? {}), code, personal } };
       room.current = key;
-      roomCodeRef.current = options?.code ? key : null;
+      roomCodeRef.current = code || null;
       hostRef.current = Boolean(options?.isHost);
       promoted.current = false;
       channelReleased.current = false;
       kindRef.current = 'video';
 
       setRoomId(key);
-      setRoomCode(options?.code ? key : null);
-      setCodeRoom(Boolean(options?.code));
+      setRoomCode(code || null);
+      setCodeRoom(Boolean(code));
+      setPersonal(personal);
       setIsHost(Boolean(options?.isHost));
       setKind('video');
       setNotice(null);
@@ -1601,10 +1618,12 @@ export function useCall(
   const setMeetingPassword = useCallback(
     async (password: string) => {
       if (!hostRef.current) return;
-      const code = room.current;
-      if (!code) return;
+      const roomKey = room.current;
+      if (!roomKey) return;
 
-      await setRoomPassword(code, password);
+      // Hashed from the public code (what check_call_room hashes against) and
+      // written against the UUID; the digest is never kept.
+      await setRoomPassword(roomKey, roomCodeRef.current ?? '', password);
 
       const merged: CallPolicy = {
         ...(policyRef.current ?? DEFAULT_POLICY),
@@ -1634,9 +1653,16 @@ export function useCall(
       options?: JoinOptions,
     ) => {
       if (!me) return;
-      const key = normalizeCode(targetRoom);
+
+      // Same translation as openRoom: a UUID is already a valid transport key,
+      // a word code must resolve to one.
+      const resolution = await resolveRoom(targetRoom);
+      const key = resolution.key;
       if (!key) return;
       if (room.current === key) return;
+
+      const code = options?.code ?? resolution.code;
+      const personal = options?.personal === true || resolution.personal;
 
       retryCount.current = 0;
       kindRef.current = nextKind;
@@ -1644,12 +1670,13 @@ export function useCall(
       hostRef.current = Boolean(options?.isHost);
       promoted.current = false;
       channelReleased.current = false;
-      roomCodeRef.current = options?.code ? key : null;
+      roomCodeRef.current = code || null;
       setKind(nextKind);
       setAudioOnly(false);
       setIsHost(Boolean(options?.isHost));
-      setRoomCode(options?.code ? key : null);
-      setCodeRoom(Boolean(options?.code));
+      setRoomCode(code || null);
+      setCodeRoom(Boolean(code));
+      setPersonal(personal);
       setNotice(null);
       setIncoming(null);
       setStatus('connecting');
@@ -1672,21 +1699,28 @@ export function useCall(
     async (target: string, nextKind: CallKind = 'video', name?: string) => {
       if (!me || !target) return;
       setPeerName(name ?? null);
-      const targetRoom = nextKind === 'emergency' ? target : peerRoom(me, target);
-      await joinCall(targetRoom, nextKind);
+
+      // Peer (dm-…) and emergency (em-…) keys are synthetic and pass straight
+      // through the resolver; capture the key once so the retry loop below
+      // compares against exactly what we subscribed to.
+      const rawRoom = nextKind === 'emergency' ? target : peerRoom(me, target);
+      const resolution = await resolveRoom(rawRoom);
+      const roomKey = resolution.key;
+      if (!roomKey) return;
+      await joinCall(roomKey, nextKind);
 
       if (nextKind !== 'emergency') return;
 
       // Emergency: re-invite with backoff, then fall back to a persistent alert.
       const attempt = (n: number) => {
-        if (!alive.current || room.current !== normalizeCode(targetRoom)) return;
+        if (!alive.current || room.current !== roomKey) return;
         if (peers.current.size > 0) return;
 
         send(EV.join, { kind: 'emergency' });
         if (n >= EMERGENCY_RETRIES) {
           void supabase
             .from('emergency_alerts')
-            .insert({ user_id: me, status: 'active', room: targetRoom })
+            .insert({ user_id: me, status: 'active', room: roomKey })
             .then(({ error }) => {
               if (error) console.error('CALL ERROR:', error);
             });
@@ -1867,7 +1901,9 @@ export function useCall(
       const info = peerInfo[id];
       return {
         id,
-        name: info?.name || id,
+        // Never fall back to the raw peer id — it is a UUID. The UI substitutes
+        // a translated placeholder instead.
+        name: info?.name || '',
         self: false,
         host: info?.host ?? false,
         micOn: info?.micOn ?? true,
@@ -2054,6 +2090,7 @@ export function useCall(
     participants,
     peerStats,
     codeRoom,
+    personal,
     policy,
     updatePolicy,
     kickPeer,

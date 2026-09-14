@@ -1755,6 +1755,21 @@ img {
   pointer-events: none;
 }
 
+/* The public code chip. Always ONE line: monospaced, tightened, and truncated
+   with an ellipsis, with the full code carried by the title attribute. */
+.call-code-chip {
+  display: inline-block;
+  max-width: min(48vw, 14rem);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
 .call-panel-close {
   display: inline-flex;
   align-items: center;

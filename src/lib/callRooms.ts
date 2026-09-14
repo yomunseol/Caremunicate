@@ -1,10 +1,13 @@
 import { supabase } from './supabase';
+import { CODE_SEGMENTS, WORDS, codeFromUuid, isWordCode } from './wordcode';
 
 // ---------------------------------------------------------------------------
 // Call rooms.
 //
-// Rooms are addressed by a human-readable 4-word code ("mint-fox-river-halo")
-// instead of a numeric id — codes are meant to be read aloud and typed.
+// TRANSPORT addresses a room by its call_rooms UUID; the four-word code is the
+// PUBLIC identifier shown to people. The database is the translation layer —
+// words go in at the UI edge, a UUID comes out, and every channel is keyed by
+// that UUID. See lib/wordcode.ts.
 //
 // Passwords never leave the client in plaintext: only the SHA-256 of
 // `${normalizedCode}${password}` is sent to Supabase, so the stored value cannot
@@ -15,17 +18,7 @@ import { supabase } from './supabase';
 // fields named in the spec (code / host_id / password_hash / status / ended_at).
 // ---------------------------------------------------------------------------
 
-/** Exactly 64 words — 4 independent picks give 64^4 ≈ 16.7M codes. */
-export const WORDS = [
-  'mint', 'fox', 'dove', 'fern', 'halo', 'iris', 'jade', 'kite', 'luna', 'nova', 'olive', 'pine',
-  'rose', 'sage', 'tulip', 'willow', 'amber', 'birch', 'cedar', 'echo', 'flint', 'hazel', 'juniper',
-  'lemon', 'meadow', 'onyx', 'pearl', 'quartz', 'river', 'silver', 'thyme', 'maple', 'delta',
-  'ginger', 'indigo', 'kelp', 'nectar', 'orchid', 'poppy', 'reed', 'stone', 'umber', 'violet',
-  'wave', 'brook', 'cove', 'dune', 'cloud', 'aster', 'briar', 'clover', 'drift', 'ember', 'frost',
-  'glade', 'honey', 'ivory', 'jasper', 'lark', 'moss', 'night', 'opal', 'petal', 'rain',
-] as const;
-
-const CODE_SEGMENTS = 4;
+export { WORDS } from './wordcode';
 
 export type CallRoom = {
   id?: string;
@@ -76,6 +69,82 @@ export const DEFAULT_POLICY: CallPolicy = {
   // Aligns with the mesh cap the engine enforces.
   max_participants: 4,
   has_password: false,
+};
+
+/**
+ * Canonical UUID. `call_rooms.id` is internal-only: it must never reach a URL,
+ * a channel name, or the UI. This pattern is how we catch it trying to.
+ */
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const looksLikeUuid = (value: string | null | undefined): boolean =>
+  UUID_PATTERN.test((value ?? '').trim());
+
+/** A resolved room: the transport key plus the public identity for the UI. */
+export type RoomResolution = {
+  /** Transport key — the call_rooms UUID, or a synthetic dm-/em- key. */
+  key: string;
+  /** Public 4-word code. Empty for synthetic rooms, which have no row. */
+  code: string;
+  personal: boolean;
+  status: string | null;
+  host_id: string | null;
+};
+
+const SYNTHETIC_RESOLUTION = { personal: false, status: null, host_id: null } as const;
+
+/**
+ * Translates any room identifier into its transport key.
+ *
+ *   UUID input     -> the UUID is already a valid key; the lookup only recovers
+ *                     the words so the UI can show them.
+ *   word-code input-> the DB is the ONLY route to the UUID. If no row answers,
+ *                     `key` comes back empty and the caller must refuse the
+ *                     join — a channel keyed by words must never exist.
+ *   anything else  -> a synthetic peer/emergency room, passed through.
+ */
+export const resolveRoom = async (input: string): Promise<RoomResolution> => {
+  const value = normalizeCode(input);
+  if (!value) return { key: '', code: '', ...SYNTHETIC_RESOLUTION };
+
+  const byId = looksLikeUuid(value);
+
+  // Synthetic peer (dm-<uuid>-<uuid>) and emergency (em-<uuid>) rooms have no
+  // call_rooms row and are already valid channel keys.
+  if (!byId && !isWordCode(value)) {
+    return { key: value, code: '', ...SYNTHETIC_RESOLUTION };
+  }
+
+  const { data, error } = await supabase
+    .from('call_rooms')
+    .select('id, code, personal, status, host_id')
+    .eq(byId ? 'id' : 'code', value)
+    .maybeSingle();
+
+  if (error) console.error('CALL ERROR:', error.message);
+
+  const row = (error ? null : data) as {
+    id?: string;
+    code?: string;
+    personal?: boolean;
+    status?: string;
+    host_id?: string;
+  } | null;
+
+  if (!row) {
+    // A UUID still works as a key; a bare word code does not (we must never
+    // subscribe on a word-keyed channel).
+    return { key: byId ? value : '', code: byId ? '' : value, ...SYNTHETIC_RESOLUTION };
+  }
+
+  return {
+    key: String(row.id ?? (byId ? value : '')),
+    code: String(row.code ?? ''),
+    personal: row.personal === true,
+    status: typeof row.status === 'string' ? row.status : null,
+    host_id: typeof row.host_id === 'string' ? row.host_id : null,
+  };
 };
 
 /** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
@@ -189,10 +258,12 @@ export const createRoom = async (options: CreateRoomOptions = {}): Promise<strin
   throw lastError ?? new Error('Could not allocate a unique room code');
 };
 
-/** Mirrors a policy change into the room row. Never writes `has_password`. */
-export const updateRoomPolicy = async (code: string, patch: Partial<CallPolicy>): Promise<void> => {
-  const normalized = normalizeCode(code);
-  if (!normalized) return;
+/**
+ * Mirrors a policy change into the room row. Addressed by the transport key
+ * (the UUID); never writes `has_password`.
+ */
+export const updateRoomPolicy = async (roomKey: string, patch: Partial<CallPolicy>): Promise<void> => {
+  if (!roomKey) return;
 
   const columns: Record<string, unknown> = {};
   if (typeof patch.lobby_enabled === 'boolean') columns.lobby_enabled = patch.lobby_enabled;
@@ -202,26 +273,35 @@ export const updateRoomPolicy = async (code: string, patch: Partial<CallPolicy>)
   if (typeof patch.max_participants === 'number') columns.max_participants = patch.max_participants;
   if (Object.keys(columns).length === 0) return;
 
-  const { error } = await supabase.from('call_rooms').update(columns).eq('code', normalized);
+  const { error } = await supabase.from('call_rooms').update(columns).eq('id', roomKey);
   // A project without the policy columns simply keeps them in memory only.
   if (error && error.code !== '42703' && error.code !== 'PGRST204') throw error;
 };
 
 /**
- * Sets (or clears) the room password. The digest is written and discarded —
- * it is never returned, stored in state, logged, or broadcast.
+ * Sets (or clears) the room password.
+ *
+ * The digest is derived from the PUBLIC code (that is what check_call_room
+ * hashes against), written against the room's UUID, and then discarded — it is
+ * never returned, stored in state, logged, or broadcast.
  */
-export const setRoomPassword = async (code: string, password: string): Promise<void> => {
-  const normalized = normalizeCode(code);
-  if (!normalized) return;
+export const setRoomPassword = async (
+  roomKey: string,
+  code: string,
+  password: string,
+): Promise<void> => {
+  if (!roomKey) return;
 
+  const normalizedCode = normalizeCode(code);
   const trimmed = (password ?? '').trim();
+
   const { error } = await supabase
     .from('call_rooms')
     .update({
-      password_hash: trimmed ? await hashCallPassword(normalized, trimmed) : null,
+      password_hash:
+        trimmed && normalizedCode ? await hashCallPassword(normalizedCode, trimmed) : null,
     })
-    .eq('code', normalized);
+    .eq('id', roomKey);
 
   if (error) throw error;
 };
@@ -242,10 +322,92 @@ export const checkRoom = async (code: string, password = ''): Promise<CheckRoomR
   return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;
 };
 
-export const setRoomStatus = async (code: string, status: string): Promise<void> => {
+/** Updates a room's lifecycle status, addressed by its transport key (UUID). */
+export const setRoomStatus = async (roomKey: string, status: string): Promise<void> => {
+  if (!roomKey) return;
+
   const patch: { status: string; ended_at?: string } = { status };
   if (status === 'ended') patch.ended_at = new Date().toISOString();
 
-  const { error } = await supabase.from('call_rooms').update(patch).eq('code', normalizeCode(code));
+  const { error } = await supabase.from('call_rooms').update(patch).eq('id', roomKey);
+  if (error) throw error;
+};
+
+// ---------------------------------------------------------------------------
+// Personal rooms — one per user, created lazily.
+//
+// The code is derived from the owner's user id, so it is stable without a
+// lookup. A unique collision on insert retries with the NEXT four hash bytes,
+// which keeps the mapping deterministic per room.
+// ---------------------------------------------------------------------------
+
+export type PersonalRoom = { id: string; code: string; status: string };
+
+/** Finds (or lazily creates) the signed-in user's personal room. */
+export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom | null> => {
+  if (!userId) return null;
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    console.error('CALL ERROR:', sessionError.message);
+    return null;
+  }
+
+  const owner = sessionData.session?.user?.id ?? userId;
+  if (!owner) return null;
+
+  const shape = (row: { id?: unknown; code?: unknown; status?: unknown }): PersonalRoom => ({
+    id: String(row.id ?? ''),
+    code: String(row.code ?? ''),
+    status: String(row.status ?? 'waiting'),
+  });
+
+  // Already provisioned?
+  const { data: existing, error: findError } = await supabase
+    .from('call_rooms')
+    .select('id, code, status')
+    .eq('host_id', owner)
+    .eq('personal', true)
+    .maybeSingle();
+
+  if (!findError && existing) return shape(existing as Record<string, unknown>);
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = await codeFromUuid(owner, attempt);
+
+    const { data, error } = await supabase
+      .from('call_rooms')
+      .insert({
+        code,
+        host_id: owner,
+        status: 'waiting',
+        personal: true,
+        // Personal rooms default to no lobby and no password.
+        lobby_enabled: false,
+        password_hash: null,
+      })
+      .select('id, code, status')
+      .single();
+
+    if (!error && data) return shape(data as Record<string, unknown>);
+
+    if (error && error.code !== '23505') {
+      // No `personal` column, or RLS — the line simply is not offered.
+      console.error('CALL ERROR:', error.message);
+      return null;
+    }
+    // 23505 -> next hash segment.
+  }
+
+  return null;
+};
+
+/** Opens ('active') or closes ('waiting') a personal line. */
+export const setPersonalRoomStatus = async (
+  roomKey: string,
+  status: 'active' | 'waiting',
+): Promise<void> => {
+  if (!roomKey) return;
+  const { error } = await supabase.from('call_rooms').update({ status }).eq('id', roomKey);
   if (error) throw error;
 };

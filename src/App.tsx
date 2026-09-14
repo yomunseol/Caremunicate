@@ -71,14 +71,33 @@ const parseHash = (hash: string): ParsedRoute => {
   };
 };
 
-const getInitialRoute = (): RouteKey =>
-  typeof window === 'undefined' ? 'home' : parseHash(window.location.hash).route;
+/** `/call/<words>` — the path-style invite link. Codes are always words. */
+const CALL_PATH = /^\/call\/([^/]+)\/?$/;
+
+const pathCallCode = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  const match = window.location.pathname.match(CALL_PATH);
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+};
+
+const getInitialRoute = (): RouteKey => {
+  if (typeof window === 'undefined') return 'home';
+  if (pathCallCode()) return 'call';
+  return parseHash(window.location.hash).route;
+};
 
 const getInitialConversationId = (): string | null =>
   typeof window === 'undefined' ? null : parseHash(window.location.hash).conversationId;
 
-const getInitialCallCode = (): string | null =>
-  typeof window === 'undefined' ? null : parseHash(window.location.hash).callCode;
+const getInitialCallCode = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  return pathCallCode() ?? parseHash(window.location.hash).callCode;
+};
 
 const getInitialPlan = (): PlanId | null => {
   if (typeof window === 'undefined') return null;

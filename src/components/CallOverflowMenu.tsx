@@ -179,7 +179,7 @@ export default function CallOverflowMenu({
             ) : (
               remotes.map((person) => (
                 <li key={person.id} className="call-overflow-row">
-                  <span className="call-overflow-name">{person.name}</span>
+                  <span className="call-overflow-name">{person.name || t('chat.participant')}</span>
                   <button
                     type="button"
                     className="call-overflow-remove"

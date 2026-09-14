@@ -19,6 +19,7 @@ import {
 import { useCallContext } from '../context/CallContext';
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
 import type { PeerConnState } from '../hooks/useCall';
+import { looksLikeUuid, resolveRoom } from '../lib/callRooms';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
@@ -160,8 +161,8 @@ export default function CallLayer() {
   const {
     status,
     kind,
-    roomId,
     roomCode,
+    personal,
     isHost,
     peerName,
     connectedAt,
@@ -222,13 +223,40 @@ export default function CallLayer() {
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  /** Set only if a UUID is caught in the chip slot and the code is recovered. */
+  const [recoveredCode, setRecoveredCode] = useState('');
 
   const duration = useElapsed(connectedAt);
   const activeSpeakerId = useActiveSpeaker(localStream, peers, inSession);
 
-  // Code-chip source chain: route param -> store state -> channel name. For a
-  // code room one of these always resolves, so the chip can never be empty.
-  const codeChip = (roomCode || roomId || '').split(':').pop() ?? '';
+  // The chip shows WORDS. The transport key (a UUID) is deliberately NOT part
+  // of this chain — it must never be rendered.
+  const rawChip = roomCode ?? '';
+
+  // Dev guard: a UUID in the chip slot means the wrong identifier reached the
+  // UI. Shout, then recover the public code from the row by id.
+  useEffect(() => {
+    if (!rawChip || !looksLikeUuid(rawChip)) {
+      setRecoveredCode('');
+      return;
+    }
+
+    console.error('CODE LEAK: UUID rendered in UI');
+
+    let cancelled = false;
+    void (async () => {
+      const resolution = await resolveRoom(rawChip);
+      if (!cancelled && resolution.code && !looksLikeUuid(resolution.code)) {
+        setRecoveredCode(resolution.code);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rawChip]);
+
+  const codeChip = looksLikeUuid(rawChip) ? recoveredCode : rawChip;
 
   // Policy enforcement: the host can forbid screen sharing for the room.
   const shareAllowed = !policy || policy.allow_share;
@@ -241,6 +269,8 @@ export default function CallLayer() {
   // Keep the room code in the URL so a refresh or a shared link still works.
   useEffect(() => {
     if (!codeRoom || !codeChip) return;
+    // A path-style invite (/call/<words>) is already canonical.
+    if (window.location.pathname.endsWith(`/call/${codeChip}`)) return;
     const wanted = `#call/${codeChip}`;
     if (window.location.hash !== wanted) {
       window.history.replaceState({}, '', `${window.location.pathname}${wanted}`);
@@ -341,10 +371,12 @@ export default function CallLayer() {
     void navigator.clipboard?.writeText(text).then(() => notify('copied')).catch(() => {});
   };
 
+  // The public link addresses the room by its WORDS, and by path rather than
+  // hash so it reads like a normal invite URL.
   const shareUrl =
-    typeof window === 'undefined'
+    typeof window === 'undefined' || !codeChip
       ? ''
-      : `${window.location.origin}${window.location.pathname}#call/${roomCode ?? ''}`;
+      : `${window.location.origin}/call/${codeChip}`;
 
   const title = useMemo(() => {
     if (emergency) return t('call.emergencyActive');
@@ -379,7 +411,9 @@ export default function CallLayer() {
               ? t('call.meetingFull')
               : notice === 'kicked'
                 ? 'You were removed from the meeting.'
-                : notice === 'continue-in-chat'
+                : notice === 'line-closed'
+                  ? t('call.lineClosed')
+                  : notice === 'continue-in-chat'
                   ? t('chat.messages')
                   : t('call.ended');
 
@@ -427,7 +461,8 @@ export default function CallLayer() {
         >
           <div style={styles.modal}>
             <strong style={styles.modalTitle}>{emergency ? t('call.emergencyActive') : t('call.incoming')}</strong>
-            <p style={styles.modalBody}>{incoming?.name || incoming?.from}</p>
+            {/* Never fall back to the caller's user id — it is a UUID. */}
+            <p style={styles.modalBody}>{incoming?.name || t('chat.participant')}</p>
             <div style={styles.modalActions}>
               <button type="button" style={styles.accept} onClick={() => void acceptCall()}>
                 <Phone size={16} aria-hidden="true" /> {t('call.accept')}
@@ -456,8 +491,9 @@ export default function CallLayer() {
                   className="call-code-chip"
                   style={styles.codeChip}
                   dir="ltr"
-                  title={t('call.copyCode')}
-                  aria-label={t('call.copyCode')}
+                  // Tooltip carries the FULL code; the chip itself truncates.
+                  title={codeChip}
+                  aria-label={`${t('call.copyCode')} — ${codeChip}`}
                   onClick={() => copy(codeChip)}
                 >
                   {codeChip}
@@ -526,7 +562,7 @@ export default function CallLayer() {
                     <div key={id} style={styles.filmstripTile}>
                       <Tile
                         stream={peers.find((peer) => peer.id === id)?.stream ?? null}
-                        name={infoFor(id)?.name || id}
+                        name={infoFor(id)?.name || t('chat.participant')}
                         micOn={infoFor(id)?.micOn ?? true}
                         camOn={infoFor(id)?.camOn ?? true}
                         sharing={infoFor(id)?.sharing ?? false}
@@ -555,7 +591,7 @@ export default function CallLayer() {
                     <div key={id} style={styles.galleryTile}>
                       <Tile
                         stream={peers.find((peer) => peer.id === id)?.stream ?? null}
-                        name={infoFor(id)?.name || id}
+                        name={infoFor(id)?.name || t('chat.participant')}
                         micOn={infoFor(id)?.micOn ?? true}
                         camOn={infoFor(id)?.camOn ?? true}
                         sharing={infoFor(id)?.sharing ?? false}
@@ -786,7 +822,7 @@ export default function CallLayer() {
           <ul style={styles.diagList}>
             {Object.entries(peerStats).map(([id, entry]) => (
               <li key={id} style={styles.diagRow}>
-                <strong style={styles.diagName}>{peerInfo[id]?.name || id}</strong>
+                <strong style={styles.diagName}>{peerInfo[id]?.name || t('chat.participant')}</strong>
                 <span style={styles.diagLine}>connectionState: {entry.connectionState}</span>
                 <span style={styles.diagLine}>iceConnectionState: {entry.iceConnectionState}</span>
                 <span style={styles.diagLine}>out: {entry.outboundFrames} frames · {entry.outboundBytes} B sent</span>
@@ -870,6 +906,8 @@ const styles: Record<string, CSSProperties> = {
   },
   topLeft: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 },
   topRight: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
+  // Layout (mono, single line, truncation) comes from .call-code-chip; this is
+  // only the dark-surface skin.
   codeChip: {
     paddingBlock: '0.3rem',
     paddingInline: '0.65rem',
@@ -877,11 +915,6 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid rgba(255, 255, 255, 0.22)',
     background: 'rgba(255, 255, 255, 0.08)',
     color: '#f2fffa',
-    fontWeight: 700,
-    fontSize: '0.76rem',
-    letterSpacing: '0.04em',
-    overflowWrap: 'anywhere',
-    maxWidth: 'min(60vw, 18rem)',
     cursor: 'pointer',
   },
   timer: { fontWeight: 600, fontSize: '0.78rem', color: '#cfe9df', fontVariantNumeric: 'tabular-nums' },

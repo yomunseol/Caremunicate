@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
-import { checkRoom, normalizeCode, type CallPolicy } from '../lib/callRooms';
+import { checkRoom, normalizeCode, resolveRoom, type CallPolicy } from '../lib/callRooms';
 import { takePendingPolicy } from '../lib/callPrefs';
 import { useLang } from '../i18n';
 
@@ -73,6 +73,24 @@ export default function CallPage({ code }: CallPageProps) {
           return;
         }
 
+        // Words -> UUID. The database is the only route to the transport key,
+        // and a word-keyed channel must never exist — so a failed lookup is a
+        // dead end rather than a fallback.
+        const resolution = await resolveRoom(normalized);
+        if (cancelled) return;
+        if (!resolution.key) {
+          notify('room-not-found');
+          goHome();
+          return;
+        }
+
+        // A personal line only rings while its owner has it open.
+        if (resolution.personal && resolution.status === 'waiting') {
+          notify('line-closed');
+          goHome();
+          return;
+        }
+
         // The waiting room is only enforced when the RPC explicitly says so.
         const lobby = result.lobby_enabled === true;
 
@@ -90,7 +108,14 @@ export default function CallPage({ code }: CallPageProps) {
             : {}),
         };
 
-        await openRoom(normalized, { isHost, code: normalized, lobby, policy });
+        // openRoom takes the UUID; the words travel alongside as the public code.
+        await openRoom(resolution.key, {
+          isHost,
+          code: resolution.code || normalized,
+          personal: resolution.personal,
+          lobby,
+          policy,
+        });
       } catch (error) {
         console.error('CALL ERROR:', error);
         if (cancelled) return;

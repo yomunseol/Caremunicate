@@ -36,7 +36,7 @@ export default function CallParticipantsPanel({ onClose }: CallParticipantsPanel
           <li key={person.id} style={styles.row}>
             <span style={styles.dot} data-state={person.connection} aria-hidden="true" />
             <span style={styles.name}>
-              {person.name}
+              {person.name || t('chat.participant')}
               {person.host ? (
                 <span style={styles.hostBadge} title={t('call.participants')}>
                   <Crown size={12} aria-hidden="true" />

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
-import { checkRoom, createRoom, normalizeCode } from '../lib/callRooms';
+import { checkRoom, createRoom, normalizeCode, resolveRoom } from '../lib/callRooms';
 import { saveCallPrefs, stashPendingPolicy } from '../lib/callPrefs';
 import CallSettingsModal, { type MeetingSettings } from './CallSettingsModal';
 
@@ -113,6 +113,18 @@ export default function CallRoomsPanel({ canHost }: CallRoomsPanelProps) {
         // Reveal the password step and let the visitor try again.
         setJoinNeedsPassword(true);
         if (joinNeedsPassword) setJoinError('call.wrongPassword');
+        return;
+      }
+
+      // Words -> UUID. If the code resolves to nothing we cannot subscribe at
+      // all, and a personal line that is closed must not ring.
+      const resolution = await resolveRoom(normalized);
+      if (!resolution.key) {
+        setJoinError('call.roomNotFound');
+        return;
+      }
+      if (resolution.personal && resolution.status === 'waiting') {
+        setJoinError('call.lineClosed');
         return;
       }
 

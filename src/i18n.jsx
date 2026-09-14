@@ -504,6 +504,9 @@ const translations = {
     'call.security': 'Security',
     'call.joinWithoutVideo': 'Join without video',
     'call.hostControls': 'Host controls',
+    'call.personalCode': 'Your personal code',
+    'call.openLine': 'Open my line',
+    'call.lineClosed': 'This person is not available right now.',
   },
 
   fr: {
@@ -974,6 +977,9 @@ const translations = {
     'call.security': 'Sécurité',
     'call.joinWithoutVideo': 'Rejoindre sans vidéo',
     'call.hostControls': 'Contrôles hôte',
+    'call.personalCode': 'Votre code personnel',
+    'call.openLine': 'Ouvrir ma ligne',
+    'call.lineClosed': "Cette personne n'est pas disponible pour le moment.",
   },
 
   es: {
@@ -1439,6 +1445,9 @@ const translations = {
     'call.security': 'Seguridad',
     'call.joinWithoutVideo': 'Unirse sin video',
     'call.hostControls': 'Controles de anfitrión',
+    'call.personalCode': 'Tu código personal',
+    'call.openLine': 'Abrir mi línea',
+    'call.lineClosed': 'Esta persona no está disponible ahora.',
   },
 
   ko: {
@@ -1889,6 +1898,9 @@ const translations = {
     'call.security': '보안',
     'call.joinWithoutVideo': '비디오 없이 참여',
     'call.hostControls': '진행자 제어',
+    'call.personalCode': '내 개인 코드',
+    'call.openLine': '내 회선 열기',
+    'call.lineClosed': '지금 이 사람은 응답할 수 없습니다.',
   },
 
   zh: {
@@ -2332,6 +2344,9 @@ const translations = {
     'call.security': '安全',
     'call.joinWithoutVideo': '不开视频加入',
     'call.hostControls': '主持人控制',
+    'call.personalCode': '您的个人代码',
+    'call.openLine': '开放我的线路',
+    'call.lineClosed': '此人当前不在线。',
   },
 
   pt: {
@@ -2796,6 +2811,9 @@ const translations = {
     'call.security': 'Segurança',
     'call.joinWithoutVideo': 'Entrar sem vídeo',
     'call.hostControls': 'Controles do anfitrião',
+    'call.personalCode': 'Seu código pessoal',
+    'call.openLine': 'Abrir minha linha',
+    'call.lineClosed': 'Esta pessoa não está disponível agora.',
   },
 
   de: {
@@ -3264,6 +3282,9 @@ const translations = {
     'call.security': 'Sicherheit',
     'call.joinWithoutVideo': 'Ohne Video beitreten',
     'call.hostControls': 'Host-Steuerung',
+    'call.personalCode': 'Dein persönlicher Code',
+    'call.openLine': 'Meine Leitung öffnen',
+    'call.lineClosed': 'Diese Person ist gerade nicht erreichbar.',
   },
 
   it: {
@@ -3728,6 +3749,9 @@ const translations = {
     'call.security': 'Sicurezza',
     'call.joinWithoutVideo': 'Entra senza video',
     'call.hostControls': 'Controlli host',
+    'call.personalCode': 'Il tuo codice personale',
+    'call.openLine': 'Apri la mia linea',
+    'call.lineClosed': 'Questa persona non è disponibile al momento.',
   },
 
   ar: {
@@ -4184,6 +4208,9 @@ const translations = {
     'call.security': 'الأمان',
     'call.joinWithoutVideo': 'الانضمام بدون فيديو',
     'call.hostControls': 'أدوات المضيف',
+    'call.personalCode': 'رمزك الشخصي',
+    'call.openLine': 'افتح خطي',
+    'call.lineClosed': 'هذا الشخص غير متاح حاليًا.',
   },
 
   he: {
@@ -4634,6 +4661,9 @@ const translations = {
     'call.security': 'אבטחה',
     'call.joinWithoutVideo': 'הצטרפות ללא וידאו',
     'call.hostControls': 'שליטת מארח',
+    'call.personalCode': 'הקוד האישי שלך',
+    'call.openLine': 'פתיחת הקו שלי',
+    'call.lineClosed': 'אדם זה אינו זמין כרגע.',
   },
 };
 
