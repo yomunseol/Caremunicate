@@ -1,254 +1,317 @@
-# Caremunicate — session handoff
+# Caremunicate — project handoff & context
 
-Written after commit `f6eeb6d`. Working tree clean. Everything below was verified
-against the repo at that commit unless explicitly marked **unverified**.
+> **This is the live context file — read it before touching anything.**
+> Rewritten 2026-09-13. The previous revision (written after `f6eeb6d`) is
+> superseded: the call system, the code engine, the Overpass proxy and the
+> doctor-verification half it listed as "pending" are all built now.
+>
+> A local copy of this context also lives at `.commandcode/session-context.md`
+> (gitignored — it is the agent's working copy of the same material).
+
+---
+
+## 0. Working agreements (READ FIRST)
+
+- **Commit every edit.** Never leave work uncommitted or sitting staged. Commit
+  (and push) as part of finishing a change, without being asked each time.
+  Recorded in `.commandcode/taste/taste.md` via the `taste` tool.
+- **`npm run build` must be green before every commit** (`tsc -b && vite build`).
+- Commit messages end with
+  `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`.
+- **Never edit `.commandcode/taste/**`.** Read it freely; to record a preference
+  use the `taste` tool.
+- **Zero API keys, zero env vars beyond Supabase's own**, no paid services.
+  **No new npm dependencies** unless the user names one explicitly.
+- **i18n strings are exact.** When the user supplies translations, do not
+  re-translate, rephrase, "improve" or machine-translate them. Where a supplied
+  string carries a typo it has been corrected and flagged (Hebrew `התחברות`,
+  Arabic `المكالمة`) — that pattern was accepted, keep using it.
+- **10 locales**: `en, fr, es, ko, zh, pt, de, it, ar, he`. `ar` + `he` are RTL.
+- **RTL-safe CSS**: logical properties (`padding-inline`, `margin-inline`,
+  `inset-inline`, `text-align: start`). `[dir='rtl']` overrides only where
+  logical is impossible. Wrap OTP codes / room codes / phone numbers in
+  `<span dir="ltr">`.
+- **Keep changes surgical** — the user repeatedly asks to touch only the named
+  flow.
+- **Re-run the i18n completeness check after any dictionary edit.** A missing
+  key silently falls back to English, which the user notices in `ar` / `he`.
 
 ---
 
 ## 1. What this is
 
-A medical-communication web app. React 18 + TypeScript + Vite + Supabase, hash-based
-router, mint/green theme, inline styles plus `src/styles/globals.css`.
+A medical-communication SPA: emergency doctor listings, patient / doctor /
+department / hospital plans, chat, and a first-party video-calling system.
 
-**No Tailwind.** The stylesheet is plain CSS; components use `styles` objects.
+**Stack:** React 18 + TypeScript + Vite + Supabase (auth, Postgres, Realtime),
+Leaflet for the map. **No Tailwind** — `src/styles/globals.css` is plain CSS
+with mint tokens (`--accent`, `--accent-strong`, `--accent-soft`, `--line`,
+`--shadow`, `--text*`); components add `styles` objects. **No React Router** —
+hash + `history.pushState` from `App.tsx`. Deployed on Vercel (`vercel.json`
+rewrites everything to `/index.html`, so path-style URLs work).
 
-### Non-negotiables (re-stated by the user across many turns)
+**Paths:** `src/**` (browser), `server/overpass.ts` (shared proxy core) +
+`api/overpass.ts` (Vercel function), `supabase/migrations/`, `tests/`.
 
-- **Zero API keys, zero env vars beyond Supabase's own**, no credit cards, no paid services.
-- **No new npm dependencies** unless the user names one explicitly.
-- **i18n strings are exact.** When the user supplies translations, do not re-translate,
-  rephrase, "improve" or machine-translate them. Where a supplied string has a typo it
-  has been corrected and flagged (Hebrew `התחברות`, Arabic `المكالمة`) — that pattern was
-  accepted, keep using it.
-- **10 locales**: `en, fr, es, ko, zh, pt, de, it, ar, he`. `ar` + `he` are RTL.
-- **RTL-safe CSS**: logical properties (`padding-inline`, `margin-block`, `text-align: start`).
-  Use `[dir='rtl']` overrides only where logical is impossible. Wrap OTP codes / room codes /
-  phone numbers in `<span dir="ltr">`.
-- **Build must be green before every commit.** `npm run build` = `tsc -b && vite build`.
-- Commit messages end with `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>`.
+**Scripts:** `dev`, `build`, `preview`. No lint script, no unit-test runner.
 
----
+`src/firebase.ts` is legacy dead code (nothing imports it, `VITE_FIREBASE_*`
+unset). `.env.example` documents only the Firebase vars — the app actually needs
+`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (`src/lib/supabase.ts`).
 
 ## 2. Git state
 
-HEAD `f6eeb6d`, pushed to `origin/main`.
-
-```
-f6eeb6d Doctor verification: real badge, schema, and admin guard
-dde909b Call rooms: code generator, password hashing, room lifecycle
-a5ea3c2 Harden the WebRTC engine: capture/sender caps, adaptive ladder, stats chip
-25781fd Replace Jitsi with a first-party WebRTC calling engine
-e137a2d Add provider roles, role-aware dashboard cards, and switcher/map fixes
-c2fd395 Fix pricing mistakes
-d809c2e Replace Nominatim/iframe map with Overpass API + Leaflet
-e74c70a Switch pricing lineup to Basic / Plus / Pro / Independent Doctor
-```
-
----
+Branch `main`, tree clean, in sync with `origin/main`.
 
 ## 3. Migrations
 
-In `supabase/migrations/`, apply order matters:
+`supabase/migrations/` — apply order matters, and **which are applied to the
+live database is unknown from the repo** (the user runs SQL by hand in the
+Supabase editor):
 
 | File | Covers |
 |---|---|
 | `202609090001_chat_schema_rls.sql` | `profiles`, conversations, participants, `create_direct_conversation()` |
 | `202609120001_add_profiles_plan.sql` | `profiles.plan` |
 | `202609150001_plan_lineup.sql` | plan lineup |
-| `202609160001_provider_roles.sql` | **widens roles to include `department`** |
+| `202609160001_provider_roles.sql` | widens roles to include `department` |
 | `202609170001_emergency_alerts.sql` | `emergency_alerts` |
-| `202609180001_doctor_verification.sql` | verification columns, `is_admin()`, guard trigger, policies |
+| `202609180001_doctor_verification.sql` | verification columns, `is_admin()`, guard trigger, policies, `verification-docs` bucket |
 
-**Which are applied to the live database is unknown from the repo.** The user applies SQL
-themselves via the Supabase SQL editor. Blocker that has been flagged twice and not yet
-confirmed as run:
+> `202609160001_provider_roles.sql` must be applied **before any Department
+> signup** — `conversation_participants.role` otherwise rejects `'department'`
+> and `create_direct_conversation()` raises `'invalid role on a profile'`, so a
+> department account cannot start a single conversation.
 
-> `202609160001_provider_roles.sql` must be applied **before any Department signup**.
-> `conversation_participants.role` otherwise rejects `'department'` and
-> `create_direct_conversation()` raises `'invalid role on a profile'`, so a department
-> account cannot start a single conversation.
-
-Also note: `call_rooms` and the `check_call_room` RPC are **not** in any migration here.
-The user maintains them directly in Supabase.
-
----
+**Maintained directly in Supabase, NOT in this repo:** `call_rooms` and the
+`check_call_room` RPC. Treat every column as an assumption and degrade
+gracefully — the established pattern is to drop the optional field and retry on
+`42703` / `PGRST204`.
 
 ## 4. Code map
 
 ```
 src/
-  App.tsx                    routing, auth screen (signup form is inline here — ~1100 lines)
-  i18n.jsx                   LangProvider, useLang(), LOCALES, translations (410 keys x 10)
+  App.tsx                    router + auth screens (signup form inline — ~1.1k lines)
+  i18n.jsx                   LangProvider, useLang(), LOCALES, translations
   lib/
     supabase.ts              client
     roles.ts                 PROVIDER_ROLES, isProvider(), roleLabelKey()
-    callRooms.ts             code generator, password hashing, room CRUD/RPC
+    wordBank.ts              WORD_BANK — 1024 curated words, 16 categories x 64
+    wordcode.ts              generateWordCode / normalizeCode / isValidWordCode
+    callRooms.ts             rooms, resolveRoom, resolveJoin, check/create/update
+    callPrefs.ts             profiles.call_prefs + pending-policy stash
     conversations.ts         createDirectConversation()
     displayName.ts           resolveDisplayName() — never render an empty name
   hooks/
-    useCall.ts               WebRTC: perfect negotiation, mesh <= 4, caps, adaptive ladder
+    useCall.ts               the whole call store + WebRTC engine
+    useActiveSpeaker.ts      VAD for the speaker view
     useRealtimeChat.ts       message subscription
   components/
+    CallHub.tsx              THE call entry point (/call)
+    CallPage.tsx             /call/<param> route guard
+    CallLayer.tsx            THE ONLY call UI (portaled, z-index 3000)
+    CallPreJoin.tsx          green room
+    CallParticipantsPanel.tsx / CallSettingsModal.tsx / CallOverflowMenu.tsx / CallDevicePicker.tsx
     DashboardOverview.tsx    left column, role-aware (sticky on desktop)
-    CarePlaces.tsx           Overpass + Leaflet place finder (all authenticated users)
-    PricingSection.tsx       plan cards
+    CarePlaces.tsx           Overpass + Leaflet place finder
+    PricingSection.tsx       plan cards (6)
     VerificationBadge.tsx    the ONLY render site of the certified label
     EmergencyCard.tsx        patient SOS card
     EmergencyAlertBanner.tsx provider realtime banner
-    CallRoom.tsx             incoming-call modal + in-call overlay
     ChatWindow / ChatList / SearchUsers / FloatingChatWidget
-    LanguageSwitcher.tsx     portaled dropdown (see gotcha #5)
+    LanguageSwitcher.tsx     portaled dropdown (see gotcha 1)
     PasswordAuth.tsx / TwoFactorSetup.tsx / ProtectedRoute.tsx / ErrorBoundary.tsx
-tests/
-  care-places.spec.ts        OBSOLETE — still mocks Nominatim (see gotcha #2)
+server/overpass.ts           mirror rotation + 15s per-mirror abort
+api/overpass.ts              Vercel function serving /api/overpass
+tests/care-places.spec.ts    OBSOLETE — still mocks Nominatim
 ```
 
-### Conventions that matter
+**Conventions that matter**
 
-- **`isProvider(role)`** covers `doctor | department | hospital`. Every gate must use it,
-  not `role === 'doctor'`. Remaining literal `=== 'doctor'` checks in `App.tsx` are the
-  per-role *signup field* branches and are correct as-is.
-- **Role labels** always go through `roleLabelKey(role)` → `t(...)`, which falls back to
+- **`isProvider(role)`** covers `doctor | department | hospital`. Every gate must
+  use it, not `role === 'doctor'`. The remaining literal `=== 'doctor'` checks in
+  `App.tsx` are the per-role *signup field* branches and are correct as-is.
+- **Role labels** go through `roleLabelKey(role)` → `t(...)`, falling back to
   `chat.careMember`. Preserve the never-render-empty behaviour.
-- **`profiles.verification_status`** gates the certified badge. Nothing else may render it.
-- **No plan may require contacting sales.** Every plan is self-serve.
+- **`profiles.verification_status`** gates the certified badge; nothing else may
+  render it.
+- **No plan may require contacting sales** — every plan is self-serve.
+- **The UUID must never render.** Words at the UI edge, `call_rooms.id` in the
+  transport, the DB as the only translation layer.
 
-### Current pricing lineup (verified in `PricingSection.tsx`)
-
-| id | price | flags |
-|---|---|---|
-| `basic` | $9 | |
-| `plus` | $29 | `popular: true` |
-| `pro` | $49 | |
-| `independent-doctor` | $79 | `grantsDoctorRole: true` |
-| `department` | $149 | `grantsDoctorRole: true` |
-
-Turn 21 mentioned six plans — **check whether a sixth (hospital) plan is expected.**
-Plus and Pro carry emergency-lane support; Plus and Pro both have *priority lane*
-(not "priority routing"). Consultations are split into text vs video.
+**Pricing lineup (verified, six plans):** `basic` $9 · `plus` $29 (`popular`) ·
+`pro` $49 · `independent-doctor` $79 · `department` $149 · `hospital` $399. The
+last three set `grantsDoctorRole: true`.
 
 ---
 
-## 5. Pending work, in priority order
+## 5. Call system
 
-### 5.1 Finish the call-room system (largest item, explicitly requested)
+### Code engine
 
-`src/lib/callRooms.ts` exists (codes, hashing, `createRoom` / `checkRoom` / `setRoomStatus`)
-and the 12 `call.*` i18n keys are in all 10 locales. **Not built:**
+- `WORD_BANK` — **exactly 1024** curated words, 16 semantic categories × 64
+  (animals, birds, plants, trees, weather, water, land, sky, colors, foods,
+  spices, materials, tools, music, places, positive traits). 3–8 letters,
+  `a–z` only, globally unique. No offensive/slang/medical-emergency terms, no
+  homophones of common words.
+- `generateWordCode()` — `crypto.getRandomValues`, four **distinct** indices
+  without replacement. Nothing is derived from any identifier.
+- A **dev-only validator throws at import** if the bank is the wrong length, has
+  duplicates, or holds a word outside `/^[a-z]{3,8}$/`, so a bad bank cannot ship.
 
-1. **Signaling rework in `useCall.ts`.** Currently the room id is an arbitrary string on a
-   channel named `call:{roomId}` with generic event names. Needs: channel
-   `call:{normalizeCode(code)}`, events `call:join` / `call:offer` / `call:answer` /
-   `call:ice` / `call:leave` / `call:ended`, broadcasts with `self: false`, host promotion
-   on SUBSCRIBED, a `receive('broadcast')` message handler wired to the DataChannel, and
-   `openDataChannel(peerId, dc)`.
-2. **DataChannel heartbeats + releasing the signaling plane.** Ping every 3s over the data
-   channel once it opens, and `removeChannel` the Supabase channel mid-call. This has been
-   specified twice and **never shipped**. Blocking design question: who still holds the
-   channel if every peer unsubscribes? Releasing it strands late joiners unless the host
-   keeps it. Needs a decision before coding.
-3. **Host flow UI** — "Start meeting" plus optional password field, showing the generated
-   code with copy / share actions.
-4. **Join flow UI** — "Join with code", password step driven by `has_password`, and error
-   states `roomNotFound` / `wrongPassword`.
-5. **`/call/{code}` route** — does not exist. `App.tsx` routes `home | signup | login |
-   profile | pricing | chat` only. Needs a route key, hash parsing (strip a leading `/` so
-   `#/call/mint-fox` works as well as `#call/mint-fox`), and a wrapper that calls
-   `checkRoom` and blocks entry when it fails.
-6. **`receive('broadcast', ...)`** with room host auto-promotion on the `call:{code}` channel.
+### Addressability
 
-Do not regress the existing call stack: stage UI, capture caps (720p/30fps), sender caps
-(`maxBitrate 900000`, `maxFramerate 30`, `degradationPreference: 'balanced'`), H.264
-preference with VP8 fallback, 5s `getStats()` adaptive ladder (720→480→360→audio-only),
-mesh cap 4, stats chip.
+- Public identifier = the 4-word code. Transport key = `call_rooms.id` (UUID).
+  The channel is `call:${room.id}`; no channel is ever keyed by words.
+- `resolveRoom(input)` translates either way: a UUID is already a valid key (the
+  lookup only recovers the words), a word code must resolve to a UUID or the
+  join is refused, synthetic `dm-…` / `em-…` keys pass through. Its row select
+  falls back to `id, code` when the optional policy columns are absent.
+- `resolveJoin(input, { password, userId })` is the **single** join guard, used
+  by both the hub and the route. Refusals: `roomNotFound`, `password`,
+  `meetingLocked`, `lineClosed`, `meetingFull`; the host is exempt from their own
+  rules. It also returns the lobby flag and a policy seed.
+- **Dev guard:** if a UUID ever reaches the code chip,
+  `console.error('CODE LEAK: UUID rendered in UI')` and the code is re-resolved.
 
-### 5.2 Verification Center and Admin Review Panel
+### One hub, one stage
 
-`f6eeb6d` shipped only the badge + schema + i18n half. Still missing:
+| Path | Component |
+|---|---|
+| `/call`, `#call` | `CallHub` — title, provider-only Start meeting + settings modal, join-with-code, personal-line card |
+| `/call/<param>` | `CallPage` — the route guard, canonicalises to `/call/<words>` |
+| — | `CallLayer` — the only call UI |
 
-- Doctor-only card with license number, issuing authority, and a document upload to the
-  private `verification-docs` bucket at `{user_id}/license-{timestamp}.pdf`, moving
-  `verification_status` to `pending`.
-- Admin panel gated on `is_admin`, listing pending doctors with a signed-URL document
-  viewer and Approve / Reject-with-note.
-- Rejected doctors see the admin's note and can resubmit.
+`createRoom()` is called from exactly one place. Dashboard cards and the header
+nav only link to `/call`; 1:1 calls call `startCall()` directly. The duplicate
+entry points (`CallRoomsPanel.tsx`, `PersonalLineCard.tsx`) have been deleted.
 
-### 5.3 Smaller, already-identified
+**Start flow:** Start meeting awaits the insert fully before navigating, and the
+route guard retries a missed resolve **once after 300 ms** — that removed
+"Cannot find meeting" for doctors.
 
-- **`PricingSection` role metadata is stale.** `signupRole` is typed `'patient' | 'doctor'`
-  and `grantsDoctorRole: true` writes role `doctor` — including for the **department** plan,
-  which now has its own role. Needs a 4-role type and a `grantsRole` value.
-- **Profiles write is skipped on email confirmation.** In `App.tsx` signup, `profiles.role`
-  is only upserted when `data.session` exists. Confirmed-by-email signups keep the role in
-  metadata only. Fix by reconciling in `DashboardOverview` on first authenticated load.
-- **`tests/care-places.spec.ts` will fail.** It mocks `nominatim.openstreetmap.org` and
-  asserts a `viewbox` param; the app now POSTs to Overpass and renders Leaflet. Rewrite to
-  mock the Overpass POST and assert the `data=` body contains `around:5000`.
-- **Duplicate emergency rows (reported earlier, unverified this session).** `EmergencyCard`
-  inserts an alert when a line starts, and `useCall` inserts one if an emergency invite goes
-  unanswered. Both correct alone, together they can produce two active rows. The user must
-  pick one owner.
-- **Logical-property sweep unfinished.** Known physical values: `margin-right` in
-  `globals.css` (~line 800, ~1119); inline `left:`/`right:` in `SearchUsers.tsx`,
-  `CarePlaces.tsx`, `FloatingChatWidget.tsx`. The `ltr` island in the Leaflet wrapper is
-  intentional.
-- **Unused i18n keys**, kept only because the user said "keep all existing translations
-  intact": `dash.certificationVerified` / `dash.certificationPending`, `verify.verified`,
-  `profile.emergencyEyebrow/Title/Copy/Button`, `profile.pill1/2/3`, `dash.videoTitle`,
-  and six `places.*` (`minChars`, `noFiltered`, `globalSearch`, `openInOsm`, `mapOf`,
-  `mapPlaceholder`). Offer to prune; do not delete unilaterally.
-- **Dead CSS**: `.role-toggle` / `.role-button` rules survive the removal of the
-  Patient/Doctor toggle.
+### Call UI
 
----
+Meet×Zoom language: tiles `rounded-2xl`, 10px gaps, soft shadow, `object-contain`
+letterbox, name pill bottom-start, a 2px mint speaking ring (an *outline*, so the
+tile's inline shadow cannot override it), initials avatar when the camera is off,
+150 ms fade-in. Speaker view = main tile + 96px bottom filmstrip; gallery = equal
+`ceil(sqrt(n))` grid; the toggle lives in the overflow menu.
 
-## 6. Unverified inferences — confirm before trusting
+- **Top bar:** code chip (click = copy, `title` = full code, single line) → share
+  icon → timer on the left; people chip + gear on the right. Auto-hides with the
+  control bar after 3s idle.
+- **Control bar:** one centred pill — media (mic, cam, share) · engage
+  (reactions, hand) · info (people count, ⋮) — then a separated red leave pill.
+  Shortcuts: Alt+M / Alt+V / Alt+S / F.
+- **Overflow ⋮:** view toggle, fullscreen, device settings, call stats, and the
+  host-only "Host controls" (waiting room, lock/unlock, set new password, remove
+  participant list). **No host/security control sits on the main bar.**
+- Media: `pc.ontrack` accumulates inbound tracks into a stream we own; local
+  tracks go in via explicit `sendrecv` transceivers **before** the first offer;
+  caps 720p / 30fps / 900 kbps with an adaptive 720→480→360→audio ladder; H.264
+  with VP8 fallback; mesh cap 4; emergency kind preserved.
 
-These are guesses made against schema that is not visible from the repo. Each is a
-one-line fix if wrong.
+### State & policy
 
-1. **`check_call_room` return shape.** `callRooms.ts` assumes the returned row carries
-   `ok`, `has_password`, and optionally `status` / `room_id` / `host_id`, read as
-   `data?.[0] ?? null`.
-2. **The no-password convention.** `checkRoom` sends `p_password_hash: null` when the user
-   typed no password, reasoning that a passwordless room must not be handed a hash. If the
-   RPC instead expects `hash(code + '')`, **every passwordless join breaks**. Highest-risk
-   line in the file.
-3. **`call_rooms` columns**: `code`, `host_id`, `password_hash`, `status`, `ended_at`.
-   `createRoom` relies on `code` being UNIQUE (it retries Postgres `23505`, up to 5 times).
-4. **`profiles.role` has no CHECK constraint** — nothing in the repo constrains it, but the
-   live table is unknown. `conversation_participants.role` definitely did.
-5. **Whether the four latest migrations have been applied.**
+One store: `useCall()` via `CallProvider` (`src/context/CallContext.tsx`), which
+also renders `<CallLayer />`. Policy is broadcast as `call:policy` with
+`has_password` as a **boolean** — never a digest. The host turns away locked or
+full joiners with `call:kick`; the waiting room uses `call:lobby` / `call:admit`
+/ `call:deny`.
 
 ---
 
-## 7. Gotchas that have already cost time
+## 6. Auth architecture
 
-1. **Leaflet vs. the header.** Leaflet panes use `z-index` 400–1000, and `.topbar` had
-   `backdrop-filter`, which makes it a containing block for `position: fixed` children. The
-   language menu is therefore portaled to `document.body` with `z-index: 2000`, and
-   `.topbar` is `z-index: 1100`. `.topbar` also keeps `position: sticky` (not `relative` as
-   one brief literally asked) — changing it breaks header stickiness.
-2. **Overpass CORS.** Fetches are routed through `https://corsproxy.io/?...` with an 8s
-   `AbortController`, `isLoading` cleared in `finally`, and `console.error('OVERPASS_ERROR:', e)`.
-   Nominatim is no longer used anywhere; all `places.*` strings resolve through `t()`.
-3. **`.form-row` collapses to one column at ≤720px.** The signup role tiles are a separate
-   grid that must stay 2×2 on mobile.
-4. **Scratchpad scripts are session-scoped.** The i18n patcher pattern is reproducible from
-   the recipe in §8 — do not assume the old scripts still exist.
-5. **`App.tsx` is a ~1100-line monolith** with the signup form inline. Extracting
-   `SignupForm.tsx` has been offered and never done. If a task touches it heavily, propose
-   extraction first.
+### Supabase JS v2.114 constraints (verified against installed source)
+
+- **No per-call `persistSession` option** — client-construction only.
+- `signInWithPassword`, `verifyOtp`, `mfa.challengeAndVerify`, `mfa.verify` all
+  internally `_saveSession()` and emit `SIGNED_IN` / `MFA_CHALLENGE_VERIFIED` —
+  you cannot "verify without persisting" on a persistent client.
+- `mfa.verify` has no `verify: true` flag in this version; use
+  `mfa.challengeAndVerify({ factorId, code })`, which returns
+  `access_token` / `refresh_token` and persists on the client it runs on.
+
+### The Session Trap flow (`PasswordAuth.tsx`)
+
+1. **Password step:** sign in via `supabaseMemory` (`persistSession:false`,
+   `autoRefreshToken:false`). Logs `Password verified, session NOT persisted`.
+   Fetch `preferred_2fa_method` from `profiles` via the memory client.
+2. **Branch A (`none`):** real `signInWithPassword` on the persistent client →
+   `goToProfile()`.
+3. **Branch B (`app`):** memory-client `mfa.listFactors()` → hold `factorId` →
+   `app_code` view → `challengeAndVerify` → promote with
+   `supabase.auth.setSession(...)` → clear pending → hard redirect `/#profile`.
+4. **Branch C (`email`):** memory-client `signInWithOtp` → `email_code` view →
+   `verifyOtp({ email, token, type:'email' })` → `setSession(...)` → clear
+   pending → hard redirect.
+5. Verify handlers wrap in `try/catch/finally`; `setLoading(false)` in `finally`
+   so the button never sticks on 'Verifying…'.
+
+**Gating:** the pending flag lives in `sessionStorage`
+(`caremunicate:pending2fa`); `AuthContext` reports `effectiveSession = pending2FA
+? null : session` and auto-clears on `SIGNED_IN` / `MFA_CHALLENGE_VERIFIED` /
+`TOKEN_REFRESHED` (with a session) and on `SIGNED_OUT`. `App.tsx` derives
+`currentUser` the same way, blocks `navigate('profile' | 'chat' | 'call')` while
+pending, and logs out through the context.
+
+**Sign-up validation (in `App.tsx`):** fullName, email, role-specific fields
+(doctor / department / hospital), password + confirm; live ✅/❌ password
+checklist (min 8, upper, lower, digit, special `!@#$%^&*`), submit disabled until
+valid, per-field errors only after blur/submit, passwords cleared in the submit
+`finally`. 2×2 role tiles: patient / doctor / department / hospital.
 
 ---
 
-## 8. Verification recipes
+## 7. Known decisions / trade-offs (respect these)
+
+- **Frontend-only 2FA enforcement (the user's explicit choice).** It prevents a
+  persistent pre-2FA session and a logged-in UI, but is **not** a security
+  boundary — a determined user can call Supabase directly with an in-memory
+  token. Real enforcement needs RLS + `aal` claims server-side. Explain this
+  rather than implying the frontend blocks the account.
+- **Console logs are intentional** (the user debugs in F12). Keep the requested
+  log strings intact.
+- **The call system is client-enforced.** Lobby, lock and capacity are signalled
+  client-side, `call:kick` is advisory, and true capacity enforcement belongs in
+  the RPC.
+- **Meeting rooms** draw a fresh random code per creation (≤10 retries on a
+  unique `23505`); **personal rooms** draw one at first creation and keep it
+  forever.
+- The dashboard target is `#profile` (there is no `/dashboard` route).
+
+## 8. Gotchas that have already cost time
+
+1. **Leaflet vs. the header.** Leaflet panes use `z-index` 400–1000, and
+   `.topbar` had `backdrop-filter`, which makes it a containing block for
+   `position: fixed` children. The language menu is therefore portaled to
+   `document.body` with `z-index: 2000`, and `.topbar` is `z-index: 1100` and
+   `position: sticky` — changing that breaks header stickiness.
+2. **Overpass is now same-origin.** The browser calls `/api/overpass` only; the
+   server rotates mirrors with a 15s abort each and caches. `corsproxy.io` and
+   the allorigins path are gone from client code. Results are cached in
+   `localStorage` for 10 minutes.
+3. **`.form-row` collapses to one column at ≤720px.** The signup role tiles are a
+   separate grid that must stay 2×2 on mobile.
+4. **Scratchpad scripts are session-scoped.** The i18n patcher pattern is
+   reproducible from §9 — do not assume the old scripts still exist.
+5. **`App.tsx` is a ~1.1k-line monolith** with the signup form inline.
+   Extracting `SignupForm.tsx` has been offered and never done; propose it before
+   a heavy edit there.
+6. **`vite.config.ts` emits nothing now.** `tsconfig.node.json` sets `noEmit`,
+   so Vite resolves the `.ts` config (a stale emitted `vite.config.js` would
+   otherwise shadow it).
+
+## 9. Verification recipes
 
 ```bash
-npm run build                 # tsc -b && vite build — must be green before committing
+npm run build                 # tsc -b && vite build — green before committing
 ```
 
-i18n completeness (every locale has every `en` key, and no duplicate keys):
+i18n completeness (every locale has every `en` key, no duplicate keys):
 
 ```bash
 node -e "
@@ -262,28 +325,56 @@ console.log('en keys:',en.size,'|',bad?'INCOMPLETE':'all 10 locales complete');
 "
 ```
 
-Runtime test of plain TS with no build step (Node 22, strips types):
+Runtime-test plain TS with no build step (Node 22 strips types). The resolver
+needs explicit `.ts` extensions in Node, so test against patched copies in the
+scratchpad rather than importing `src/` directly:
 
 ```bash
-grep -v \"^import { supabase } from './supabase';\" src/lib/callRooms.ts > /tmp/cr.ts
-node --experimental-strip-types /tmp/verify.mjs      # imports './cr.ts'
+node --experimental-strip-types <script>.mjs   # import './wordcode.ts', not './wordcode'
 ```
 
-Add a new i18n namespace by patching each locale block: locate
-`^  (\w+): \{$` markers, insert the new keys before each block's final `\n  },`, then
-re-run the completeness check. **Run the check every time** — a missing key silently falls
-back to English, which the user notices immediately in `ar` / `he`.
+Add i18n keys by patching each locale block: locate the `^  (\w+): \{$` markers,
+insert before each block's final `\n  },`, then **re-run the completeness check**.
 
-Never edit `.commandcode/taste/**`; use the `taste` tool if a preference needs recording.
+Never edit `.commandcode/taste/**`; use the `taste` tool.
 
----
+## 10. Open items
 
-## 9. Open questions for the user
-
-1. Apply `202609160001_provider_roles.sql` — done or not? Blocks Department accounts.
-2. `check_call_room`'s return shape, and does it expect `null` or `hash(code + '')` for
-   "no password supplied"?
-3. In the DataChannel handoff, who keeps the Supabase channel once the mesh is full?
-4. Is a sixth (hospital) pricing plan expected?
-5. Which component owns emergency-alert creation — `EmergencyCard` or `useCall`?
-6. Independent Doctor at **$79** — the pre-existing repo plan was $69; confirm $79 stands.
+- **`check_call_room` must accept `(p_input, hash)`** and take a word code *or* a
+  UUID. `checkRoom()` still falls back to the legacy `(p_code, p_password_hash)`
+  signature, but the digest basis differs for a UUID input, so password-protected
+  rooms joined *by UUID* fail until the RPC is migrated.
+- **`personal` column required** for personal lines; without it
+  `ensurePersonalRoom` returns null and the hub card stays hidden.
+- **Waiting room only enforced when the RPC echoes `lobby_enabled`.**
+- **Hardcoded English remains** for the mic/camera/reactions/fullscreen/settings
+  labels, "Call stats", "Fullscreen", "More", "Encrypted", the kicked toast, and
+  "Video unavailable — audio only". Supply the 10-language strings to wire them.
+- **`tests/care-places.spec.ts` is obsolete** — it mocks Nominatim and asserts a
+  `viewbox`, while the app POSTs to Overpass via `/api/overpass` and renders
+  Leaflet.
+- **Verification Center is half-built**: the badge + schema + i18n exist; the
+  doctor license-card + upload and the admin review panel do not.
+- **`PricingSection` role metadata is stale** — `signupRole` is typed
+  `'patient' | 'doctor'` and `grantsDoctorRole` writes role `doctor`, including
+  for the `department` and `hospital` plans which have their own roles.
+- **Profiles write is skipped on email confirmation** — `App.tsx` signup only
+  upserts `profiles.role` when `data.session` exists, so confirmed-by-email
+  signups keep the role in metadata only.
+- **Duplicate emergency rows (reported, unverified).** `EmergencyCard` inserts an
+  alert when a line starts and `useCall` inserts one if an emergency invite goes
+  unanswered; together they can produce two active rows. One owner needed.
+- **Logical-property sweep unfinished** — physical `margin-right`/`text-align:
+  left` survive in `globals.css`, and inline `left:`/`right:` in `SearchUsers`,
+  `FloatingChatWidget`, `LanguageSwitcher`. The `ltr` island in the Leaflet
+  wrapper is intentional.
+- **Unused i18n keys** kept only because the user said "keep all existing
+  translations intact": `dash.certificationVerified` / `dash.certificationPending`,
+  `verify.verified`, `profile.emergency*`, `profile.pill1/2/3`, `dash.videoTitle`,
+  `dash.videoHint`, `emergency.end`, and six `places.*` (`minChars`, `noFiltered`,
+  `globalSearch`, `openInOsm`, `mapOf`, `mapPlaceholder`). Offer to prune; do not
+  delete unilaterally.
+- **Dead CSS**: `.role-toggle` / `.role-button` rules survive the removal of the
+  Patient/Doctor toggle.
+- **Open questions**: has `202609160001_provider_roles.sql` been applied (blocks
+  Department accounts)? Which component owns emergency-alert creation?
