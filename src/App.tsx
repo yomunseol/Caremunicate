@@ -12,13 +12,22 @@ import DashboardOverview from './components/DashboardOverview';
 import CallPage from './components/CallPage';
 import CallHub from './components/CallHub';
 import RejoinBanner from './components/RejoinBanner';
+import CalendarPage from './components/CalendarPage';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
 import { isProvider } from './lib/roles';
 import { useLang } from './i18n';
 
-type RouteKey = 'home' | 'signup' | 'login' | 'profile' | 'pricing' | 'chat' | 'call';
+type RouteKey =
+  | 'home'
+  | 'signup'
+  | 'login'
+  | 'profile'
+  | 'pricing'
+  | 'chat'
+  | 'call'
+  | 'calendar';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -67,7 +76,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -273,7 +282,10 @@ function App() {
 
   const navigate = (nextRoute: RouteKey) => {
     if (
-      (nextRoute === 'profile' || nextRoute === 'chat' || nextRoute === 'call') &&
+      (nextRoute === 'profile' ||
+        nextRoute === 'chat' ||
+        nextRoute === 'call' ||
+        nextRoute === 'calendar') &&
       (!currentUser || pending2FA)
     ) {
       nextRoute = 'login';
@@ -651,6 +663,9 @@ function App() {
             <>
               <button className="ghost-button" type="button" onClick={() => navigate('call')}>
                 {t('call.callHub')}
+              </button>
+              <button className="ghost-button" type="button" onClick={() => navigate('calendar')}>
+                {t('cal.calendar')}
               </button>
               <div className="profile-menu">
                 <button
@@ -1110,6 +1125,12 @@ function App() {
                 )}
               </ErrorBoundary>
             </section>
+          </ProtectedRoute>
+        )}
+
+        {route === 'calendar' && (
+          <ProtectedRoute>
+            <CalendarPage />
           </ProtectedRoute>
         )}
 

@@ -514,6 +514,14 @@ const translations = {
     'call.poorConnection': 'Poor connection — lowering video quality',
     'call.personJoined': '{{name}} joined',
     'call.personLeft': '{{name}} left',
+    'cal.calendar': 'Calendar',
+    'cal.appointments': 'Appointments',
+    'cal.bookAppointment': 'Book appointment',
+    'cal.availability': 'Availability',
+    'cal.joinCall': 'Join call',
+    'cal.joinTooEarly': 'The call opens 10 minutes before start.',
+    'cal.reschedule': 'Reschedule',
+    'cal.cancelAppointment': 'Cancel appointment',
   },
 
   fr: {
@@ -994,6 +1002,14 @@ const translations = {
     'call.poorConnection': 'Connexion faible — réduction de la qualité vidéo',
     'call.personJoined': '{{name}} a rejoint',
     'call.personLeft': '{{name}} est parti',
+    'cal.calendar': 'Calendrier',
+    'cal.appointments': 'Rendez-vous',
+    'cal.bookAppointment': 'Prendre rendez-vous',
+    'cal.availability': 'Disponibilités',
+    'cal.joinCall': "Rejoindre l'appel",
+    'cal.joinTooEarly': "L'appel ouvre 10 minutes avant le début.",
+    'cal.reschedule': 'Reprogrammer',
+    'cal.cancelAppointment': 'Annuler le rendez-vous',
   },
 
   es: {
@@ -1469,6 +1485,14 @@ const translations = {
     'call.poorConnection': 'Conexión débil: reduciendo la calidad de video',
     'call.personJoined': '{{name}} se unió',
     'call.personLeft': '{{name}} salió',
+    'cal.calendar': 'Calendario',
+    'cal.appointments': 'Citas',
+    'cal.bookAppointment': 'Reservar cita',
+    'cal.availability': 'Disponibilidad',
+    'cal.joinCall': 'Unirse a la llamada',
+    'cal.joinTooEarly': 'La llamada se abre 10 minutos antes del inicio.',
+    'cal.reschedule': 'Reprogramar',
+    'cal.cancelAppointment': 'Cancelar cita',
   },
 
   ko: {
@@ -1929,6 +1953,14 @@ const translations = {
     'call.poorConnection': '연결 상태가 좋지 않아 비디오 품질을 낮춥니다',
     'call.personJoined': '{{name}}님이 참여했습니다',
     'call.personLeft': '{{name}}님이 나갔습니다',
+    'cal.calendar': '캘린더',
+    'cal.appointments': '예약',
+    'cal.bookAppointment': '예약하기',
+    'cal.availability': '가능 시간',
+    'cal.joinCall': '통화 참여',
+    'cal.joinTooEarly': '통화는 시작 10분 전에 열립니다.',
+    'cal.reschedule': '일정 변경',
+    'cal.cancelAppointment': '예약 취소',
   },
 
   zh: {
@@ -2382,6 +2414,14 @@ const translations = {
     'call.poorConnection': '连接不佳——正在降低视频质量',
     'call.personJoined': '{{name}} 已加入',
     'call.personLeft': '{{name}} 已离开',
+    'cal.calendar': '日历',
+    'cal.appointments': '预约',
+    'cal.bookAppointment': '预约',
+    'cal.availability': '可约时间',
+    'cal.joinCall': '加入通话',
+    'cal.joinTooEarly': '通话开始前 10 分钟开放。',
+    'cal.reschedule': '改期',
+    'cal.cancelAppointment': '取消预约',
   },
 
   pt: {
@@ -2856,6 +2896,14 @@ const translations = {
     'call.poorConnection': 'Conexão fraca — reduzindo a qualidade de vídeo',
     'call.personJoined': '{{name}} entrou',
     'call.personLeft': '{{name}} saiu',
+    'cal.calendar': 'Calendário',
+    'cal.appointments': 'Consultas',
+    'cal.bookAppointment': 'Agendar consulta',
+    'cal.availability': 'Disponibilidade',
+    'cal.joinCall': 'Entrar na chamada',
+    'cal.joinTooEarly': 'A chamada abre 10 minutos antes do início.',
+    'cal.reschedule': 'Reagendar',
+    'cal.cancelAppointment': 'Cancelar consulta',
   },
 
   de: {
@@ -3334,6 +3382,14 @@ const translations = {
     'call.poorConnection': 'Schwache Verbindung — Videoqualität wird reduziert',
     'call.personJoined': '{{name}} ist beigetreten',
     'call.personLeft': '{{name}} hat verlassen',
+    'cal.calendar': 'Kalender',
+    'cal.appointments': 'Termine',
+    'cal.bookAppointment': 'Termin buchen',
+    'cal.availability': 'Verfügbarkeit',
+    'cal.joinCall': 'Anruf beitreten',
+    'cal.joinTooEarly': 'Der Anruf öffnet 10 Minuten vor Beginn.',
+    'cal.reschedule': 'Verschieben',
+    'cal.cancelAppointment': 'Termin stornieren',
   },
 
   it: {
@@ -3808,6 +3864,14 @@ const translations = {
     'call.poorConnection': 'Connessione debole — riduzione della qualità video',
     'call.personJoined': '{{name}} è entrato',
     'call.personLeft': '{{name}} è uscito',
+    'cal.calendar': 'Calendario',
+    'cal.appointments': 'Appuntamenti',
+    'cal.bookAppointment': 'Prenota appuntamento',
+    'cal.availability': 'Disponibilità',
+    'cal.joinCall': 'Entra in chiamata',
+    'cal.joinTooEarly': "La chiamata apre 10 minuti prima dell'inizio.",
+    'cal.reschedule': 'Riprogramma',
+    'cal.cancelAppointment': 'Annulla appuntamento',
   },
 
   ar: {
@@ -4274,6 +4338,14 @@ const translations = {
     'call.poorConnection': 'اتصال ضعيف — خفض جودة الفيديو',
     'call.personJoined': 'انضم {{name}}',
     'call.personLeft': 'غادر {{name}}',
+    'cal.calendar': 'التقويم',
+    'cal.appointments': 'المواعيد',
+    'cal.bookAppointment': 'حجز موعد',
+    'cal.availability': 'التوفر',
+    'cal.joinCall': 'انضمام إلى المكالمة',
+    'cal.joinTooEarly': 'تفتح المكالمة قبل الموعد بـ 10 دقائق.',
+    'cal.reschedule': 'إعادة الجدولة',
+    'cal.cancelAppointment': 'إلغاء الموعد',
   },
 
   he: {
@@ -4734,6 +4806,14 @@ const translations = {
     'call.poorConnection': 'חיבור חלש — מורידים את איכות הווידאו',
     'call.personJoined': '{{name}} הצטרף',
     'call.personLeft': '{{name}} עזב',
+    'cal.calendar': 'לוח שנה',
+    'cal.appointments': 'פגישות',
+    'cal.bookAppointment': 'קביעת פגישה',
+    'cal.availability': 'זמינות',
+    'cal.joinCall': 'הצטרפות לשיחה',
+    'cal.joinTooEarly': 'השיחה נפתחת 10 דקות לפני ההתחלה.',
+    'cal.reschedule': 'שינוי מועד',
+    'cal.cancelAppointment': 'ביטול פגישה',
   },
 };
 

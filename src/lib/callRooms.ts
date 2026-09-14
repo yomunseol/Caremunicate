@@ -198,7 +198,14 @@ export type CreateRoomOptions = {
   maxParticipants?: number;
 };
 
-export const createRoom = async (options: CreateRoomOptions = {}): Promise<string> => {
+export type CreatedRoom = {
+  /** Transport key — call_rooms.id. */
+  id: string;
+  /** Public 4-word code. */
+  code: string;
+};
+
+export const createRoom = async (options: CreateRoomOptions = {}): Promise<CreatedRoom> => {
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
   if (sessionError) throw sessionError;
 
@@ -241,10 +248,13 @@ export const createRoom = async (options: CreateRoomOptions = {}): Promise<strin
           password_hash: trimmed ? await hashCallPassword(code, trimmed) : null,
           ...shape,
         })
-        .select('code')
+        .select('id, code')
         .single();
 
-      if (!error) return String(data?.code ?? code);
+      if (!error) {
+        const row = data as { id?: string; code?: string } | null;
+        return { id: String(row?.id ?? ''), code: String(row?.code ?? code) };
+      }
 
       // 42703 = undefined_column, PGRST204 = column not found in the schema cache.
       if (error.code === '42703' || error.code === 'PGRST204') {

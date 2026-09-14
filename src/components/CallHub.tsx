@@ -101,7 +101,7 @@ export default function CallHub() {
 
       // createRoom awaits the insert fully before returning the code, so the
       // row exists by the time the route guard looks for it.
-      const code = await createRoom({
+      const { code } = await createRoom({
         password,
         lobbyEnabled: settings.waitingRoom,
         autoMute: settings.autoMute,
