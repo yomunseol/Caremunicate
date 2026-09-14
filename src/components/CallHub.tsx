@@ -53,6 +53,8 @@ export default function CallHub() {
   const [joinNeedsPassword, setJoinNeedsPassword] = useState(false);
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  /** The REAL message when the join guard threw — shown in dev only. */
+  const [joinGuardError, setJoinGuardError] = useState<string | null>(null);
 
   const [line, setLine] = useState<PersonalRoom | null>(null);
   const [lineBusy, setLineBusy] = useState(false);
@@ -127,8 +129,10 @@ export default function CallHub() {
       setSettingsOpen(false);
       goToRoom(code);
     } catch (error) {
+      // SECTION 2: a start failure is reported under the START card only,
+      // as startFailed — never as a missing room.
       console.error('CALL ERROR:', error);
-      setHostError('call.roomNotFound');
+      setHostError('call.startFailed');
     } finally {
       setHostBusy(false);
     }
@@ -139,6 +143,7 @@ export default function CallHub() {
 
     setJoinBusy(true);
     setJoinError(null);
+    setJoinGuardError(null);
     try {
       // The one guard, shared with the /call/<param> route.
       const verdict = await resolveJoin(joinCode, {
@@ -158,8 +163,10 @@ export default function CallHub() {
 
       goToRoom(verdict.code);
     } catch (error) {
+      // The guard threw — the RPC failed or we have a bug. Show the REAL
+      // message rather than blaming a room that may well exist.
       console.error('CALL ERROR:', error);
-      setJoinError('call.roomNotFound');
+      setJoinGuardError(error instanceof Error ? error.message : String(error));
     } finally {
       setJoinBusy(false);
     }
@@ -252,6 +259,11 @@ export default function CallHub() {
             </button>
           </form>
           {joinError ? <span className="field-error">{t(joinError)}</span> : null}
+          {joinGuardError && import.meta.env.DEV ? (
+            <span className="call-dev-banner" role="alert">
+              Guard threw: {joinGuardError}
+            </span>
+          ) : null}
         </div>
 
         {/* Your personal line. */}

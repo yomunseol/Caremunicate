@@ -33,6 +33,11 @@ const goHome = () => {
   window.location.hash = '#home';
 };
 
+/** A refused join lands back on the hub, where another room can be chosen. */
+const goToHub = () => {
+  window.location.hash = '#call';
+};
+
 export default function CallPage({ code }: CallPageProps) {
   const { t } = useLang();
   const { user } = useAuth();
@@ -43,6 +48,8 @@ export default function CallPage({ code }: CallPageProps) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The REAL message when the guard itself threw — shown in dev only. */
+  const [guardError, setGuardError] = useState<string | null>(null);
 
   // Keyed by the canonical code so a re-run never opens the room twice.
   const opened = useRef<string | null>(null);
@@ -60,6 +67,7 @@ export default function CallPage({ code }: CallPageProps) {
       }
 
       setBusy(true);
+      setGuardError(null);
       try {
         let verdict = await resolveJoin(normalized, { password: secret, userId: user?.id });
 
@@ -79,10 +87,10 @@ export default function CallPage({ code }: CallPageProps) {
             return;
           }
 
-          // Every refusal is surfaced as a toast on the way home.
+          // Every refusal is surfaced as a toast, and lands back on the hub.
           setChecking(false);
           notify(REFUSAL_NOTICE[verdict.reason]);
-          goHome();
+          goToHub();
           return;
         }
 
@@ -110,11 +118,12 @@ export default function CallPage({ code }: CallPageProps) {
           policy: pendingPolicy ?? verdict.policy,
         });
       } catch (caught) {
+        // A throw is the RPC failing or our own bug — never a missing room.
+        // SECTION 2: log it, show the REAL message in a dev banner, and stay
+        // put rather than mislabelling it roomNotFound and bouncing home.
         console.error('CALL ERROR:', caught);
-        setError(t('call.roomNotFound'));
+        setGuardError(caught instanceof Error ? caught.message : String(caught));
         setChecking(false);
-        notify('room-not-found');
-        goHome();
       } finally {
         setBusy(false);
       }
@@ -148,9 +157,18 @@ export default function CallPage({ code }: CallPageProps) {
     }
   }, [status, stage, roomCode]);
 
+  // Visible dev banner carrying the REAL guard message. Production shows a
+  // neutral line instead — but never "room not found".
+  const devBanner = guardError ? (
+    <div className="call-dev-banner" role="alert">
+      {import.meta.env.DEV ? `Guard threw: ${guardError}` : t('call.connecting')}
+    </div>
+  ) : null;
+
   if (needsPassword) {
     return (
       <section className="section call-page">
+        {devBanner}
         <div className="call-modal-backdrop" role="presentation">
           <form
             className="call-modal"
@@ -197,6 +215,7 @@ export default function CallPage({ code }: CallPageProps) {
 
   return (
     <section className="section call-page">
+      {devBanner}
       <p className="hero-copy" aria-busy={checking}>
         {error ?? t('call.connecting')}
       </p>

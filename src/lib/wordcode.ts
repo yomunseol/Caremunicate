@@ -15,6 +15,41 @@ export const CODE_SEGMENTS = 4;
 const BANK: readonly string[] = WORD_BANK;
 const BANK_SET: ReadonlySet<string> = new Set<string>(WORD_BANK);
 
+// Dev-only bank guard. The bank is hand-curated, so a slipped capital, a digit,
+// a nine-letter word or a word repeated across two categories is a real risk.
+// Throwing at import time means a broken bank can never reach a room code.
+if (import.meta.env.DEV) {
+  const problems: string[] = [];
+
+  if (WORD_BANK_LENGTH !== 1024) {
+    problems.push(`WORD_BANK_LENGTH is ${WORD_BANK_LENGTH}, expected 1024`);
+  }
+  if (BANK.length !== 1024) {
+    problems.push(`WORD_BANK has ${BANK.length} entries, expected 1024`);
+  }
+  if (BANK_SET.size !== BANK.length) {
+    const seen = new Set<string>();
+    const duplicates = BANK.filter((word) => seen.has(word) || (seen.add(word), false));
+    problems.push(
+      `${BANK.length - BANK_SET.size} duplicate entr(ies): ${[...new Set(duplicates)]
+        .slice(0, 8)
+        .join(', ')}`,
+    );
+  }
+
+  const malformed = BANK.filter((word) => !/^[a-z]{3,8}$/.test(word));
+  if (malformed.length > 0) {
+    problems.push(`${malformed.length} malformed word(s): ${malformed.slice(0, 8).join(', ')}`);
+  }
+  if (CODE_SEGMENTS !== 4) {
+    problems.push(`CODE_SEGMENTS is ${CODE_SEGMENTS}, expected 4`);
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`WORD_BANK is invalid:\n  - ${problems.join('\n  - ')}`);
+  }
+}
+
 /** Uniform integer in [0, max) — rejection sampling, so no modulo bias. */
 const randomIndex = (max: number): number => {
   const limit = Math.floor(0x100000000 / max) * max;
@@ -48,16 +83,18 @@ export const generateWordCode = (): string => {
 };
 
 /**
- * Trim, lowercase, spaces/underscores → dashes, collapse repeated dashes, and
- * drop the dashes that collapsing pushes to either end.
+ * Trim, lowercase, spaces/underscores → dashes, collapse repeated dashes.
+ *
+ * Deliberately does NOT strip a leading/trailing dash — the spec body stops
+ * here, and a malformed code is then rejected by isValidWordCode rather than
+ * silently repaired.
  */
-export const normalizeCode = (input: string): string =>
-  String(input ?? '')
+export const normalizeCode = (raw: string): string =>
+  String(raw ?? '')
     .trim()
     .toLowerCase()
     .replace(/[\s_]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '');
+    .replace(/-+/g, '-');
 
 /** Exactly four words, every one of them in WORD_BANK, and all four distinct. */
 export const isValidWordCode = (value: string | null | undefined): boolean => {

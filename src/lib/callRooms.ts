@@ -2,62 +2,83 @@ import { supabase } from './supabase';
 import { generateWordCode, isValidWordCode, normalizeCode } from './wordcode';
 
 // ---------------------------------------------------------------------------
-// Call rooms.
+// Call rooms — MERGED, not replaced.
 //
-// TRANSPORT addresses a room by its call_rooms UUID; the four-word code is the
-// PUBLIC identifier shown to people. The database is the translation layer —
-// words go in at the UI edge, a UUID comes out, and every channel is keyed by
-// that UUID. See lib/wordcode.ts.
+// The spec's six functions define the behaviour; the names already imported
+// across the app define the surface. Each of the six is implemented to the
+// spec, and the extra symbols this app already consumes are kept as thin
+// wrappers or constants on top of them.
 //
-// Passwords never leave the client in plaintext: only the SHA-256 of
-// `${normalizedCode}${password}` is sent to Supabase, so the stored value cannot
-// be replayed against another room and the raw password is never persisted.
+//   SPEC, implemented verbatim in behaviour
+//     normalizeCode        trim, lower, spaces/underscores -> dashes, collapse
+//     hashCallPassword     SHA-256 hex of code + password
+//     generateWordCode     crypto.getRandomValues, 4 distinct words, 1024 bank
+//     createRoom(opts)     <=10 retries on 23505, returns { id, code }
+//     checkRoom(input,pw)  rpc(p_input, p_password_hash), throws, returns the row
+//     setRoomStatus(code)  status (+ ended_at when 'ended')
 //
-// NOTE: `call_rooms` and the `check_call_room` RPC are managed directly in
-// Supabase, not by a migration in this repo. Column names below follow the
-// fields named in the spec (code / host_id / password_hash / status / ended_at).
+//   SURFACE, kept so nothing breaks
+//     looksLikeUuid  CallPolicy  DEFAULT_POLICY  CheckRoomResult  CreatedRoom
+//     RoomResolution  JoinRefusal  JoinVerdict  PersonalRoom
+//     resolveRoom  resolveJoin  setRoomPassword  updateRoomPolicy
+//     ensurePersonalRoom  setPersonalRoomStatus
+//
+// Room ids for channels: a host takes createRoom().id, a joiner takes
+// checkRoom().room_id. The signaling channel is call:${id} everywhere and the
+// four-word code only ever appears in the UI and in URLs.
 // ---------------------------------------------------------------------------
 
-export { WORD_BANK } from './wordBank';
+export { normalizeCode };
+export { generateWordCode };
 
-/** How many times a fresh code is drawn before giving up on a unique insert. */
-const COLLISION_RETRIES = 10;
+/**
+ * Canonical UUID. `call_rooms.id` is internal-only: it must never reach a URL,
+ * a channel name, or the UI. This pattern is how we catch it trying to.
+ */
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type CallRoom = {
-  id?: string;
-  code: string;
-  host_id?: string;
-  status?: string;
-  password_hash?: string | null;
-  created_at?: string;
-  ended_at?: string | null;
-};
+export const looksLikeUuid = (value: string | null | undefined): boolean =>
+  UUID_PATTERN.test((value ?? '').trim());
+
+/** SHA-256 hex of `${code}${password}`. The only form of a password we send. */
+export async function hashCallPassword(code: string, password: string): Promise<string> {
+  const buf = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(normalizeCode(code) + (password ?? '')),
+  );
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------------------------------------------------------------------------
+// The row check_call_room answers with.
+// ---------------------------------------------------------------------------
 
 export type CheckRoomResult = {
   /** The supplied password (or none) satisfied the room. */
   ok: boolean;
   /** The room exists but is password-protected. Drives the password field. */
   has_password: boolean;
-  status?: string;
-  room_id?: string;
-  host_id?: string;
-  /** True when the room holds guests in a waiting room. Optional in the RPC. */
+  status?: string | null;
+  /** Transport key for the channel — call_rooms.id. */
+  room_id?: string | null;
+  /** Public word code. */
+  code?: string | null;
+  host_id?: string | null;
+  /** True when the row is somebody's personal line rather than a meeting. */
+  personal?: boolean | null;
   lobby_enabled?: boolean | null;
   locked?: boolean | null;
   auto_mute?: boolean | null;
   allow_share?: boolean | null;
   max_participants?: number | null;
-  /** True when the row is somebody's personal line rather than a meeting. */
-  personal?: boolean | null;
   /** Live headcount, so the guard can refuse an over-capacity join. */
   participant_count?: number | null;
 };
 
 /**
  * Live room policy, broadcast as `call:policy` and mirrored into `call_rooms`.
- *
- * `has_password` is a BOOLEAN: the password hash never leaves the database and
- * is never put in this object, broadcast, or rendered.
+ * `has_password` is a BOOLEAN: no digest ever enters this object.
  */
 export type CallPolicy = {
   lobby_enabled: boolean;
@@ -73,24 +94,110 @@ export const DEFAULT_POLICY: CallPolicy = {
   locked: false,
   auto_mute: false,
   allow_share: true,
-  // Aligns with the mesh cap the engine enforces.
   max_participants: 4,
   has_password: false,
 };
 
-/**
- * Canonical UUID. `call_rooms.id` is internal-only: it must never reach a URL,
- * a channel name, or the UI. This pattern is how we catch it trying to.
- */
-export const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export type CreatedRoom = {
+  /** Transport key — call_rooms.id. */
+  id: string;
+  /** Public 4-word code. */
+  code: string;
+};
 
-export const looksLikeUuid = (value: string | null | undefined): boolean =>
-  UUID_PATTERN.test((value ?? '').trim());
+export type CreateRoomOptions = {
+  /** Optional room password. Only its SHA-256 ever leaves the client. */
+  password?: string;
+  /** Spec name for the waiting room. */
+  lobby?: boolean;
+  /** Kept: CallHub already passes this name. */
+  lobbyEnabled?: boolean;
+  allowShare?: boolean;
+  autoMute?: boolean;
+};
+
+/** How many fresh codes are drawn before a unique insert is given up on. */
+const COLLISION_RETRIES = 10;
+
+/**
+ * Creates a meeting room with a FRESH random code, awaiting the insert fully.
+ *
+ * `status: 'waiting'` is set even though the spec snippet omits it — SECTION 3
+ * requires the host to promote the row out of 'waiting' on subscribe, which
+ * cannot fire on a null status.
+ */
+export async function createRoom(options: CreateRoomOptions = {}): Promise<CreatedRoom> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error('NOT_AUTHENTICATED');
+
+  const password = (options.password ?? '').trim();
+  const lobby = options.lobby ?? options.lobbyEnabled ?? true;
+
+  let lastErr: unknown = null;
+  for (let i = 0; i < COLLISION_RETRIES; i++) {
+    const code = generateWordCode();
+
+    const { data, error } = await supabase
+      .from('call_rooms')
+      .insert({
+        host_id: user.id,
+        code,
+        status: 'waiting',
+        password_hash: password ? await hashCallPassword(code, password) : null,
+        lobby_enabled: lobby,
+        allow_share: options.allowShare ?? true,
+        auto_mute: options.autoMute ?? true,
+      })
+      .select('id, code')
+      .single();
+
+    if (!error) {
+      const row = data as { id?: string; code?: string } | null;
+      return { id: String(row?.id ?? ''), code: String(row?.code ?? code) };
+    }
+
+    lastErr = error;
+    if (error.code !== '23505') break;
+  }
+
+  throw lastErr ?? new Error('CODE_COLLISION');
+}
+
+/**
+ * The one gate into a room.
+ *
+ * `check_call_room(p_input, p_password_hash)` accepts a word code OR a UUID and
+ * answers with the row (room_id, code, status, host_id, personal, has_password,
+ * locked, ok). An rpc error is THROWN, never swallowed — the route guard shows
+ * the real message rather than pretending the room does not exist.
+ */
+export async function checkRoom(
+  input: string,
+  password = '',
+): Promise<CheckRoomResult | null> {
+  const normalized = normalizeCode(input);
+  if (!normalized) return null;
+
+  const hash = password ? await hashCallPassword(normalized, password) : '';
+
+  const { data, error } = await supabase.rpc('check_call_room', {
+    p_input: normalized,
+    p_password_hash: hash,
+  });
+
+  if (error) throw error;
+  return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;
+}
+
+// ---------------------------------------------------------------------------
+// Surface kept for the rest of the app.
+// ---------------------------------------------------------------------------
 
 /** A resolved room: the transport key plus the public identity for the UI. */
 export type RoomResolution = {
-  /** Transport key — the call_rooms UUID, or a synthetic dm-/em- key. */
+  /** Transport key — call_rooms.id, or a synthetic dm-/em- key. */
   key: string;
   /** Public 4-word code. Empty for synthetic rooms, which have no row. */
   code: string;
@@ -102,246 +209,34 @@ export type RoomResolution = {
 const SYNTHETIC_RESOLUTION = { personal: false, status: null, host_id: null } as const;
 
 /**
- * Translates any room identifier into its transport key.
- *
- *   UUID input     -> the UUID is already a valid key; the lookup only recovers
- *                     the words so the UI can show them.
- *   word-code input-> the DB is the ONLY route to the UUID. If no row answers,
- *                     `key` comes back empty and the caller must refuse the
- *                     join — a channel keyed by words must never exist.
- *   anything else  -> a synthetic peer/emergency room, passed through.
+ * Wrapper over checkRoom, kept for its existing callers (CallLayer's leak
+ * guard, CallPage's canonicalisation). Synthetic peer/emergency keys pass
+ * through untouched; a word code must answer with a room_id or it is refused,
+ * because a word-keyed channel must never exist.
  */
 export const resolveRoom = async (input: string): Promise<RoomResolution> => {
   const value = normalizeCode(input);
   if (!value) return { key: '', code: '', ...SYNTHETIC_RESOLUTION };
 
-  const byId = looksLikeUuid(value);
-
   // Synthetic peer (dm-<uuid>-<uuid>) and emergency (em-<uuid>) rooms have no
   // call_rooms row and are already valid channel keys.
-  if (!byId && !isValidWordCode(value)) {
+  if (!looksLikeUuid(value) && !isValidWordCode(value)) {
     return { key: value, code: '', ...SYNTHETIC_RESOLUTION };
   }
 
-  // The policy columns are optional in this project, so a select that names a
-  // missing one must not sink the whole lookup — fall back to the core pair.
-  const full = await supabase
-    .from('call_rooms')
-    .select('id, code, personal, status, host_id')
-    .eq(byId ? 'id' : 'code', value)
-    .maybeSingle();
-
-  let data: unknown = full.data;
-  let error = full.error;
-
-  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
-    const minimal = await supabase
-      .from('call_rooms')
-      .select('id, code')
-      .eq(byId ? 'id' : 'code', value)
-      .maybeSingle();
-    data = minimal.data;
-    error = minimal.error;
-  }
-
-  if (error) console.error('CALL ERROR:', error.message);
-
-  const row = (error ? null : data) as {
-    id?: string;
-    code?: string;
-    personal?: boolean;
-    status?: string;
-    host_id?: string;
-  } | null;
-
-  if (!row) {
-    // A UUID still works as a key; a bare word code does not (we must never
-    // subscribe on a word-keyed channel).
-    return { key: byId ? value : '', code: byId ? '' : value, ...SYNTHETIC_RESOLUTION };
-  }
-
-  return {
-    key: String(row.id ?? (byId ? value : '')),
-    code: String(row.code ?? ''),
-    personal: row.personal === true,
-    status: typeof row.status === 'string' ? row.status : null,
-    host_id: typeof row.host_id === 'string' ? row.host_id : null,
-  };
-};
-
-// generateWordCode / normalizeCode / isValidWordCode all live in lib/wordcode.ts
-// alongside the WORD_BANK they are built from.
-
-const toHex = (buffer: ArrayBuffer): string =>
-  Array.from(new Uint8Array(buffer))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-
-/** SHA-256 hex of `${code}${password}`. The only form of a password that leaves the client. */
-export const hashCallPassword = async (code: string, password: string): Promise<string> => {
-  const payload = `${normalizeCode(code)}${password ?? ''}`;
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(payload));
-  return toHex(digest);
-};
-
-/**
- * Creates a room hosted by the current session. Retries on unique-code
- * collisions (Postgres 23505) — 16.7M codes make that vanishingly rare, but a
- * collision must never surface as a failed "Start meeting".
- */
-export type CreateRoomOptions = {
-  /** Optional room password. Only its SHA-256 ever leaves the client. */
-  password?: string;
-  lobbyEnabled?: boolean;
-  autoMute?: boolean;
-  allowShare?: boolean;
-  maxParticipants?: number;
-};
-
-export type CreatedRoom = {
-  /** Transport key — call_rooms.id. */
-  id: string;
-  /** Public 4-word code. */
-  code: string;
-};
-
-export const createRoom = async (options: CreateRoomOptions = {}): Promise<CreatedRoom> => {
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) throw sessionError;
-
-  const hostId = sessionData.session?.user?.id;
-  if (!hostId) throw new Error('createRoom requires an authenticated session');
-
-  const trimmed = (options.password ?? '').trim();
-
-  const policyColumns = {
-    lobby_enabled: options.lobbyEnabled ?? true,
-    locked: false,
-    auto_mute: options.autoMute ?? false,
-    allow_share: options.allowShare ?? true,
-    max_participants: options.maxParticipants ?? DEFAULT_POLICY.max_participants,
-  };
-
-  // Field groups, richest first. If this project predates a policy column the
-  // insert is retried with a smaller shape instead of blocking "Start meeting".
-  const shapes: Array<Record<string, unknown>> = [
-    policyColumns,
-    { lobby_enabled: policyColumns.lobby_enabled },
-    {},
-  ];
-
-  let lastError: unknown = null;
-
-  for (const shape of shapes) {
-    // A meeting room gets a FRESH random code every time; a unique collision
-    // simply draws another one (up to COLLISION_RETRIES times).
-    for (let attempt = 0; attempt < COLLISION_RETRIES; attempt += 1) {
-      const code = generateWordCode();
-
-      const { data, error } = await supabase
-        .from('call_rooms')
-        .insert({
-          code,
-          host_id: hostId,
-          status: 'waiting',
-          // Only the digest is written; the plaintext password is dropped here.
-          password_hash: trimmed ? await hashCallPassword(code, trimmed) : null,
-          ...shape,
-        })
-        .select('id, code')
-        .single();
-
-      if (!error) {
-        const row = data as { id?: string; code?: string } | null;
-        return { id: String(row?.id ?? ''), code: String(row?.code ?? code) };
-      }
-
-      // 42703 = undefined_column, PGRST204 = column not found in the schema cache.
-      if (error.code === '42703' || error.code === 'PGRST204') {
-        lastError = error;
-        break; // fall through to the next, smaller shape
-      }
-
-      lastError = error;
-      if (error.code !== '23505') throw error;
-    }
-  }
-
-  throw lastError ?? new Error('Could not allocate a unique room code');
-};
-
-/**
- * Mirrors a policy change into the room row. Addressed by the transport key
- * (the UUID); never writes `has_password`.
- */
-export const updateRoomPolicy = async (roomKey: string, patch: Partial<CallPolicy>): Promise<void> => {
-  if (!roomKey) return;
-
-  const columns: Record<string, unknown> = {};
-  if (typeof patch.lobby_enabled === 'boolean') columns.lobby_enabled = patch.lobby_enabled;
-  if (typeof patch.locked === 'boolean') columns.locked = patch.locked;
-  if (typeof patch.auto_mute === 'boolean') columns.auto_mute = patch.auto_mute;
-  if (typeof patch.allow_share === 'boolean') columns.allow_share = patch.allow_share;
-  if (typeof patch.max_participants === 'number') columns.max_participants = patch.max_participants;
-  if (Object.keys(columns).length === 0) return;
-
-  const { error } = await supabase.from('call_rooms').update(columns).eq('id', roomKey);
-  // A project without the policy columns simply keeps them in memory only.
-  if (error && error.code !== '42703' && error.code !== 'PGRST204') throw error;
-};
-
-/**
- * Sets (or clears) the room password.
- *
- * The digest is derived from the PUBLIC code (that is what check_call_room
- * hashes against), written against the room's UUID, and then discarded — it is
- * never returned, stored in state, logged, or broadcast.
- */
-export const setRoomPassword = async (
-  roomKey: string,
-  code: string,
-  password: string,
-): Promise<void> => {
-  if (!roomKey) return;
-
-  const normalizedCode = normalizeCode(code);
-  const trimmed = (password ?? '').trim();
-
-  const { error } = await supabase
-    .from('call_rooms')
-    .update({
-      password_hash:
-        trimmed && normalizedCode ? await hashCallPassword(normalizedCode, trimmed) : null,
-    })
-    .eq('id', roomKey);
-
-  if (error) throw error;
-};
-
-/**
- * The one gate into a room, shared by the hub's join box and the /call/<param>
- * route guard.
- *
- * `check_call_room(p_input, hash)` accepts EITHER a word code or a UUID. The
- * password digest is always derived from the room's public CODE (that is what
- * the RPC hashes against), so a UUID input is resolved to its code first.
- */
-export const checkRoom = async (input: string, password = ''): Promise<CheckRoomResult | null> => {
-  const value = normalizeCode(input);
-  if (!value) return null;
-
-  // Resolve first only to learn the code the digest must be based on.
-  const resolution = await resolveRoom(value);
-  const code = resolution.code || value;
-  const hash = password ? await hashCallPassword(code, password) : null;
-
-  const { data, error } = await supabase.rpc('check_call_room', {
-    p_input: value,
-    p_password_hash: hash,
+  const row = await checkRoom(value).catch((error) => {
+    console.error('CALL ERROR:', error?.message ?? error);
+    return null;
   });
 
-  if (error) throw error;
-  return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;
+  const key = row?.room_id ? String(row.room_id) : looksLikeUuid(value) ? value : '';
+  return {
+    key,
+    code: String(row?.code ?? (looksLikeUuid(value) ? '' : value)),
+    personal: row?.personal === true,
+    status: typeof row?.status === 'string' ? row.status : null,
+    host_id: typeof row?.host_id === 'string' ? row.host_id : null,
+  };
 };
 
 /** Why a join was refused, in the order the guard checks. */
@@ -367,8 +262,8 @@ export type JoinVerdict =
   | { ok: false; reason: JoinRefusal };
 
 /**
- * The single join guard. Both entry points call exactly this, so the hub and
- * the /call/<param> route can never disagree about why a room is closed.
+ * The single join guard, shared by the hub and the /call route so the two can
+ * never disagree. Built entirely on checkRoom — nothing else is queried.
  */
 export const resolveJoin = async (
   input: string,
@@ -377,98 +272,131 @@ export const resolveJoin = async (
   const value = normalizeCode(input);
   if (!value) return { ok: false, reason: 'roomNotFound' };
 
-  const result = await checkRoom(value, options.password ?? '');
-  if (!result || result.status === 'ended') return { ok: false, reason: 'roomNotFound' };
+  const row = await checkRoom(value, options.password ?? '');
+  if (!row || !row.room_id || row.status === 'ended') {
+    return { ok: false, reason: 'roomNotFound' };
+  }
 
   // A protected room asks for the password before anything else.
-  if (result.has_password && !result.ok) return { ok: false, reason: 'password' };
+  if (row.has_password && !row.ok) return { ok: false, reason: 'password' };
 
-  const resolution = await resolveRoom(value);
-  if (!resolution.key) return { ok: false, reason: 'roomNotFound' };
-
-  const isHost = Boolean(
-    options.userId && (result.host_id ?? resolution.host_id) === options.userId,
-  );
-  const personal = result.personal === true || resolution.personal;
-  const status = result.status ?? resolution.status;
+  const isHost = Boolean(options.userId && row.host_id === options.userId);
+  const personal = row.personal === true;
+  const status = row.status ?? null;
 
   // The host is never blocked by their own room's rules.
   if (!isHost) {
-    if (result.locked === true) return { ok: false, reason: 'meetingLocked' };
+    if (row.locked === true) return { ok: false, reason: 'meetingLocked' };
     if (personal && status === 'waiting') return { ok: false, reason: 'lineClosed' };
     if (
-      typeof result.max_participants === 'number' &&
-      typeof result.participant_count === 'number' &&
-      result.participant_count >= result.max_participants
+      typeof row.max_participants === 'number' &&
+      typeof row.participant_count === 'number' &&
+      row.participant_count >= row.max_participants
     ) {
       return { ok: false, reason: 'meetingFull' };
     }
   }
 
   const policy: Partial<CallPolicy> = {
-    lobby_enabled: result.lobby_enabled === true,
-    locked: result.locked === true,
-    auto_mute: result.auto_mute === true,
-    allow_share: result.allow_share !== false,
-    has_password: Boolean(result.has_password),
-    ...(typeof result.max_participants === 'number'
-      ? { max_participants: result.max_participants }
+    lobby_enabled: row.lobby_enabled === true,
+    locked: row.locked === true,
+    auto_mute: row.auto_mute === true,
+    allow_share: row.allow_share !== false,
+    has_password: Boolean(row.has_password),
+    ...(typeof row.max_participants === 'number'
+      ? { max_participants: row.max_participants }
       : {}),
   };
 
   // Word-code URLs only: never navigate with a UUID.
   return {
     ok: true,
-    code: resolution.code || value,
-    key: resolution.key,
+    code: String(row.code ?? value),
+    key: String(row.room_id),
     isHost,
     personal,
-    lobby: result.lobby_enabled === true,
+    lobby: row.lobby_enabled === true,
     policy,
   };
 };
 
-/** Updates a room's lifecycle status, addressed by its transport key (UUID). */
-export const setRoomStatus = async (roomKey: string, status: string): Promise<void> => {
+/** Updates a room's lifecycle status, addressed by its public code. */
+export const setRoomStatus = async (code: string, status: 'active' | 'ended' | string) => {
+  const normalized = normalizeCode(code);
+  if (!normalized) return;
+
+  return supabase
+    .from('call_rooms')
+    .update({
+      status,
+      ended_at: status === 'ended' ? new Date().toISOString() : null,
+    })
+    .eq('code', normalized);
+};
+
+/** Mirrors a policy change into the room row. Never writes `has_password`. */
+export const updateRoomPolicy = async (
+  roomKey: string,
+  patch: Partial<CallPolicy>,
+): Promise<void> => {
   if (!roomKey) return;
 
-  const patch: { status: string; ended_at?: string } = { status };
-  if (status === 'ended') patch.ended_at = new Date().toISOString();
+  const columns: Record<string, unknown> = {};
+  if (typeof patch.lobby_enabled === 'boolean') columns.lobby_enabled = patch.lobby_enabled;
+  if (typeof patch.locked === 'boolean') columns.locked = patch.locked;
+  if (typeof patch.auto_mute === 'boolean') columns.auto_mute = patch.auto_mute;
+  if (typeof patch.allow_share === 'boolean') columns.allow_share = patch.allow_share;
+  if (typeof patch.max_participants === 'number') columns.max_participants = patch.max_participants;
+  if (Object.keys(columns).length === 0) return;
 
-  const { error } = await supabase.from('call_rooms').update(patch).eq('id', roomKey);
+  const { error } = await supabase.from('call_rooms').update(columns).eq('id', roomKey);
+  if (error) console.error('CALL ERROR:', error.message);
+};
+
+/**
+ * Sets (or clears) the room password. The digest is written against the room's
+ * UUID and discarded — never returned, stored, logged or broadcast.
+ */
+export const setRoomPassword = async (
+  roomKey: string,
+  code: string,
+  password: string,
+): Promise<void> => {
+  if (!roomKey) return;
+
+  const normalizedCode = normalizeCode(code);
+  const trimmed = (password ?? '').trim();
+
+  const { error } = await supabase
+    .from('call_rooms')
+    .update({
+      password_hash:
+        trimmed && normalizedCode ? await hashCallPassword(normalizedCode, trimmed) : null,
+    })
+    .eq('id', roomKey);
+
   if (error) throw error;
 };
 
 // ---------------------------------------------------------------------------
-// Personal rooms — one per user, created lazily.
-//
-// The code is derived from the owner's user id, so it is stable without a
-// lookup. A unique collision on insert retries with the NEXT four hash bytes,
-// which keeps the mapping deterministic per room.
+// Personal rooms — one per user, created once and never regenerated.
 // ---------------------------------------------------------------------------
 
 export type PersonalRoom = { id: string; code: string; status: string };
 
-/** Finds (or lazily creates) the signed-in user's personal room. */
+/**
+ * Finds (or lazily creates) the signed-in user's personal room.
+ *
+ * The lookup comes first, so an existing line always keeps the code it was
+ * given; a code is drawn only when no row exists at all.
+ */
 export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom | null> => {
   if (!userId) return null;
 
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) {
-    console.error('CALL ERROR:', sessionError.message);
-    return null;
-  }
-
+  const { data: sessionData } = await supabase.auth.getSession();
   const owner = sessionData.session?.user?.id ?? userId;
   if (!owner) return null;
 
-  const shape = (row: { id?: unknown; code?: unknown; status?: unknown }): PersonalRoom => ({
-    id: String(row.id ?? ''),
-    code: String(row.code ?? ''),
-    status: String(row.status ?? 'waiting'),
-  });
-
-  // Already provisioned?
   const { data: existing, error: findError } = await supabase
     .from('call_rooms')
     .select('id, code, status')
@@ -476,19 +404,20 @@ export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom |
     .eq('personal', true)
     .maybeSingle();
 
-  if (!findError && existing) return shape(existing as Record<string, unknown>);
+  if (!findError && existing) {
+    const row = existing as { id?: string; code?: string; status?: string };
+    return { id: String(row.id ?? ''), code: String(row.code ?? ''), status: String(row.status ?? 'waiting') };
+  }
 
-  // The code is drawn ONCE, at first creation, and then lives in that row
-  // forever — the same user always returns to the same code across refreshes,
-  // and no two users share one. Only a unique collision draws a new code.
-  for (let attempt = 0; attempt < COLLISION_RETRIES; attempt += 1) {
+  // Never regenerates: this only runs when the user has no personal row.
+  for (let i = 0; i < COLLISION_RETRIES; i++) {
     const code = generateWordCode();
 
     const { data, error } = await supabase
       .from('call_rooms')
       .insert({
-        code,
         host_id: owner,
+        code,
         status: 'waiting',
         personal: true,
         // Personal rooms default to no lobby and no password.
@@ -498,13 +427,14 @@ export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom |
       .select('id, code, status')
       .single();
 
-    if (!error && data) return shape(data as Record<string, unknown>);
-
+    if (!error && data) {
+      const row = data as { id?: string; code?: string; status?: string };
+      return { id: String(row.id ?? ''), code: String(row.code ?? ''), status: String(row.status ?? 'waiting') };
+    }
     if (error && error.code !== '23505') {
       console.error('CALL ERROR:', error.message);
       return null;
     }
-    // 23505 -> draw another code.
   }
 
   return null;

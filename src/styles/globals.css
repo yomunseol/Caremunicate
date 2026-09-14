@@ -2117,3 +2117,19 @@ img {
 .cal-tab.is-active {
   background: #fff;
 }
+
+/* Visible dev-only banner carrying a real guard/RPC message. Never shown in
+   production, and never a stand-in for "room not found". */
+.call-dev-banner {
+  display: block;
+  padding-block: 0.5rem;
+  padding-inline: 0.7rem;
+  border-radius: 0.6rem;
+  background: rgba(224, 101, 90, 0.12);
+  border: 1px solid rgba(224, 101, 90, 0.4);
+  color: #9c3636;
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+}

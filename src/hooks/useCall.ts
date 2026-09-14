@@ -1253,9 +1253,12 @@ export function useCall(
         }
 
         // Host promotes the room out of 'waiting' once signaling is live.
-        if (hostRef.current && !promoted.current && room.current) {
+        // setRoomStatus addresses by the public code, never the transport key.
+        if (hostRef.current && !promoted.current && roomCodeRef.current) {
           promoted.current = true;
-          void setRoomStatus(room.current, 'active').catch((error) => console.error('CALL ERROR:', error));
+          void setRoomStatus(roomCodeRef.current, 'active').catch((error) =>
+            console.error('CALL ERROR:', error),
+          );
         }
       });
     },
@@ -1833,7 +1836,10 @@ export function useCall(
       });
     }
 
-    void setRoomStatus(code, 'ended').catch((error) => console.error('CALL ERROR:', error));
+    // Addressed by the public code; `code` above is the transport key.
+    void setRoomStatus(roomCodeRef.current ?? '', 'ended').catch((error) =>
+      console.error('CALL ERROR:', error),
+    );
     window.setTimeout(() => finish('room-ended'), 400);
   }, [me, send, finish, sendDataChannel]);
 

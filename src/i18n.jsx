@@ -522,6 +522,7 @@ const translations = {
     'cal.joinTooEarly': 'The call opens 10 minutes before start.',
     'cal.reschedule': 'Reschedule',
     'cal.cancelAppointment': 'Cancel appointment',
+    'call.startFailed': 'Could not start the meeting. Try again.',
   },
 
   fr: {
@@ -1010,6 +1011,7 @@ const translations = {
     'cal.joinTooEarly': "L'appel ouvre 10 minutes avant le début.",
     'cal.reschedule': 'Reprogrammer',
     'cal.cancelAppointment': 'Annuler le rendez-vous',
+    'call.startFailed': 'Impossible de démarrer la réunion. Réessayez.',
   },
 
   es: {
@@ -1493,6 +1495,7 @@ const translations = {
     'cal.joinTooEarly': 'La llamada se abre 10 minutos antes del inicio.',
     'cal.reschedule': 'Reprogramar',
     'cal.cancelAppointment': 'Cancelar cita',
+    'call.startFailed': 'No se pudo iniciar la reunión. Inténtalo de nuevo.',
   },
 
   ko: {
@@ -1961,6 +1964,7 @@ const translations = {
     'cal.joinTooEarly': '통화는 시작 10분 전에 열립니다.',
     'cal.reschedule': '일정 변경',
     'cal.cancelAppointment': '예약 취소',
+    'call.startFailed': '회의를 시작할 수 없습니다. 다시 시도해 주세요.',
   },
 
   zh: {
@@ -2422,6 +2426,7 @@ const translations = {
     'cal.joinTooEarly': '通话开始前 10 分钟开放。',
     'cal.reschedule': '改期',
     'cal.cancelAppointment': '取消预约',
+    'call.startFailed': '无法开始会议，请重试。',
   },
 
   pt: {
@@ -2904,6 +2909,7 @@ const translations = {
     'cal.joinTooEarly': 'A chamada abre 10 minutos antes do início.',
     'cal.reschedule': 'Reagendar',
     'cal.cancelAppointment': 'Cancelar consulta',
+    'call.startFailed': 'Não foi possível iniciar a reunião. Tente novamente.',
   },
 
   de: {
@@ -3390,6 +3396,7 @@ const translations = {
     'cal.joinTooEarly': 'Der Anruf öffnet 10 Minuten vor Beginn.',
     'cal.reschedule': 'Verschieben',
     'cal.cancelAppointment': 'Termin stornieren',
+    'call.startFailed': 'Meeting konnte nicht gestartet werden. Erneut versuchen.',
   },
 
   it: {
@@ -3872,6 +3879,7 @@ const translations = {
     'cal.joinTooEarly': "La chiamata apre 10 minuti prima dell'inizio.",
     'cal.reschedule': 'Riprogramma',
     'cal.cancelAppointment': 'Annulla appuntamento',
+    'call.startFailed': 'Impossibile avviare la riunione. Riprova.',
   },
 
   ar: {
@@ -4346,6 +4354,7 @@ const translations = {
     'cal.joinTooEarly': 'تفتح المكالمة قبل الموعد بـ 10 دقائق.',
     'cal.reschedule': 'إعادة الجدولة',
     'cal.cancelAppointment': 'إلغاء الموعد',
+    'call.startFailed': 'تعذر بدء الاجتماع. حاول مجددًا.',
   },
 
   he: {
@@ -4814,6 +4823,7 @@ const translations = {
     'cal.joinTooEarly': 'השיחה נפתחת 10 דקות לפני ההתחלה.',
     'cal.reschedule': 'שינוי מועד',
     'cal.cancelAppointment': 'ביטול פגישה',
+    'call.startFailed': 'לא ניתן להתחיל את הפגישה. נסו שוב.',
   },
 };
 
