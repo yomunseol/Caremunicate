@@ -20,7 +20,13 @@ export default function CallParticipantsPanel({ onClose }: CallParticipantsPanel
     <aside className="call-participants" style={styles.panel} role="dialog" aria-label={t('call.participants')}>
       <header style={styles.head}>
         <strong>{t('call.participants')}</strong>
-        <button type="button" onClick={onClose} aria-label={t('common.close')} style={styles.close}>
+        <button
+          type="button"
+          className="call-panel-close"
+          onClick={onClose}
+          aria-label={t('common.close')}
+          style={styles.close}
+        >
           <X size={16} />
         </button>
       </header>

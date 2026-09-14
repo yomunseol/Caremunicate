@@ -502,6 +502,8 @@ const translations = {
     'call.meetingLocked': 'This meeting is locked.',
     'call.meetingFull': 'This meeting is full.',
     'call.security': 'Security',
+    'call.joinWithoutVideo': 'Join without video',
+    'call.hostControls': 'Host controls',
   },
 
   fr: {
@@ -970,6 +972,8 @@ const translations = {
     'call.meetingLocked': 'Cette réunion est verrouillée.',
     'call.meetingFull': 'Cette réunion est complète.',
     'call.security': 'Sécurité',
+    'call.joinWithoutVideo': 'Rejoindre sans vidéo',
+    'call.hostControls': 'Contrôles hôte',
   },
 
   es: {
@@ -1433,6 +1437,8 @@ const translations = {
     'call.meetingLocked': 'Esta reunión está bloqueada.',
     'call.meetingFull': 'Esta reunión está llena.',
     'call.security': 'Seguridad',
+    'call.joinWithoutVideo': 'Unirse sin video',
+    'call.hostControls': 'Controles de anfitrión',
   },
 
   ko: {
@@ -1881,6 +1887,8 @@ const translations = {
     'call.meetingLocked': '잠긴 회의입니다.',
     'call.meetingFull': '회의가 가득 찼습니다.',
     'call.security': '보안',
+    'call.joinWithoutVideo': '비디오 없이 참여',
+    'call.hostControls': '진행자 제어',
   },
 
   zh: {
@@ -2322,6 +2330,8 @@ const translations = {
     'call.meetingLocked': '会议已锁定。',
     'call.meetingFull': '会议已满。',
     'call.security': '安全',
+    'call.joinWithoutVideo': '不开视频加入',
+    'call.hostControls': '主持人控制',
   },
 
   pt: {
@@ -2784,6 +2794,8 @@ const translations = {
     'call.meetingLocked': 'Esta reunião está bloqueada.',
     'call.meetingFull': 'Esta reunião está lotada.',
     'call.security': 'Segurança',
+    'call.joinWithoutVideo': 'Entrar sem vídeo',
+    'call.hostControls': 'Controles do anfitrião',
   },
 
   de: {
@@ -3250,6 +3262,8 @@ const translations = {
     'call.meetingLocked': 'Dieses Meeting ist gesperrt.',
     'call.meetingFull': 'Dieses Meeting ist voll.',
     'call.security': 'Sicherheit',
+    'call.joinWithoutVideo': 'Ohne Video beitreten',
+    'call.hostControls': 'Host-Steuerung',
   },
 
   it: {
@@ -3712,6 +3726,8 @@ const translations = {
     'call.meetingLocked': 'Questa riunione è bloccata.',
     'call.meetingFull': 'Questa riunione è piena.',
     'call.security': 'Sicurezza',
+    'call.joinWithoutVideo': 'Entra senza video',
+    'call.hostControls': 'Controlli host',
   },
 
   ar: {
@@ -4166,6 +4182,8 @@ const translations = {
     'call.meetingLocked': 'هذا الاجتماع مقفل.',
     'call.meetingFull': 'هذا الاجتماع ممتلئ.',
     'call.security': 'الأمان',
+    'call.joinWithoutVideo': 'الانضمام بدون فيديو',
+    'call.hostControls': 'أدوات المضيف',
   },
 
   he: {
@@ -4614,6 +4632,8 @@ const translations = {
     'call.meetingLocked': 'פגישה זו נעולה.',
     'call.meetingFull': 'פגישה זו מלאה.',
     'call.security': 'אבטחה',
+    'call.joinWithoutVideo': 'הצטרפות ללא וידאו',
+    'call.hostControls': 'שליטת מארח',
   },
 };
 

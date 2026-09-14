@@ -1719,53 +1719,196 @@ img {
   overflow-y: auto;
 }
 
-.call-security {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  z-index: 1;
-  width: min(22rem, 88vw);
-  pointer-events: auto;
-  display: grid;
-  align-content: start;
-  gap: 0.7rem;
-  padding: 0.9rem;
-  background: rgba(9, 32, 27, 0.96);
-  border-inline-end: 1px solid rgba(255, 255, 255, 0.16);
+/* ---------------------------------------------------------------------------
+   CallLayer restyle — Meet-style tiles, overflow menu, slide-over panels.
+   --------------------------------------------------------------------------- */
+@keyframes callTileIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.call-tile {
+  animation: callTileIn 150ms ease-out;
+  transition: outline-color 160ms ease;
+}
+
+/* 2px mint speaking ring. An outline (not box-shadow) so it never fights the
+   tile's inline soft shadow. */
+.call-tile.is-speaking {
+  outline: 2px solid var(--accent, #3ea985);
+  outline-offset: -2px;
+}
+
+.call-tile.is-pinned {
+  outline: 2px solid #f0d27a;
+  outline-offset: -2px;
+}
+
+@keyframes callReactionFloat {
+  0% { opacity: 0; transform: translate(-50%, 0.75rem) scale(0.85); }
+  15% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
+  100% { opacity: 0; transform: translate(-50%, -4rem) scale(1); }
+}
+
+.call-reaction {
+  animation: callReactionFloat 2s ease-out forwards;
+  pointer-events: none;
+}
+
+.call-panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
   color: #f2fffa;
+  cursor: pointer;
+}
+
+/* Slide-overs arrive from the inline end (RTL-aware). */
+@keyframes callSlideIn {
+  from { transform: translateX(6%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes callSlideInRtl {
+  from { transform: translateX(-6%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.call-participants {
+  animation: callSlideIn 180ms ease-out;
+}
+
+[dir='rtl'] .call-participants {
+  animation-name: callSlideInRtl;
+}
+
+.call-stats-panel {
+  align-content: start;
+  gap: 0.6rem;
   overflow-y: auto;
 }
 
-.call-security-head {
+/* Overflow "⋮" menu */
+.call-overflow {
+  position: absolute;
+  inset-block-end: 3.6rem;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  width: min(22rem, 92vw);
+  max-height: min(70vh, 34rem);
+  overflow-y: auto;
+  pointer-events: auto;
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.7rem;
+  border-radius: 1rem;
+  background: rgba(9, 32, 27, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  color: #f2fffa;
+}
+
+.call-overflow-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  padding-block-end: 0.2rem;
 }
 
-.call-security-head strong {
-  display: inline-flex;
+.call-overflow-item {
+  display: flex;
   align-items: center;
-  gap: 0.4rem;
-}
-
-.call-security .call-switch-label {
+  gap: 0.55rem;
+  width: 100%;
+  padding-block: 0.55rem;
+  padding-inline: 0.6rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: transparent;
   color: #f2fffa;
+  font: inherit;
+  font-size: 0.84rem;
+  text-align: start;
+  cursor: pointer;
 }
 
-.call-security-password {
+.call-overflow-item:hover,
+.call-overflow-item.is-on {
+  background: rgba(62, 169, 133, 0.22);
+}
+
+.call-overflow-section {
   display: grid;
-  gap: 0.4rem;
-  padding-block-start: 0.5rem;
+  gap: 0.5rem;
+  margin-block-start: 0.35rem;
+  padding-block-start: 0.6rem;
   border-block-start: 1px solid rgba(255, 255, 255, 0.14);
 }
 
-.call-security-save {
-  justify-self: start;
+.call-overflow-section-title {
+  color: #8fd8bd;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-@media (max-width: 720px) {
-  .call-security {
-    width: 100%;
-  }
+.call-overflow .call-switch-label {
+  color: #f2fffa;
 }
+
+.call-overflow .call-devices.is-compact {
+  min-width: 0;
+}
+
+.call-overflow-password {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.call-overflow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.call-overflow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.call-overflow-name {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  margin-inline-end: auto;
+}
+
+.call-overflow-empty {
+  color: #8aa8a1;
+  font-size: 0.8rem;
+}
+
+.call-overflow-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(224, 101, 90, 0.5);
+  background: rgba(224, 101, 90, 0.18);
+  color: #ffd9d4;
+  cursor: pointer;
+}
+

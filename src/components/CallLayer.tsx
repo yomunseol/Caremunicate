@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  Activity,
   Hand,
   LayoutGrid,
-  Lock,
-  Maximize,
   Mic,
   MicOff,
   MonitorUp,
+  MoreVertical,
   Phone,
   PhoneOff,
   Settings,
-  ShieldCheck,
   Smile,
   Users,
   Video,
@@ -21,32 +18,33 @@ import {
 } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
-import type { PeerConnState, Reaction } from '../hooks/useCall';
+import type { PeerConnState } from '../hooks/useCall';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
-import CallSecurityPanel from './CallSecurityPanel';
-import CallDevicePicker from './CallDevicePicker';
+import CallOverflowMenu from './CallOverflowMenu';
 
 // ---------------------------------------------------------------------------
 // CallLayer — the one and only call surface.
 //
-// Every call fragment renders here and nowhere else: the green room, the
-// waiting room, the incoming modal, the adaptive grid (gallery / speaker), the
-// top bar (name / timer / quality), the self-PiP (inside the stage), the
-// auto-hiding control bar, the participants slide-over, the settings popover,
-// reaction bursts and the end / reconnect toasts.
+// IA (Meet-style):
+//   top bar    : code chip (click to copy) + timer · people chip + gear
+//   stage      : equal grid (gallery) or main tile + filmstrip (speaker)
+//   bottom bar : single centered pill — [mic cam share] [reactions hand]
+//                [people ⋮] — plus a separated red leave pill
+//   overflow ⋮ : view toggle, fullscreen, device settings, call stats and the
+//                host-only controls (waiting room, lock, password, removal)
 //
-// Phase is derived from the single call store:
-//   stage:  idle | prejoin | lobby
-//   status: idle | outgoing | incoming | active | reconnecting | ended
+// Behaviour is unchanged from before the restyle: portaled to document.body at
+// z-index 3000, body scroll lock, one state machine driven by the call store,
+// 3s auto-hide, Alt+M/V/S + F shortcuts, policy enforcement, stats polling.
 // ---------------------------------------------------------------------------
 
 const LAYER_Z_INDEX = 3000;
 const CONTROLS_IDLE_MS = 3000;
 const REACTION_EMOJI = ['👍', '❤️', '👏'];
 
-/** Local + remote video never mirrors; only our own preview does. */
+/** A single video tile. Remote video is never mirrored; only our own is. */
 function Tile({
   stream,
   muted = false,
@@ -59,8 +57,6 @@ function Tile({
   connection,
   speaking,
   pinned,
-  reactions,
-  self = false,
   videoSilent = false,
   onDoubleClick,
 }: {
@@ -75,9 +71,6 @@ function Tile({
   connection: PeerConnState | 'connected';
   speaking: boolean;
   pinned: boolean;
-  reactions: Reaction[];
-  self?: boolean;
-  /** Connected, camera on, yet not a single inbound frame has decoded. */
   videoSilent?: boolean;
   onDoubleClick?: () => void;
 }) {
@@ -88,11 +81,9 @@ function Tile({
       className={`call-tile${speaking ? ' is-speaking' : ''}${pinned ? ' is-pinned' : ''}`}
       style={styles.tile}
       onDoubleClick={onDoubleClick}
-      data-self={self ? 'true' : undefined}
     >
-      {/* object-contain on black: letterbox, never crop, never mirror remotes.
-          Attached through a ref callback so the stream is bound the instant the
-          element mounts, and only re-bound when the stream object changes. */}
+      {/* object-contain on black: letterbox, never crop. Attached through a ref
+          callback so the stream binds the moment the element mounts. */}
       <video
         ref={(el) => {
           if (!el || !stream) return;
@@ -107,14 +98,13 @@ function Tile({
         style={{
           ...styles.video,
           ...(mirrored ? styles.videoMirrored : null),
-          // While sharing, the video element carries the display track even if
-          // the camera itself is off.
+          // While sharing, the element carries the display track even if the
+          // camera itself is off.
           opacity: camOn || sharing ? 1 : 0,
         }}
       />
 
-      {/* Zero inbound frames only means trouble when video was expected: the
-          camera is on and this tile is not carrying a screen share. */}
+      {/* Zero inbound frames only means trouble when video was expected. */}
       {videoSilent && camOn && !sharing ? (
         <span style={styles.silentBadge}>Video unavailable — audio only</span>
       ) : null}
@@ -138,20 +128,13 @@ function Tile({
           ...styles.connDot,
           background:
             connection === 'connected'
-              ? '#2d9c78'
+              ? 'var(--accent, #3ea985)'
               : connection === 'failed'
                 ? '#e0655a'
                 : '#d8a13a',
         }}
-        data-state={connection}
         aria-hidden="true"
       />
-
-      {reactions.map((reaction) => (
-        <span key={reaction.id} className="call-reaction" style={styles.reaction}>
-          {reaction.emoji}
-        </span>
-      ))}
     </div>
   );
 }
@@ -204,10 +187,6 @@ export default function CallLayer() {
     stage,
     lobby,
     participants,
-    devices,
-    micId,
-    camId,
-    setLocalSpeaking,
     acceptCall,
     declineCall,
     endCall,
@@ -218,12 +197,10 @@ export default function CallLayer() {
     sendReaction,
     startShare,
     stopShare,
-    selectMic,
-    selectCamera,
     admitGuest,
     denyGuest,
-    commitJoin,
     notify,
+    setLocalSpeaking,
     clearNotice,
   } = useCallContext();
 
@@ -241,18 +218,16 @@ export default function CallLayer() {
   const [pinnedId, setPinnedId] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [participantsOpen, setParticipantsOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const [reactionsOpen, setReactionsOpen] = useState(false);
-  const [diagOpen, setDiagOpen] = useState(false);
-  const [securityOpen, setSecurityOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
   const duration = useElapsed(connectedAt);
   const activeSpeakerId = useActiveSpeaker(localStream, peers, inSession);
 
-  // Code-chip source chain: the route param (captured by openRoom into
-  // roomCode) -> store state -> the channel name split on ':'. For a code room
-  // one of these always resolves, so the chip can never render empty.
+  // Code-chip source chain: route param -> store state -> channel name. For a
+  // code room one of these always resolves, so the chip can never be empty.
   const codeChip = (roomCode || roomId || '').split(':').pop() ?? '';
 
   // Policy enforcement: the host can forbid screen sharing for the room.
@@ -263,8 +238,7 @@ export default function CallLayer() {
     setLocalSpeaking(activeSpeakerId === 'me');
   }, [activeSpeakerId, setLocalSpeaking]);
 
-  // A host who opened a room without the code in the URL gets it written back,
-  // so a refresh — or a shared link — still lands on the right room.
+  // Keep the room code in the URL so a refresh or a shared link still works.
   useEffect(() => {
     if (!codeRoom || !codeChip) return;
     const wanted = `#call/${codeChip}`;
@@ -284,7 +258,7 @@ export default function CallLayer() {
     };
   }, [locksScroll]);
 
-  // ---- auto-hiding control bar --------------------------------------------
+  // ---- auto-hide (top bar + control bar together) --------------------------
   const hideTimer = useRef<number | null>(null);
 
   const pokeControls = useCallback(() => {
@@ -310,8 +284,9 @@ export default function CallLayer() {
     };
   }, [inSession, pokeControls]);
 
+  // An open menu keeps both bars pinned.
   const showControls =
-    controlsVisible || participantsOpen || settingsOpen || reactionsOpen || !inSession;
+    controlsVisible || participantsOpen || statsOpen || overflowOpen || reactionsOpen || !inSession;
 
   // ---- fullscreen ----------------------------------------------------------
   const toggleFullscreen = useCallback(() => {
@@ -373,24 +348,19 @@ export default function CallLayer() {
 
   const title = useMemo(() => {
     if (emergency) return t('call.emergencyActive');
-    if (roomCode) return roomCode;
+    if (codeChip) return codeChip;
     if (peerName) return peerName;
     return status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting');
-  }, [emergency, roomCode, peerName, status, t]);
+  }, [emergency, codeChip, peerName, status, t]);
 
-  // ---- grid ----------------------------------------------------------------
+  // ---- layout --------------------------------------------------------------
   const remoteIds = peers.map((peer) => peer.id);
-
   const speakingId = activeSpeakerId === 'me' ? null : activeSpeakerId;
   const focusedId = pinnedId ?? speakingId ?? remoteIds[0] ?? null;
-  const filmstripIds =
-    view === 'speaker' ? remoteIds.filter((id) => id !== focusedId) : remoteIds;
+  const filmstripIds = view === 'speaker' ? remoteIds.filter((id) => id !== focusedId) : remoteIds;
 
-  // cols = ceil(sqrt(n)); the self-PiP overlays the grid rather than taking a cell.
+  // cols = ceil(sqrt(n)) for the equal gallery grid.
   const galleryColumns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, remoteIds.length))));
-
-  const reactionsFor = (from: string) => reactions.filter((reaction) => reaction.from === from);
-  const selfReactions = reactionsFor('me');
 
   const infoFor = (id: string) => peerInfo[id];
 
@@ -413,22 +383,32 @@ export default function CallLayer() {
                   ? t('chat.messages')
                   : t('call.ended');
 
+  const selfTileProps = {
+    stream: sharing ? shareStream : localStream,
+    muted: true,
+    mirrored: !sharing,
+    name: participants[0]?.name ?? '',
+    micOn: !muted,
+    camOn: !cameraOff,
+    sharing,
+    hand: handRaised,
+    connection: 'connected' as const,
+    speaking: activeSpeakerId === 'me',
+    pinned: false,
+  };
+
   const layer = (
-    <div className="call-layer" style={styles.layer} data-call-phase={stage !== 'idle' ? stage : incomingPhase ? 'incoming' : inSession ? status : 'ended'}>
+    <div
+      className="call-layer"
+      style={styles.layer}
+      data-call-phase={stage !== 'idle' ? stage : incomingPhase ? 'incoming' : inSession ? status : 'ended'}
+    >
       {stage === 'prejoin' ? <CallPreJoin /> : null}
 
       {stage === 'lobby' ? (
         <div style={styles.backdrop}>
           <div style={styles.modal}>
             <strong style={styles.modalTitle}>{t('call.waitingForHost')}</strong>
-            <CallDevicePicker
-              mics={devices.mics}
-              cams={devices.cams}
-              micId={micId}
-              camId={camId}
-              onSelectMic={(id) => void selectMic(id)}
-              onSelectCamera={(id) => void selectCamera(id)}
-            />
             <div style={styles.modalActions}>
               <button type="button" className="ghost-button" onClick={endCall}>
                 {t('call.leave')}
@@ -439,7 +419,12 @@ export default function CallLayer() {
       ) : null}
 
       {incomingPhase ? (
-        <div style={styles.backdrop} role="dialog" aria-modal="true" aria-label={emergency ? t('call.emergencyActive') : t('call.incoming')}>
+        <div
+          style={styles.backdrop}
+          role="dialog"
+          aria-modal="true"
+          aria-label={emergency ? t('call.emergencyActive') : t('call.incoming')}
+        >
           <div style={styles.modal}>
             <strong style={styles.modalTitle}>{emergency ? t('call.emergencyActive') : t('call.incoming')}</strong>
             <p style={styles.modalBody}>{incoming?.name || incoming?.from}</p>
@@ -462,96 +447,80 @@ export default function CallLayer() {
           aria-modal="true"
           aria-label={emergency ? t('call.emergencyActive') : t('call.connecting')}
         >
-          {/* The top bar always renders while in session: name, quality, timer,
-              participant count, encryption, and (for code rooms) the code chip. */}
-          <header style={{ ...styles.topBar, opacity: showControls ? 1 : 0.25 }}>
-            <span style={styles.topTitle}>{title}</span>
-
-            <span style={styles.topMeta}>
-              <span
-                role="img"
-                aria-label={t('call.stats')}
-                style={{
-                  ...styles.qualityDot,
-                  background: quality === 'good' ? '#2d9c78' : quality === 'fair' ? '#d8a13a' : '#e0655a',
-                }}
-              />
-              {duration ? <span style={styles.timer} dir="ltr">{duration}</span> : null}
-              <span style={styles.count}>{participants.length}</span>
-              {isHost && policy ? (
+          {/* ---- minimal top bar ---- */}
+          <header className="call-topbar" style={{ ...styles.topBar, opacity: showControls ? 1 : 0 }}>
+            <div style={styles.topLeft}>
+              {!emergency && codeChip ? (
                 <button
                   type="button"
-                  aria-pressed={securityOpen}
-                  aria-label={t('call.security')}
-                  title={t('call.security')}
-                  onClick={() => setSecurityOpen((open) => !open)}
-                  style={{ ...styles.topBarButton, ...(securityOpen ? styles.iconOn : null) }}
+                  className="call-code-chip"
+                  style={styles.codeChip}
+                  dir="ltr"
+                  title={t('call.copyCode')}
+                  aria-label={t('call.copyCode')}
+                  onClick={() => copy(codeChip)}
                 >
-                  <ShieldCheck size={15} aria-hidden="true" />
+                  {codeChip}
                 </button>
               ) : null}
-              <span style={styles.encrypted} aria-label="Encrypted">
-                <Lock size={13} aria-hidden="true" />
-              </span>
-            </span>
+              {duration ? <span style={styles.timer} dir="ltr">{duration}</span> : null}
+            </div>
 
-            {!emergency && codeChip ? (
-              <span style={styles.headerActions}>
-                <span style={styles.codeChip} dir="ltr">{codeChip}</span>
-                <button type="button" style={styles.headerButton} aria-label={t('call.copyCode')} onClick={() => copy(codeChip)}>
-                  📋 {t('call.copyCode')}
-                </button>
-                <button type="button" style={styles.headerButton} aria-label={t('call.shareLink')} onClick={() => copy(shareUrl)}>
-                  {t('call.shareLink')}
-                </button>
-              </span>
-            ) : null}
+            <div style={styles.topRight}>
+              <button
+                type="button"
+                className="call-chip"
+                style={styles.chip}
+                aria-label={t('call.participants')}
+                title={t('call.participants')}
+                onClick={() => setParticipantsOpen(true)}
+              >
+                <Users size={15} aria-hidden="true" />
+                {participants.length}
+              </button>
+              <button
+                type="button"
+                className="call-chip"
+                style={styles.chip}
+                aria-label="Settings"
+                title="Settings"
+                onClick={() => {
+                  setOverflowOpen((open) => !open);
+                  setReactionsOpen(false);
+                }}
+              >
+                <Settings size={15} aria-hidden="true" />
+              </button>
+            </div>
           </header>
 
-          {view === 'speaker' ? (
-            <div style={styles.speakerStage}>
-              <div style={styles.speakerMain}>
-                {focusedId ? (
-                  <Tile
-                    stream={peers.find((peer) => peer.id === focusedId)?.stream ?? null}
-                    name={infoFor(focusedId)?.name || focusedId}
-                    micOn={infoFor(focusedId)?.micOn ?? true}
-                    camOn={infoFor(focusedId)?.camOn ?? true}
-                    sharing={infoFor(focusedId)?.sharing ?? false}
-                    hand={infoFor(focusedId)?.hand ?? false}
-                    connection={infoFor(focusedId)?.connection ?? 'new'}
-                    videoSilent={peerStats[focusedId]?.videoSilent ?? false}
-                    speaking={activeSpeakerId === focusedId}
-                    pinned={pinnedId === focusedId}
-                    reactions={reactionsFor(focusedId)}
-                    onDoubleClick={() => setPinnedId((previous) => (previous === focusedId ? null : focusedId))}
-                  />
-                ) : (
-                  <p style={styles.stageHint}>
-                    {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
-                  </p>
-                )}
-                {/* Self-PiP lives INSIDE the stage, never outside it. */}
-                <div style={styles.selfPip}>
-                  <Tile
-                    stream={sharing ? shareStream : localStream}
-                    muted
-                    mirrored={!sharing}
-                    self
-                    name={participants[0]?.name ?? ''}
-                    micOn={!muted}
-                    camOn={!cameraOff}
-                    sharing={sharing}
-                    hand={handRaised}
-                    connection="connected"
-                    speaking={activeSpeakerId === 'me'}
-                    pinned={false}
-                    reactions={selfReactions}
-                  />
+          {/* ---- stage ---- */}
+          <div style={styles.stageArea}>
+            {view === 'speaker' ? (
+              <div style={styles.speakerStage}>
+                <div style={styles.speakerMain}>
+                  {focusedId ? (
+                    <Tile
+                      stream={peers.find((peer) => peer.id === focusedId)?.stream ?? null}
+                      name={infoFor(focusedId)?.name || focusedId}
+                      micOn={infoFor(focusedId)?.micOn ?? true}
+                      camOn={infoFor(focusedId)?.camOn ?? true}
+                      sharing={infoFor(focusedId)?.sharing ?? false}
+                      hand={infoFor(focusedId)?.hand ?? false}
+                      connection={infoFor(focusedId)?.connection ?? 'new'}
+                      videoSilent={peerStats[focusedId]?.videoSilent ?? false}
+                      speaking={activeSpeakerId === focusedId}
+                      pinned={pinnedId === focusedId}
+                      onDoubleClick={() => setPinnedId((previous) => (previous === focusedId ? null : focusedId))}
+                    />
+                  ) : (
+                    <p style={styles.stageHint}>
+                      {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
+                    </p>
+                  )}
                 </div>
-              </div>
 
-              {filmstripIds.length > 0 ? (
+                {/* Meet-style strip of 96px thumbs along the bottom. */}
                 <div style={styles.filmstrip}>
                   {filmstripIds.map((id) => (
                     <div key={id} style={styles.filmstripTile}>
@@ -566,61 +535,52 @@ export default function CallLayer() {
                         videoSilent={peerStats[id]?.videoSilent ?? false}
                         speaking={activeSpeakerId === id}
                         pinned={pinnedId === id}
-                        reactions={reactionsFor(id)}
                         onDoubleClick={() => setPinnedId((previous) => (previous === id ? null : id))}
                       />
                     </div>
                   ))}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div style={{ ...styles.gallery, gridTemplateColumns: `repeat(${galleryColumns}, minmax(0, 1fr))` }}>
-              {remoteIds.length === 0 ? (
-                <p style={styles.stageHint}>
-                  {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
-                </p>
-              ) : (
-                remoteIds.map((id) => (
-                  <div key={id} style={styles.galleryTile}>
-                    <Tile
-                      stream={peers.find((peer) => peer.id === id)?.stream ?? null}
-                      name={infoFor(id)?.name || id}
-                      micOn={infoFor(id)?.micOn ?? true}
-                      camOn={infoFor(id)?.camOn ?? true}
-                      sharing={infoFor(id)?.sharing ?? false}
-                      hand={infoFor(id)?.hand ?? false}
-                      connection={infoFor(id)?.connection ?? 'new'}
-                      videoSilent={peerStats[id]?.videoSilent ?? false}
-                      speaking={activeSpeakerId === id}
-                      pinned={pinnedId === id}
-                      reactions={reactionsFor(id)}
-                      onDoubleClick={() => setPinnedId((previous) => (previous === id ? null : id))}
-                    />
+                  <div style={styles.filmstripTile}>
+                    <Tile {...selfTileProps} />
                   </div>
-                ))
-              )}
-
-              {/* Self-PiP lives INSIDE the stage, never outside it. */}
-              <div style={styles.selfPip}>
-                <Tile
-                  stream={sharing ? shareStream : localStream}
-                  muted
-                  mirrored={!sharing}
-                  self
-                  name={participants[0]?.name ?? ''}
-                  micOn={!muted}
-                  camOn={!cameraOff}
-                  sharing={sharing}
-                  hand={handRaised}
-                  connection="connected"
-                  speaking={activeSpeakerId === 'me'}
-                  pinned={false}
-                  reactions={selfReactions}
-                />
+                </div>
               </div>
+            ) : (
+              <div style={{ ...styles.gallery, gridTemplateColumns: `repeat(${galleryColumns}, minmax(0, 1fr))` }}>
+                {remoteIds.length === 0 ? (
+                  <p style={styles.stageHint}>
+                    {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
+                  </p>
+                ) : (
+                  remoteIds.map((id) => (
+                    <div key={id} style={styles.galleryTile}>
+                      <Tile
+                        stream={peers.find((peer) => peer.id === id)?.stream ?? null}
+                        name={infoFor(id)?.name || id}
+                        micOn={infoFor(id)?.micOn ?? true}
+                        camOn={infoFor(id)?.camOn ?? true}
+                        sharing={infoFor(id)?.sharing ?? false}
+                        hand={infoFor(id)?.hand ?? false}
+                        connection={infoFor(id)?.connection ?? 'new'}
+                        videoSilent={peerStats[id]?.videoSilent ?? false}
+                        speaking={activeSpeakerId === id}
+                        pinned={pinnedId === id}
+                        onDoubleClick={() => setPinnedId((previous) => (previous === id ? null : id))}
+                      />
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Reactions float up from bottom-centre over the stage. */}
+            <div style={styles.reactionLayer} aria-hidden="true">
+              {reactions.map((reaction) => (
+                <span key={reaction.id} className="call-reaction" style={styles.reaction}>
+                  {reaction.emoji}
+                </span>
+              ))}
             </div>
-          )}
+          </div>
 
           {status === 'reconnecting' ? (
             <p style={styles.reconnectToast} role="status">{t('call.reconnecting')}</p>
@@ -645,232 +605,198 @@ export default function CallLayer() {
             </div>
           ) : null}
 
-          {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
-
-          {securityOpen && isHost ? <CallSecurityPanel onClose={() => setSecurityOpen(false)} /> : null}
-
-          {settingsOpen ? (
-            <div style={styles.settings} role="dialog" aria-label="Settings">
-              <CallDevicePicker
-                compact
-                mics={devices.mics}
-                cams={devices.cams}
-                micId={micId}
-                camId={camId}
-                onSelectMic={(id) => void selectMic(id)}
-                onSelectCamera={(id) => void selectCamera(id)}
-              />
-              <button
-                type="button"
-                style={{ ...styles.statsToggle, ...(diagOpen ? styles.statsToggleOn : null) }}
-                aria-pressed={diagOpen}
-                onClick={() => setDiagOpen((open) => !open)}
-              >
-                {diagOpen ? '▾' : '▸'} Call stats
-              </button>
-            </div>
-          ) : null}
-
-          {/* Diagnostics drawer: per-peer connection + video counters. */}
-          {diagOpen ? (
-            <div style={styles.diag} role="dialog" aria-label="Call stats">
-              <div style={styles.diagHead}>
-                <strong>Call stats</strong>
-                <button
-                  type="button"
-                  style={styles.diagClose}
-                  aria-label={t('common.close')}
-                  onClick={() => setDiagOpen(false)}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              <ul style={styles.diagList}>
-                {Object.entries(peerStats).map(([id, entry]) => (
-                  <li key={id} style={styles.diagRow}>
-                    <strong style={styles.diagName}>{peerInfo[id]?.name || id}</strong>
-                    <span style={styles.diagLine}>connectionState: {entry.connectionState}</span>
-                    <span style={styles.diagLine}>iceConnectionState: {entry.iceConnectionState}</span>
-                    <span style={styles.diagLine}>
-                      out: {entry.outboundFrames} frames · {entry.outboundBytes} B sent
-                    </span>
-                    <span style={styles.diagLine}>
-                      in: {entry.inboundFrames} frames · {entry.inboundBytes} B received
-                    </span>
-                    <span style={styles.diagLine}>
-                      frame: {entry.frameWidth}×{entry.frameHeight}
-                    </span>
-                  </li>
-                ))}
-                {Object.keys(peerStats).length === 0 ? (
-                  <li style={styles.diagLine}>No peer stats yet.</li>
-                ) : null}
-              </ul>
-            </div>
-          ) : null}
-
+          {/* ---- bottom bar: one pill + a separated red leave pill ---- */}
           <footer
+            className="call-bar"
             style={{ ...styles.bar, opacity: showControls ? 1 : 0, pointerEvents: showControls ? 'auto' : 'none' }}
             aria-hidden={!showControls}
           >
+            {reactionsOpen ? (
+              <div style={styles.emojiRow}>
+                {REACTION_EMOJI.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    style={styles.emojiButton}
+                    onClick={() => {
+                      sendReaction(emoji);
+                      setReactionsOpen(false);
+                    }}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {overflowOpen ? (
+              <CallOverflowMenu
+                view={view}
+                statsOpen={statsOpen}
+                onToggleView={() => setView((previous) => (previous === 'gallery' ? 'speaker' : 'gallery'))}
+                onFullscreen={toggleFullscreen}
+                onToggleStats={() => setStatsOpen((open) => !open)}
+                onCopyLink={() => copy(shareUrl)}
+                onClose={() => setOverflowOpen(false)}
+              />
+            ) : null}
+
             <div style={styles.pill}>
-              {reactionsOpen ? (
-                <div style={styles.emojiRow}>
-                  {REACTION_EMOJI.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      style={styles.emojiButton}
-                      onClick={() => {
-                        sendReaction(emoji);
-                        setReactionsOpen(false);
-                      }}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-
-              <button
-                type="button"
-                onClick={toggleMic}
-                title="Microphone (Alt+M)"
-                aria-label="Microphone"
-                aria-pressed={!muted}
-                style={{ ...styles.iconButton, ...(muted ? styles.iconOff : null) }}
-              >
-                {muted ? <MicOff size={18} /> : <Mic size={18} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleCamera}
-                title="Camera (Alt+V)"
-                aria-label="Camera"
-                aria-pressed={!cameraOff}
-                disabled={audioOnly}
-                style={{ ...styles.iconButton, ...(cameraOff ? styles.iconOff : null) }}
-              >
-                {cameraOff || audioOnly ? <VideoOff size={18} /> : <Video size={18} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => void (sharing ? stopShare() : startShare())}
-                disabled={!sharing && !shareAllowed}
-                title={
-                  !sharing && !shareAllowed
-                    ? t('call.allowScreenShare')
-                    : `${sharing ? t('call.stopShare') : t('call.screenShare')} (Alt+S)`
-                }
-                aria-label={sharing ? t('call.stopShare') : t('call.screenShare')}
-                aria-pressed={sharing}
-                style={{
-                  ...styles.iconButton,
-                  ...(sharing ? styles.iconOn : null),
-                  ...(!sharing && !shareAllowed ? styles.iconDisabled : null),
-                }}
-              >
-                <MonitorUp size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setReactionsOpen((open) => !open);
-                  setSettingsOpen(false);
-                }}
-                title="Reactions"
-                aria-label="Reactions"
-                aria-pressed={reactionsOpen}
-                style={styles.iconButton}
-              >
-                <Smile size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleHand}
-                title={t('call.raiseHand')}
-                aria-pressed={handRaised}
-                style={{ ...styles.iconButton, ...(handRaised ? styles.iconOn : null) }}
-              >
-                <Hand size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setParticipantsOpen((open) => !open);
-                  setSettingsOpen(false);
-                }}
-                title={t('call.participants')}
-                aria-pressed={participantsOpen}
-                style={styles.iconButton}
-              >
-                <Users size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setView((previous) => (previous === 'gallery' ? 'speaker' : 'gallery'))}
-                title={view === 'gallery' ? t('call.speakerView') : t('call.galleryView')}
-                style={styles.iconButton}
-              >
-                {view === 'gallery' ? <LayoutGrid size={18} /> : <Users size={18} />}
-              </button>
-
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                title="Fullscreen (F)"
-                aria-label="Fullscreen"
-                aria-pressed={fullscreen}
-                style={styles.iconButton}
-              >
-                <Maximize size={18} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setSettingsOpen((open) => !open);
-                  setReactionsOpen(false);
-                }}
-                title="Settings"
-                aria-label="Settings"
-                aria-pressed={settingsOpen}
-                style={styles.iconButton}
-              >
-                <Settings size={18} />
-              </button>
-
-              <button type="button" onClick={toggleStats} aria-label={t('call.stats')} style={styles.iconButton}>
-                <Activity size={18} />
-              </button>
-
-              {isHost ? (
-                <button type="button" onClick={endForAll} title={t('call.endForAll')} style={styles.endForAll}>
-                  <PhoneOff size={16} aria-hidden="true" /> {t('call.endForAll')}
+              {/* media */}
+              <div style={styles.cluster}>
+                <button
+                  type="button"
+                  onClick={toggleMic}
+                  title="Microphone (Alt+M)"
+                  aria-label="Microphone"
+                  aria-pressed={!muted}
+                  style={{ ...styles.circleButton, ...(muted ? styles.circleOff : null) }}
+                >
+                  {muted ? <MicOff size={19} /> : <Mic size={19} />}
                 </button>
-              ) : (
-                <button type="button" onClick={endCall} title={t('call.leave')} style={styles.endButton}>
-                  <PhoneOff size={18} aria-hidden="true" />
-                  <span style={styles.endLabel}>{t('call.leave')}</span>
+
+                <button
+                  type="button"
+                  onClick={toggleCamera}
+                  title="Camera (Alt+V)"
+                  aria-label="Camera"
+                  aria-pressed={!cameraOff}
+                  disabled={audioOnly}
+                  style={{ ...styles.circleButton, ...(cameraOff ? styles.circleOff : null) }}
+                >
+                  {cameraOff || audioOnly ? <VideoOff size={19} /> : <Video size={19} />}
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => void (sharing ? stopShare() : startShare())}
+                  disabled={!sharing && !shareAllowed}
+                  title={
+                    !sharing && !shareAllowed
+                      ? t('call.allowScreenShare')
+                      : `${sharing ? t('call.stopShare') : t('call.screenShare')} (Alt+S)`
+                  }
+                  aria-label={sharing ? t('call.stopShare') : t('call.screenShare')}
+                  aria-pressed={sharing}
+                  style={{
+                    ...styles.circleButton,
+                    ...(sharing ? styles.circleOn : null),
+                    ...(!sharing && !shareAllowed ? styles.circleDisabled : null),
+                  }}
+                >
+                  <MonitorUp size={19} />
+                </button>
+              </div>
+
+              <span style={styles.clusterDivider} aria-hidden="true" />
+
+              {/* engage */}
+              <div style={styles.cluster}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReactionsOpen((open) => !open);
+                    setOverflowOpen(false);
+                  }}
+                  title="Reactions"
+                  aria-label="Reactions"
+                  aria-pressed={reactionsOpen}
+                  style={styles.circleButton}
+                >
+                  <Smile size={19} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleHand}
+                  title={t('call.raiseHand')}
+                  aria-label={t('call.raiseHand')}
+                  aria-pressed={handRaised}
+                  style={{ ...styles.circleButton, ...(handRaised ? styles.circleOn : null) }}
+                >
+                  <Hand size={19} />
+                </button>
+              </div>
+
+              <span style={styles.clusterDivider} aria-hidden="true" />
+
+              {/* info */}
+              <div style={styles.cluster}>
+                <button
+                  type="button"
+                  onClick={() => setParticipantsOpen(true)}
+                  title={t('call.participants')}
+                  aria-label={t('call.participants')}
+                  style={styles.circleButton}
+                >
+                  <Users size={19} />
+                  <span style={styles.countBadge}>{participants.length}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOverflowOpen((open) => !open);
+                    setReactionsOpen(false);
+                  }}
+                  title="More"
+                  aria-label="More"
+                  aria-haspopup="menu"
+                  aria-expanded={overflowOpen}
+                  style={{ ...styles.circleButton, ...(overflowOpen ? styles.circleOn : null) }}
+                >
+                  <MoreVertical size={19} />
+                </button>
+              </div>
             </div>
 
-            {showStats && stats ? (
-              <span style={styles.statsChip}>
-                {stats.width}×{stats.height} · {stats.fps}fps · {stats.kbps}kbps
-                {stats.limit && stats.limit !== 'none' ? ` · ${stats.limit}` : ''}
-              </span>
-            ) : null}
+            {/* separated red leave pill */}
+            <button
+              type="button"
+              className="call-leave-pill"
+              onClick={isHost ? endForAll : endCall}
+              title={isHost ? t('call.endForAll') : t('call.leave')}
+              style={styles.leavePill}
+            >
+              <PhoneOff size={17} aria-hidden="true" />
+              <span>{isHost ? t('call.endForAll') : t('call.leave')}</span>
+            </button>
           </footer>
+
+          {showStats && stats ? (
+            <span style={styles.statsChip}>
+              {stats.width}×{stats.height} · {stats.fps}fps · {stats.kbps}kbps
+              {stats.limit && stats.limit !== 'none' ? ` · ${stats.limit}` : ''}
+            </span>
+          ) : null}
         </div>
+      ) : null}
+
+      {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
+
+      {/* Diagnostics slide-over (same panel chrome as the participant list). */}
+      {statsOpen ? (
+        <aside className="call-participants call-stats-panel" role="dialog" aria-label="Call stats">
+          <header style={styles.panelHead}>
+            <strong>Call stats</strong>
+            <button type="button" className="call-panel-close" aria-label={t('common.close')} onClick={() => setStatsOpen(false)}>
+              <X size={16} />
+            </button>
+          </header>
+          <ul style={styles.diagList}>
+            {Object.entries(peerStats).map(([id, entry]) => (
+              <li key={id} style={styles.diagRow}>
+                <strong style={styles.diagName}>{peerInfo[id]?.name || id}</strong>
+                <span style={styles.diagLine}>connectionState: {entry.connectionState}</span>
+                <span style={styles.diagLine}>iceConnectionState: {entry.iceConnectionState}</span>
+                <span style={styles.diagLine}>out: {entry.outboundFrames} frames · {entry.outboundBytes} B sent</span>
+                <span style={styles.diagLine}>in: {entry.inboundFrames} frames · {entry.inboundBytes} B received</span>
+                <span style={styles.diagLine}>frame: {entry.frameWidth}×{entry.frameHeight}</span>
+              </li>
+            ))}
+            {Object.keys(peerStats).length === 0 ? <li style={styles.diagLine}>No peer stats yet.</li> : null}
+          </ul>
+        </aside>
       ) : null}
 
       {notice ? (
@@ -898,13 +824,13 @@ const styles: Record<string, CSSProperties> = {
     gap: '0.6rem',
     width: 'min(28rem, 100%)',
     padding: '1.2rem',
-    borderRadius: '1.15rem',
+    borderRadius: '1rem',
     background: '#f7fdf9',
-    border: '1px solid rgba(62, 169, 133, 0.3)',
+    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
     boxShadow: '0 28px 64px rgba(6, 26, 22, 0.4)',
   },
   modalTitle: { fontSize: '1.05rem' },
-  modalBody: { margin: 0, color: '#557b76', fontSize: '0.86rem', overflowWrap: 'anywhere' },
+  modalBody: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.86rem', overflowWrap: 'anywhere' },
   modalActions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
   accept: {
     display: 'inline-flex',
@@ -919,74 +845,89 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 800,
     cursor: 'pointer',
   },
+
   stageShell: {
     position: 'absolute',
     inset: 0,
     pointerEvents: 'auto',
     display: 'grid',
     gridTemplateRows: 'auto 1fr auto',
-    gap: '0.6rem',
-    paddingBlock: '0.85rem',
-    paddingInline: '0.85rem',
+    gap: '0.5rem',
+    paddingBlock: '0.75rem',
+    paddingInline: '0.75rem',
     background: '#061a16',
     color: '#f2fffa',
   },
   stageShellEmergency: { background: '#260a08' },
-  topBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem', flexWrap: 'wrap', transition: 'opacity 200ms ease' },
-  topTitle: { fontWeight: 800, fontSize: '0.95rem', overflowWrap: 'anywhere', minWidth: 0 },
-  topMeta: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem' },
-  timer: { fontWeight: 700, fontSize: '0.82rem', letterSpacing: '0.04em', color: '#cfe9df' },
-  count: { fontSize: '0.78rem', color: '#cfe9df' },
-  qualityDot: { width: '0.6rem', height: '0.6rem', borderRadius: '50%' },
-  headerActions: { display: 'inline-flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' },
-  codeChip: {
-    paddingBlock: '0.35rem',
-    paddingInline: '0.7rem',
-    borderRadius: '0.7rem',
-    background: 'rgba(255, 255, 255, 0.12)',
-    border: '1px solid rgba(255, 255, 255, 0.28)',
-    color: '#f2fffa',
-    fontWeight: 800,
-    letterSpacing: '0.04em',
-    overflowWrap: 'anywhere',
-    maxWidth: 'min(90vw, 22rem)',
+
+  // Minimal top bar: code chip + timer on the left, people + gear on the right.
+  topBar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: '0.5rem',
+    transition: 'opacity 200ms ease',
   },
-  headerButton: {
-    paddingBlock: '0.35rem',
-    paddingInline: '0.7rem',
+  topLeft: { display: 'inline-flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 },
+  topRight: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
+  codeChip: {
+    paddingBlock: '0.3rem',
+    paddingInline: '0.65rem',
     borderRadius: '999px',
-    border: '1px solid rgba(255, 255, 255, 0.28)',
-    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.22)',
+    background: 'rgba(255, 255, 255, 0.08)',
     color: '#f2fffa',
     fontWeight: 700,
-    fontSize: '0.74rem',
+    fontSize: '0.76rem',
+    letterSpacing: '0.04em',
+    overflowWrap: 'anywhere',
+    maxWidth: 'min(60vw, 18rem)',
     cursor: 'pointer',
   },
+  timer: { fontWeight: 600, fontSize: '0.78rem', color: '#cfe9df', fontVariantNumeric: 'tabular-nums' },
+  chip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    paddingBlock: '0.3rem',
+    paddingInline: '0.6rem',
+    borderRadius: '999px',
+    border: '1px solid rgba(255, 255, 255, 0.22)',
+    background: 'rgba(255, 255, 255, 0.08)',
+    color: '#f2fffa',
+    fontSize: '0.78rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+  },
+
+  // Stage
+  stageArea: { position: 'relative', minHeight: 0 },
   gallery: {
     position: 'relative',
     display: 'grid',
-    gap: '0.5rem',
+    gap: '10px',
     alignContent: 'center',
-    justifyItems: 'stretch',
+    height: '100%',
     minHeight: 0,
   },
   galleryTile: { aspectRatio: '16 / 9', minHeight: 0 },
-  speakerStage: { display: 'grid', gridTemplateRows: '1fr auto', gap: '0.5rem', minHeight: 0 },
+  speakerStage: { display: 'grid', gridTemplateRows: '1fr auto', gap: '10px', height: '100%', minHeight: 0 },
   speakerMain: { position: 'relative', minHeight: 0 },
-  filmstrip: { display: 'flex', gap: '0.5rem', overflowX: 'auto', paddingBlockEnd: '0.2rem' },
-  filmstripTile: { flex: '0 0 auto', width: '10rem', aspectRatio: '16 / 9' },
+  filmstrip: { display: 'flex', gap: '10px', overflowX: 'auto', paddingBlockEnd: '0.2rem' },
+  filmstripTile: { flex: '0 0 auto', width: '96px', height: '96px' },
+
   tile: {
     position: 'relative',
     width: '100%',
     height: '100%',
-    minHeight: '5rem',
+    minHeight: '4rem',
     background: '#000',
-    borderRadius: '0.75rem',
+    borderRadius: '1rem',
     overflow: 'hidden',
     display: 'grid',
     placeItems: 'center',
+    boxShadow: '0 10px 26px rgba(0, 0, 0, 0.34)',
   },
-  // Letterbox on black; remotes are never mirrored.
   video: { width: '100%', height: '100%', objectFit: 'contain', background: '#000' },
   videoMirrored: { transform: 'scaleX(-1)' },
   avatar: {
@@ -996,31 +937,31 @@ const styles: Record<string, CSSProperties> = {
     width: '3rem',
     height: '3rem',
     borderRadius: '50%',
-    background: 'linear-gradient(135deg, #3ea985, #8adbb0)',
+    background: 'var(--accent, #3ea985)',
     color: '#fff',
     fontWeight: 800,
     fontSize: '1.2rem',
   },
   nameChip: {
     position: 'absolute',
-    insetBlockEnd: '0.4rem',
-    insetInlineStart: '0.4rem',
+    insetBlockEnd: '0.5rem',
+    insetInlineStart: '0.5rem',
     maxWidth: '70%',
     paddingBlock: '0.15rem',
-    paddingInline: '0.5rem',
+    paddingInline: '0.55rem',
     borderRadius: '999px',
-    background: 'rgba(6, 26, 22, 0.65)',
+    background: 'rgba(6, 26, 22, 0.62)',
     color: '#f2fffa',
     fontSize: '0.7rem',
-    fontWeight: 700,
+    fontWeight: 600,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap',
   },
   tileFlags: {
     position: 'absolute',
-    insetBlockEnd: '0.4rem',
-    insetInlineEnd: '0.4rem',
+    insetBlockEnd: '0.5rem',
+    insetInlineEnd: '0.5rem',
     display: 'inline-flex',
     alignItems: 'center',
     gap: '0.3rem',
@@ -1030,26 +971,40 @@ const styles: Record<string, CSSProperties> = {
     paddingBlock: '0.1rem',
     paddingInline: '0.45rem',
     borderRadius: '999px',
-    background: 'rgba(62, 169, 133, 0.85)',
+    background: 'var(--accent, #3ea985)',
     color: '#06231d',
     fontSize: '0.64rem',
     fontWeight: 800,
   },
-  connDot: { position: 'absolute', insetBlockStart: '0.4rem', insetInlineEnd: '0.4rem', width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: '#2d9c78' },
-  selfPip: {
+  connDot: { position: 'absolute', insetBlockStart: '0.5rem', insetInlineEnd: '0.5rem', width: '0.45rem', height: '0.45rem', borderRadius: '50%' },
+  silentBadge: {
     position: 'absolute',
-    insetBlockEnd: '0.5rem',
-    insetInlineEnd: '0.5rem',
-    width: '9rem',
-    aspectRatio: '16 / 9',
+    insetBlockStart: '0.5rem',
+    insetInlineStart: '0.5rem',
+    maxWidth: '85%',
+    paddingBlock: '0.15rem',
+    paddingInline: '0.5rem',
+    borderRadius: '999px',
+    background: 'rgba(216, 161, 58, 0.92)',
+    color: '#3a2b06',
+    fontSize: '0.66rem',
+    fontWeight: 800,
+  },
+  stageHint: { margin: 0, textAlign: 'center', color: '#cfe9df', gridColumn: '1 / -1' },
+
+  reactionLayer: {
+    position: 'absolute',
+    insetBlockEnd: '0.75rem',
+    insetInline: 0,
+    height: 0,
     pointerEvents: 'none',
   },
-  reaction: { position: 'absolute', insetBlockEnd: '1.5rem', insetInlineStart: '50%', fontSize: '1.6rem' },
-  stageHint: { margin: 0, textAlign: 'center', color: '#cfe9df', gridColumn: '1 / -1' },
+  reaction: { position: 'absolute', insetBlockEnd: 0, insetInlineStart: '50%', fontSize: '1.7rem' },
+
   reconnectToast: {
     margin: 0,
     justifySelf: 'center',
-    paddingBlock: '0.45rem',
+    paddingBlock: '0.4rem',
     paddingInline: '0.9rem',
     borderRadius: '999px',
     background: 'rgba(216, 161, 58, 0.22)',
@@ -1060,14 +1015,14 @@ const styles: Record<string, CSSProperties> = {
   },
   lobbyPanel: {
     position: 'absolute',
-    insetBlockStart: '3.4rem',
-    insetInlineStart: '0.85rem',
+    insetBlockStart: '3.2rem',
+    insetInlineStart: '0.75rem',
     width: 'min(20rem, 90vw)',
     pointerEvents: 'auto',
     display: 'grid',
     gap: '0.4rem',
     padding: '0.75rem',
-    borderRadius: '0.9rem',
+    borderRadius: '1rem',
     background: 'rgba(9, 32, 27, 0.96)',
     border: '1px solid rgba(255, 255, 255, 0.16)',
   },
@@ -1077,94 +1032,92 @@ const styles: Record<string, CSSProperties> = {
   lobbyName: { overflowWrap: 'anywhere', minWidth: 0, marginInlineEnd: 'auto' },
   admit: { paddingBlock: '0.25rem', paddingInline: '0.6rem', borderRadius: '999px', border: 'none', background: 'linear-gradient(120deg, #48b58f, #7adab1)', color: '#06231d', fontWeight: 800, fontSize: '0.7rem', cursor: 'pointer' },
   deny: { paddingBlock: '0.25rem', paddingInline: '0.6rem', borderRadius: '999px', border: '1px solid rgba(224, 101, 90, 0.5)', background: 'transparent', color: '#ffd9d4', fontWeight: 700, fontSize: '0.7rem', cursor: 'pointer' },
-  settings: {
-    position: 'absolute',
-    insetBlockEnd: '4.6rem',
-    insetInline: '50%',
-    transform: 'translateX(50%)',
-    pointerEvents: 'auto',
-    padding: '0.6rem',
-    borderRadius: '0.9rem',
-    background: 'rgba(9, 32, 27, 0.96)',
-    border: '1px solid rgba(255, 255, 255, 0.16)',
-  },
+
+  // Bottom bar: one pill, cluster dividers, separated leave pill.
   bar: {
+    position: 'relative',
     display: 'flex',
-    flexDirection: 'column',
     alignItems: 'center',
-    gap: '0.4rem',
+    justifyContent: 'center',
+    gap: '0.6rem',
+    flexWrap: 'wrap',
     transition: 'opacity 200ms ease',
   },
   pill: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: '0.4rem',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
+    gap: '0.35rem',
     paddingBlock: '0.4rem',
-    paddingInline: '0.6rem',
+    paddingInline: '0.5rem',
     borderRadius: '999px',
     background: 'rgba(9, 32, 27, 0.92)',
     border: '1px solid rgba(255, 255, 255, 0.16)',
+    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)',
   },
-  emojiRow: { display: 'inline-flex', gap: '0.2rem', marginInlineEnd: '0.3rem' },
-  emojiButton: { fontSize: '1.1rem', background: 'transparent', border: 'none', cursor: 'pointer' },
-  iconButton: {
+  cluster: { display: 'inline-flex', alignItems: 'center', gap: '0.3rem' },
+  clusterDivider: { width: 1, height: 24, background: 'rgba(255, 255, 255, 0.16)', marginInline: '0.15rem' },
+  circleButton: {
+    position: 'relative',
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: '50%',
-    border: '1px solid rgba(255, 255, 255, 0.25)',
-    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    background: 'rgba(255, 255, 255, 0.08)',
     color: '#f2fffa',
     cursor: 'pointer',
   },
-  topBarButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 26,
-    height: 26,
-    borderRadius: '50%',
-    border: '1px solid rgba(255, 255, 255, 0.25)',
-    background: 'rgba(255, 255, 255, 0.1)',
-    color: '#f2fffa',
-    cursor: 'pointer',
-  },
-  iconDisabled: { opacity: 0.4, cursor: 'not-allowed' },
-  iconOff: { background: 'rgba(224, 101, 90, 0.22)', borderColor: 'rgba(224, 101, 90, 0.5)', color: '#ffd9d4' },
-  iconOn: { background: 'rgba(62, 169, 133, 0.28)', borderColor: 'rgba(62, 169, 133, 0.6)', color: '#d9fff0' },
-  endButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.35rem',
-    height: 40,
-    paddingInline: '0.9rem',
-    border: 'none',
+  circleOff: { background: 'rgba(224, 101, 90, 0.22)', borderColor: 'rgba(224, 101, 90, 0.5)', color: '#ffd9d4' },
+  circleOn: { background: 'rgba(62, 169, 133, 0.28)', borderColor: 'rgba(62, 169, 133, 0.6)', color: '#d9fff0' },
+  circleDisabled: { opacity: 0.4, cursor: 'not-allowed' },
+  countBadge: {
+    position: 'absolute',
+    insetBlockStart: '-2px',
+    insetInlineEnd: '-2px',
+    minWidth: 16,
+    height: 16,
+    paddingInline: 4,
     borderRadius: '999px',
+    background: 'var(--accent, #3ea985)',
+    color: '#06231d',
+    fontSize: '0.62rem',
+    fontWeight: 800,
+    lineHeight: '16px',
+    textAlign: 'center',
+  },
+  leavePill: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+    height: 44,
+    paddingInline: '1.1rem',
+    borderRadius: '999px',
+    border: 'none',
     background: 'linear-gradient(120deg, #e0655a, #f0a099)',
     color: '#4a1610',
     fontWeight: 800,
+    fontSize: '0.84rem',
     cursor: 'pointer',
+    boxShadow: '0 12px 30px rgba(0, 0, 0, 0.35)',
   },
-  endLabel: { fontSize: '0.8rem' },
-  endForAll: {
+  emojiRow: {
+    position: 'absolute',
+    insetBlockEnd: '3.4rem',
+    insetInlineStart: '50%',
+    transform: 'translateX(-50%)',
     display: 'inline-flex',
-    alignItems: 'center',
-    gap: '0.35rem',
-    height: 40,
-    paddingInline: '0.9rem',
+    gap: '0.3rem',
+    padding: '0.35rem 0.5rem',
     borderRadius: '999px',
-    border: '1px solid rgba(224, 101, 90, 0.55)',
-    background: 'rgba(224, 101, 90, 0.18)',
-    color: '#ffd9d4',
-    fontWeight: 800,
-    fontSize: '0.78rem',
-    cursor: 'pointer',
+    background: 'rgba(9, 32, 27, 0.96)',
+    border: '1px solid rgba(255, 255, 255, 0.16)',
   },
+  emojiButton: { fontSize: '1.2rem', background: 'transparent', border: 'none', cursor: 'pointer' },
+
   statsChip: {
+    justifySelf: 'center',
     paddingBlock: '0.3rem',
     paddingInline: '0.6rem',
     borderRadius: '999px',
@@ -1175,71 +1128,16 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
     whiteSpace: 'nowrap',
   },
-  encrypted: { display: 'inline-flex', alignItems: 'center', color: '#8fd8bd' },
-  silentBadge: {
-    position: 'absolute',
-    insetBlockStart: '0.4rem',
-    insetInlineStart: '0.4rem',
-    maxWidth: '85%',
-    paddingBlock: '0.15rem',
-    paddingInline: '0.5rem',
-    borderRadius: '999px',
-    background: 'rgba(216, 161, 58, 0.92)',
-    color: '#3a2b06',
-    fontSize: '0.66rem',
-    fontWeight: 800,
-  },
-  statsToggle: {
-    display: 'block',
-    width: '100%',
-    marginBlockStart: '0.5rem',
-    paddingBlock: '0.35rem',
-    paddingInline: '0.5rem',
-    borderRadius: '0.6rem',
-    border: '1px solid rgba(255, 255, 255, 0.22)',
-    background: 'transparent',
-    color: '#f2fffa',
-    fontSize: '0.76rem',
-    textAlign: 'start',
-    cursor: 'pointer',
-  },
-  statsToggleOn: { background: 'rgba(62, 169, 133, 0.25)', borderColor: 'rgba(62, 169, 133, 0.6)' },
-  diag: {
-    position: 'absolute',
-    insetBlockStart: '3.4rem',
-    insetInlineEnd: '0.85rem',
-    width: 'min(26rem, 92vw)',
-    maxHeight: '60vh',
-    overflowY: 'auto',
-    pointerEvents: 'auto',
-    display: 'grid',
-    gap: '0.4rem',
-    padding: '0.75rem',
-    borderRadius: '0.9rem',
-    background: 'rgba(6, 22, 19, 0.97)',
-    border: '1px solid rgba(255, 255, 255, 0.16)',
-    color: '#f2fffa',
-  },
-  diagHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
-  diagClose: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 26,
-    height: 26,
-    borderRadius: '50%',
-    border: 'none',
-    background: 'rgba(255, 255, 255, 0.12)',
-    color: '#f2fffa',
-    cursor: 'pointer',
-  },
-  diagList: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.5rem' },
+
+  panelHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
+  diagList: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.6rem' },
   diagRow: { display: 'grid', gap: '0.1rem', fontSize: '0.72rem', lineHeight: 1.45 },
   diagName: { fontSize: '0.78rem', overflowWrap: 'anywhere' },
   diagLine: { color: '#cfe9df', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' },
+
   notice: {
     position: 'absolute',
-    insetBlockEnd: '1.5rem',
+    insetBlockEnd: '5.5rem',
     insetInline: '50%',
     transform: 'translateX(50%)',
     pointerEvents: 'auto',

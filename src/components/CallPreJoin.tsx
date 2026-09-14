@@ -5,11 +5,15 @@ import { useLang } from '../i18n';
 import CallDevicePicker from './CallDevicePicker';
 
 // ---------------------------------------------------------------------------
-// The green room.
+// The green room — Meet-style layout.
 //
-// Rendered after room auth and BEFORE any peer connection exists: all we hold
-// is a local getUserMedia preview. Nothing is announced to the room and no
-// RTCPeerConnection is created until "Join now" (commitJoin).
+//   heading
+//   self preview (rounded-2xl) with circular mic/cam toggles beneath
+//   info card: room code · who you are joining as · waiting-room status
+//   primary "Join now" mint pill + secondary "Join without video"
+//
+// Nothing here opens a peer connection: all we hold is a local getUserMedia
+// preview, and the RTC layer only starts on join (commitJoin).
 // ---------------------------------------------------------------------------
 
 export default function CallPreJoin() {
@@ -17,6 +21,10 @@ export default function CallPreJoin() {
   const {
     localStream,
     roomCode,
+    isHost,
+    peerName,
+    participants,
+    lobbyEnabled,
     devices,
     micId,
     camId,
@@ -29,8 +37,8 @@ export default function CallPreJoin() {
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
 
-  // Toggling here flips the preview track itself; the same track is handed to
-  // the peer connections on join, so the choice carries into the call.
+  // Toggling flips the preview track itself; the same track is handed to the
+  // peer connections on join, so the choice carries into the call.
   const toggleTrack = (kind: 'audio' | 'video') => {
     const track = kind === 'audio' ? localStream?.getAudioTracks()[0] : localStream?.getVideoTracks()[0];
     if (!track) return;
@@ -39,21 +47,23 @@ export default function CallPreJoin() {
     else setCamOn(track.enabled);
   };
 
+  /** Joins with the camera switched off — audio-only, same session. */
+  const joinWithoutVideo = () => {
+    const track = localStream?.getVideoTracks()[0];
+    if (track) track.enabled = false;
+    setCamOn(false);
+    void commitJoin();
+  };
+
+  // The host's own name for the host; the partner's name when we know it.
+  const displayName = (isHost ? participants[0]?.name : peerName) || participants[0]?.name || '';
+
   return (
-    <div style={styles.shell} role="dialog" aria-modal="true" aria-label={t('call.prejoinTitle')}>
+    <div className="call-prejoin" style={styles.shell} role="dialog" aria-modal="true" aria-label={t('call.prejoinTitle')}>
       <div style={styles.card}>
         <h2 style={styles.title}>{t('call.prejoinTitle')}</h2>
 
-        {roomCode ? (
-          <p style={styles.codeRow}>
-            <span style={styles.codeLabel}>{t('call.callCode')}</span>
-            <span style={styles.code} dir="ltr">{roomCode}</span>
-          </p>
-        ) : null}
-
         <div style={styles.previewWrap}>
-          {/* Ref-callback attach: the element is bound to the stream the moment
-              it mounts, and only re-attached when the stream object changes. */}
           <video
             ref={(el) => {
               if (!el || !localStream) return;
@@ -67,26 +77,52 @@ export default function CallPreJoin() {
             muted
             style={styles.preview}
           />
-          {!camOn ? <span style={styles.cameraOff}>{t('call.prejoinTitle')}</span> : null}
+          {!camOn ? (
+            <span className="call-avatar" style={styles.avatar} aria-hidden="true">
+              {(displayName || '?').trim().charAt(0).toUpperCase()}
+            </span>
+          ) : null}
         </div>
 
+        {/* Circular toggles sit beneath the preview, Meet-style. */}
         <div style={styles.toggles}>
           <button
             type="button"
             onClick={() => toggleTrack('audio')}
             aria-pressed={micOn}
+            aria-label="Microphone"
             style={{ ...styles.toggle, ...(micOn ? null : styles.toggleOff) }}
           >
-            {micOn ? <Mic size={16} /> : <MicOff size={16} />}
+            {micOn ? <Mic size={18} /> : <MicOff size={18} />}
           </button>
           <button
             type="button"
             onClick={() => toggleTrack('video')}
             aria-pressed={camOn}
+            aria-label="Camera"
             style={{ ...styles.toggle, ...(camOn ? null : styles.toggleOff) }}
           >
-            {camOn ? <Video size={16} /> : <VideoOff size={16} />}
+            {camOn ? <Video size={18} /> : <VideoOff size={18} />}
           </button>
+        </div>
+
+        <div style={styles.infoCard}>
+          {roomCode ? (
+            <span style={styles.infoRow}>
+              <span style={styles.infoLabel}>{t('call.callCode')}</span>
+              <span style={styles.infoValue} dir="ltr">{roomCode}</span>
+            </span>
+          ) : null}
+          {displayName ? (
+            <span style={styles.infoRow}>
+              <span style={styles.infoLabel}>{isHost ? t('call.hostControls') : t('call.participants')}</span>
+              <span style={styles.infoValue}>{displayName}</span>
+            </span>
+          ) : null}
+          <span style={styles.infoRow}>
+            <span style={styles.infoLabel}>{t('call.waitingRoom')}</span>
+            <span style={styles.infoValue}>{lobbyEnabled ? '✓' : '—'}</span>
+          </span>
         </div>
 
         <CallDevicePicker
@@ -101,6 +137,9 @@ export default function CallPreJoin() {
         <div style={styles.actions}>
           <button type="button" className="ghost-button" onClick={cancelPrejoin}>
             {t('common.cancel')}
+          </button>
+          <button type="button" className="ghost-button" onClick={joinWithoutVideo}>
+            {t('call.joinWithoutVideo')}
           </button>
           <button type="button" className="primary-button" onClick={() => void commitJoin()}>
             {t('call.joinNow')}
@@ -119,62 +158,75 @@ const styles: Record<string, CSSProperties> = {
     display: 'grid',
     placeItems: 'center',
     padding: '1rem',
-    background: 'rgba(6, 26, 22, 0.86)',
+    background: 'rgba(6, 26, 22, 0.88)',
     overflowY: 'auto',
   },
   card: {
     display: 'grid',
-    gap: '0.8rem',
-    width: 'min(32rem, 100%)',
+    gap: '0.85rem',
+    width: 'min(34rem, 100%)',
     padding: '1.25rem',
-    borderRadius: '1.15rem',
+    borderRadius: '1.25rem',
     background: '#f7fdf9',
-    border: '1px solid rgba(62, 169, 133, 0.3)',
+    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
     boxShadow: '0 28px 64px rgba(6, 26, 22, 0.4)',
   },
-  title: { margin: 0, fontSize: '1.15rem', color: '#133b35' },
-  codeRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, flexWrap: 'wrap' },
-  codeLabel: { color: '#557b76', fontSize: '0.76rem', fontWeight: 700 },
-  code: {
-    paddingBlock: '0.25rem',
-    paddingInline: '0.6rem',
-    borderRadius: '0.6rem',
-    background: 'rgba(62, 169, 133, 0.14)',
-    color: '#216e5d',
-    fontWeight: 800,
-    letterSpacing: '0.04em',
-    overflowWrap: 'anywhere',
-  },
+  title: { margin: 0, fontSize: '1.2rem', color: 'var(--text, #133b35)' },
   previewWrap: {
     position: 'relative',
     width: '100%',
     aspectRatio: '16 / 9',
-    background: '#0d1f1b',
-    borderRadius: '0.9rem',
+    background: '#000',
+    borderRadius: '1rem',
     overflow: 'hidden',
+    boxShadow: '0 12px 30px rgba(6, 26, 22, 0.28)',
+    display: 'grid',
+    placeItems: 'center',
   },
   // Local preview is always mirrored; remote video never is.
   preview: { width: '100%', height: '100%', objectFit: 'contain', transform: 'scaleX(-1)' },
-  cameraOff: {
+  avatar: {
     position: 'absolute',
-    insetBlockEnd: '0.5rem',
-    insetInlineStart: '0.5rem',
-    color: '#cfe9df',
-    fontSize: '0.72rem',
+    display: 'grid',
+    placeItems: 'center',
+    width: '3.4rem',
+    height: '3.4rem',
+    borderRadius: '50%',
+    background: 'var(--accent, #3ea985)',
+    color: '#fff',
+    fontWeight: 800,
+    fontSize: '1.4rem',
   },
-  toggles: { display: 'flex', gap: '0.5rem' },
+  toggles: { display: 'flex', justifyContent: 'center', gap: '0.6rem' },
   toggle: {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 44,
-    height: 44,
+    width: 48,
+    height: 48,
     borderRadius: '50%',
-    border: '1px solid rgba(62, 169, 133, 0.3)',
+    border: '1px solid rgba(62, 169, 133, 0.35)',
     background: 'rgba(62, 169, 133, 0.12)',
-    color: '#216e5d',
+    color: 'var(--accent-strong, #216e5d)',
     cursor: 'pointer',
   },
   toggleOff: { background: 'rgba(224, 101, 90, 0.16)', borderColor: 'rgba(224, 101, 90, 0.4)', color: '#9c3636' },
+  infoCard: {
+    display: 'grid',
+    gap: '0.4rem',
+    padding: '0.8rem 0.9rem',
+    borderRadius: '1rem',
+    background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
+    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
+  },
+  infoRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.6rem' },
+  infoLabel: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', fontWeight: 700 },
+  infoValue: {
+    color: 'var(--text, #133b35)',
+    fontSize: '0.84rem',
+    fontWeight: 700,
+    overflowWrap: 'anywhere',
+    textAlign: 'end',
+  },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' },
 };

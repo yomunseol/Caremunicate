@@ -60,8 +60,8 @@ const EMERGENCY_RETRIES = 3;
 /** DataChannel liveness ping — the only heartbeat once signaling is released. */
 const DC_PING_MS = 3_000;
 
-/** How long an emoji reaction floats over a tile before it retires. */
-const REACTION_MS = 2_600;
+/** How long an emoji reaction floats over the stage before it retires. */
+const REACTION_MS = 2_000;
 
 /** Per-peer diagnostics poll (connection + inbound/outbound video). */
 const PEER_STATS_INTERVAL_MS = 4_000;
