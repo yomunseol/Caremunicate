@@ -47,6 +47,10 @@ export type CheckRoomResult = {
   auto_mute?: boolean | null;
   allow_share?: boolean | null;
   max_participants?: number | null;
+  /** True when the row is somebody's personal line rather than a meeting. */
+  personal?: boolean | null;
+  /** Live headcount, so the guard can refuse an over-capacity join. */
+  participant_count?: number | null;
 };
 
 /**
@@ -119,11 +123,26 @@ export const resolveRoom = async (input: string): Promise<RoomResolution> => {
     return { key: value, code: '', ...SYNTHETIC_RESOLUTION };
   }
 
-  const { data, error } = await supabase
+  // The policy columns are optional in this project, so a select that names a
+  // missing one must not sink the whole lookup — fall back to the core pair.
+  const full = await supabase
     .from('call_rooms')
     .select('id, code, personal, status, host_id')
     .eq(byId ? 'id' : 'code', value)
     .maybeSingle();
+
+  let data: unknown = full.data;
+  let error = full.error;
+
+  if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+    const minimal = await supabase
+      .from('call_rooms')
+      .select('id, code')
+      .eq(byId ? 'id' : 'code', value)
+      .maybeSingle();
+    data = minimal.data;
+    error = minimal.error;
+  }
 
   if (error) console.error('CALL ERROR:', error.message);
 
@@ -289,20 +308,119 @@ export const setRoomPassword = async (
   if (error) throw error;
 };
 
-/** Resolves the room for a code, or null when no such room exists. */
-export const checkRoom = async (code: string, password = ''): Promise<CheckRoomResult | null> => {
-  const normalized = normalizeCode(code);
-  if (!normalized) return null;
+/**
+ * The one gate into a room, shared by the hub's join box and the /call/<param>
+ * route guard.
+ *
+ * `check_call_room(p_input, hash)` accepts EITHER a word code or a UUID. The
+ * password digest is always derived from the room's public CODE (that is what
+ * the RPC hashes against), so a UUID input is resolved to its code first.
+ */
+export const checkRoom = async (input: string, password = ''): Promise<CheckRoomResult | null> => {
+  const value = normalizeCode(input);
+  if (!value) return null;
 
-  const { data, error } = await supabase.rpc('check_call_room', {
-    p_code: normalized,
-    // null === "no password supplied"; a passwordless room must not be handed a
-    // hash, or the RPC would read it as a wrong-password attempt.
-    p_password_hash: password ? await hashCallPassword(normalized, password) : null,
-  });
+  // Resolve first only to learn the code the digest must be based on.
+  const resolution = await resolveRoom(value);
+  const code = resolution.code || value;
+  const hash = password ? await hashCallPassword(code, password) : null;
+
+  const call = (params: Record<string, unknown>) => supabase.rpc('check_call_room', params);
+
+  let { data, error } = await call({ p_input: value, hash });
+
+  // Legacy signature: a project that still exposes check_call_room(p_code,
+  // p_password_hash). Keeps joins working until the RPC is migrated.
+  if (error && (error.code === 'PGRST202' || error.code === '42883')) {
+    ({ data, error } = await call({ p_code: code, p_password_hash: hash }));
+  }
 
   if (error) throw error;
   return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;
+};
+
+/** Why a join was refused, in the order the guard checks. */
+export type JoinRefusal =
+  | 'roomNotFound'
+  | 'meetingLocked'
+  | 'lineClosed'
+  | 'meetingFull'
+  | 'password';
+
+export type JoinVerdict =
+  | {
+      ok: true;
+      code: string;
+      key: string;
+      isHost: boolean;
+      personal: boolean;
+      /** Waiting room in force for this join. */
+      lobby: boolean;
+      /** Policy seed for the store, read from the same check_call_room call. */
+      policy: Partial<CallPolicy>;
+    }
+  | { ok: false; reason: JoinRefusal };
+
+/**
+ * The single join guard. Both entry points call exactly this, so the hub and
+ * the /call/<param> route can never disagree about why a room is closed.
+ */
+export const resolveJoin = async (
+  input: string,
+  options: { password?: string; userId?: string | null } = {},
+): Promise<JoinVerdict> => {
+  const value = normalizeCode(input);
+  if (!value) return { ok: false, reason: 'roomNotFound' };
+
+  const result = await checkRoom(value, options.password ?? '');
+  if (!result || result.status === 'ended') return { ok: false, reason: 'roomNotFound' };
+
+  // A protected room asks for the password before anything else.
+  if (result.has_password && !result.ok) return { ok: false, reason: 'password' };
+
+  const resolution = await resolveRoom(value);
+  if (!resolution.key) return { ok: false, reason: 'roomNotFound' };
+
+  const isHost = Boolean(
+    options.userId && (result.host_id ?? resolution.host_id) === options.userId,
+  );
+  const personal = result.personal === true || resolution.personal;
+  const status = result.status ?? resolution.status;
+
+  // The host is never blocked by their own room's rules.
+  if (!isHost) {
+    if (result.locked === true) return { ok: false, reason: 'meetingLocked' };
+    if (personal && status === 'waiting') return { ok: false, reason: 'lineClosed' };
+    if (
+      typeof result.max_participants === 'number' &&
+      typeof result.participant_count === 'number' &&
+      result.participant_count >= result.max_participants
+    ) {
+      return { ok: false, reason: 'meetingFull' };
+    }
+  }
+
+  const policy: Partial<CallPolicy> = {
+    lobby_enabled: result.lobby_enabled === true,
+    locked: result.locked === true,
+    auto_mute: result.auto_mute === true,
+    allow_share: result.allow_share !== false,
+    has_password: Boolean(result.has_password),
+    ...(typeof result.max_participants === 'number'
+      ? { max_participants: result.max_participants }
+      : {}),
+  };
+
+  // Word-code URLs only: never navigate with a UUID.
+  return {
+    ok: true,
+    code: resolution.code || value,
+    key: resolution.key,
+    isHost,
+    personal,
+    lobby: result.lobby_enabled === true,
+    policy,
+  };
 };
 
 /** Updates a room's lifecycle status, addressed by its transport key (UUID). */

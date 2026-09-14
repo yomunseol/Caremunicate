@@ -10,6 +10,7 @@ import FloatingChatWidget from './components/FloatingChatWidget';
 import CarePlaces from './components/CarePlaces';
 import DashboardOverview from './components/DashboardOverview';
 import CallPage from './components/CallPage';
+import CallHub from './components/CallHub';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
@@ -56,10 +57,13 @@ const parseHash = (hash: string): ParsedRoute => {
   }
 
   if (name === 'call') {
-    const code = rest.join('/');
-    return code
-      ? { route: 'call', conversationId: null, callCode: code, plan: null }
-      : { route: 'home', conversationId: null, callCode: null, plan: null };
+    // #call (no code) is the hub; #call/<words> is that one room.
+    return {
+      route: 'call',
+      conversationId: null,
+      callCode: rest.join('/') || null,
+      plan: null,
+    };
   }
 
   const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing'];
@@ -73,6 +77,11 @@ const parseHash = (hash: string): ParsedRoute => {
 
 /** `/call/<words>` — the path-style invite link. Codes are always words. */
 const CALL_PATH = /^\/call\/([^/]+)\/?$/;
+/** `/call` with no code — the hub. */
+const CALL_HUB_PATH = /^\/call\/?$/;
+
+const isCallHubPath = (): boolean =>
+  typeof window !== 'undefined' && CALL_HUB_PATH.test(window.location.pathname);
 
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -87,8 +96,18 @@ const pathCallCode = (): string | null => {
 
 const getInitialRoute = (): RouteKey => {
   if (typeof window === 'undefined') return 'home';
-  if (pathCallCode()) return 'call';
+  if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
+};
+
+/**
+ * The path the router should build URLs on. A path-style call link leaves
+ * `/call/<words>` as the pathname, which must NOT become the base for later
+ * in-app navigation — otherwise going "home" would stay on the call URL.
+ */
+const routerBasePath = (): string => {
+  if (typeof window === 'undefined') return '/';
+  return /^\/call(\/|$)/.test(window.location.pathname) ? '/' : window.location.pathname;
 };
 
 const getInitialConversationId = (): string | null =>
@@ -252,7 +271,10 @@ function App() {
   }, [toast]);
 
   const navigate = (nextRoute: RouteKey) => {
-    if ((nextRoute === 'profile' || nextRoute === 'chat') && (!currentUser || pending2FA)) {
+    if (
+      (nextRoute === 'profile' || nextRoute === 'chat' || nextRoute === 'call') &&
+      (!currentUser || pending2FA)
+    ) {
       nextRoute = 'login';
     }
     if (nextRoute === 'login' || nextRoute === 'signup') {
@@ -262,7 +284,7 @@ function App() {
     setConversationId(null);
     setCallCode(null);
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
-    window.history.pushState({}, '', `${window.location.pathname}${hash}`);
+    window.history.pushState({}, '', `${routerBasePath()}${hash}`);
   };
 
   const openAuth = (mode: AuthMode, role: AuthRole = 'patient') => {
@@ -626,6 +648,9 @@ function App() {
 
           {currentUser ? (
             <>
+              <button className="ghost-button" type="button" onClick={() => navigate('call')}>
+                {t('call.callHub')}
+              </button>
               <div className="profile-menu">
                 <button
                   className="profile-trigger"
@@ -1084,9 +1109,10 @@ function App() {
           </ProtectedRoute>
         )}
 
+        {/* One hub at /call; /call/<words> is that single room's guard. */}
         {route === 'call' && (
           <ProtectedRoute>
-            <CallPage code={callCode ?? ''} />
+            {callCode ? <CallPage code={callCode} /> : <CallHub />}
           </ProtectedRoute>
         )}
 

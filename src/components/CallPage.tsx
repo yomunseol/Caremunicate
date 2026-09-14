@@ -1,21 +1,32 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
-import { checkRoom, resolveRoom, type CallPolicy } from '../lib/callRooms';
+import { resolveJoin, type JoinRefusal } from '../lib/callRooms';
 import { normalizeCode } from '../lib/wordcode';
 import { takePendingPolicy } from '../lib/callPrefs';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
-// /call/{code} — the entry point for a code room.
+// /call/<param> — the route guard.
 //
-// check_call_room gates entry, then the room opens into the GREEN ROOM (or the
-// waiting room for a guest when the room has one). No media is announced and no
-// peer connection is built here — that happens on "Join now" in CallLayer.
+// The SAME guard the hub uses (resolveJoin) runs here, so the two can never
+// disagree. The parameter may be a word code OR a UUID; either way the store is
+// opened with the UUID and the URL is canonicalized to the word code.
+//
+// The room then opens into the GREEN ROOM (or the waiting room for a guest).
+// No media is announced and no peer connection is built until "Join now".
 // ---------------------------------------------------------------------------
 
 type CallPageProps = {
   code: string;
+};
+
+/** Refusal -> the toast key the app already ships. */
+const REFUSAL_NOTICE: Record<Exclude<JoinRefusal, 'password'>, string> = {
+  roomNotFound: 'room-not-found',
+  meetingLocked: 'meeting-locked',
+  lineClosed: 'line-closed',
+  meetingFull: 'meeting-full',
 };
 
 const goHome = () => {
@@ -26,111 +37,99 @@ export default function CallPage({ code }: CallPageProps) {
   const { t } = useLang();
   const { user } = useAuth();
   const { status, stage, roomCode, notify, openRoom } = useCallContext();
-  const [checking, setChecking] = useState(true);
 
-  // Keyed by normalized code so a re-run never opens the room twice.
+  const [checking, setChecking] = useState(true);
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Keyed by the canonical code so a re-run never opens the room twice.
   const opened = useRef<string | null>(null);
   // Only redirect once we have actually been somewhere (green room / lobby /
   // session), so the initial idle state does not bounce us straight home.
   const sawActivity = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    const normalized = normalizeCode(code);
-
-    if (!normalized) {
-      notify('room-not-found');
-      goHome();
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setChecking(true);
-
-    const run = async () => {
-      try {
-        const result = await checkRoom(normalized);
-        if (cancelled) return;
-
-        if (!result || result.status === 'ended') {
-          notify('room-not-found');
-          goHome();
-          return;
-        }
-
-        setChecking(false);
-
-        if (opened.current === normalized) return;
-        opened.current = normalized;
-
-        const isHost = Boolean(user && result.host_id && result.host_id === user.id);
-
-        // Join guard: a locked room turns guests away before any media is
-        // acquired. The host is never blocked.
-        if (result.locked === true && !isHost) {
-          notify('meeting-locked');
-          goHome();
-          return;
-        }
-
-        // Words -> UUID. The database is the only route to the transport key,
-        // and a word-keyed channel must never exist — so a failed lookup is a
-        // dead end rather than a fallback.
-        const resolution = await resolveRoom(normalized);
-        if (cancelled) return;
-        if (!resolution.key) {
-          notify('room-not-found');
-          goHome();
-          return;
-        }
-
-        // A personal line only rings while its owner has it open.
-        if (resolution.personal && resolution.status === 'waiting') {
-          notify('line-closed');
-          goHome();
-          return;
-        }
-
-        // The waiting room is only enforced when the RPC explicitly says so.
-        const lobby = result.lobby_enabled === true;
-
-        // Host: prefer the policy the host just chose in the settings modal.
-        // Everyone else: take whatever check_call_room echoed back.
-        const pendingPolicy = isHost ? takePendingPolicy() : null;
-        const policy: Partial<CallPolicy> = pendingPolicy ?? {
-          lobby_enabled: result.lobby_enabled === true,
-          locked: result.locked === true,
-          auto_mute: result.auto_mute === true,
-          allow_share: result.allow_share !== false,
-          has_password: Boolean(result.has_password),
-          ...(typeof result.max_participants === 'number'
-            ? { max_participants: result.max_participants }
-            : {}),
-        };
-
-        // openRoom takes the UUID; the words travel alongside as the public code.
-        await openRoom(resolution.key, {
-          isHost,
-          code: resolution.code || normalized,
-          personal: resolution.personal,
-          lobby,
-          policy,
-        });
-      } catch (error) {
-        console.error('CALL ERROR:', error);
-        if (cancelled) return;
+  const runGuard = useCallback(
+    async (secret: string, allowRetry: boolean) => {
+      const normalized = normalizeCode(code);
+      if (!normalized) {
         notify('room-not-found');
         goHome();
+        return;
       }
-    };
 
-    void run();
+      setBusy(true);
+      try {
+        let verdict = await resolveJoin(normalized, { password: secret, userId: user?.id });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [code, user, openRoom, notify]);
+        // Insert / replication race: a doctor who just created the room can
+        // land here a beat before the row is readable. One retry, then we
+        // believe the answer — this is what killed "Cannot find meeting".
+        if (allowRetry && !verdict.ok && verdict.reason === 'roomNotFound') {
+          await new Promise((resolve) => window.setTimeout(resolve, 300));
+          verdict = await resolveJoin(normalized, { password: secret, userId: user?.id });
+        }
+
+        if (!verdict.ok) {
+          if (verdict.reason === 'password') {
+            setNeedsPassword(true);
+            setError(secret ? t('call.wrongPassword') : null);
+            setChecking(false);
+            return;
+          }
+
+          // Every refusal is surfaced as a toast on the way home.
+          setChecking(false);
+          notify(REFUSAL_NOTICE[verdict.reason]);
+          goHome();
+          return;
+        }
+
+        // Canonical URL: words only. A UUID (or a hash-style link) becomes
+        // /call/<words>.
+        if (normalized !== verdict.code) {
+          window.history.replaceState({}, '', `/call/${verdict.code}`);
+        }
+
+        setError(null);
+        setNeedsPassword(false);
+        setChecking(false);
+
+        if (opened.current === verdict.code) return;
+        opened.current = verdict.code;
+
+        // Host: prefer the policy chosen in the settings modal.
+        const pendingPolicy = verdict.isHost ? takePendingPolicy() : null;
+
+        await openRoom(verdict.key, {
+          isHost: verdict.isHost,
+          code: verdict.code,
+          personal: verdict.personal,
+          lobby: verdict.lobby,
+          policy: pendingPolicy ?? verdict.policy,
+        });
+      } catch (caught) {
+        console.error('CALL ERROR:', caught);
+        setError(t('call.roomNotFound'));
+        setChecking(false);
+        notify('room-not-found');
+        goHome();
+      } finally {
+        setBusy(false);
+      }
+    },
+    [code, user?.id, openRoom, notify, t],
+  );
+
+  useEffect(() => {
+    void runGuard('', true);
+  }, [runGuard]);
+
+  const submitPassword = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void runGuard(password, false);
+  };
 
   // Track that we left the entry state at least once.
   useEffect(() => {
@@ -149,9 +148,58 @@ export default function CallPage({ code }: CallPageProps) {
     }
   }, [status, stage, roomCode]);
 
+  if (needsPassword) {
+    return (
+      <section className="section call-page">
+        <div className="call-modal-backdrop" role="presentation">
+          <form
+            className="call-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('call.enterPassword')}
+            onSubmit={submitPassword}
+          >
+            <div className="call-modal-head">
+              <strong>{t('call.enterPassword')}</strong>
+            </div>
+
+            <label className="call-modal-field">
+              <span>{t('call.enterPassword')}</span>
+              <input
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                aria-label={t('call.enterPassword')}
+                value={password}
+                autoFocus
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError(null);
+                }}
+              />
+            </label>
+
+            {error ? <span className="field-error">{error}</span> : null}
+
+            <div className="call-modal-actions">
+              <button type="button" className="ghost-button" onClick={goHome}>
+                {t('common.cancel')}
+              </button>
+              <button type="submit" className="primary-button" disabled={busy} aria-busy={busy}>
+                {t('call.joinWithCode')}
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="section call-page">
-      <p className="hero-copy" aria-busy={checking}>{t('call.connecting')}</p>
+      <p className="hero-copy" aria-busy={checking}>
+        {error ?? t('call.connecting')}
+      </p>
     </section>
   );
 }

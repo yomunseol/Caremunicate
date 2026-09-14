@@ -507,6 +507,7 @@ const translations = {
     'call.personalCode': 'Your personal code',
     'call.openLine': 'Open my line',
     'call.lineClosed': 'This person is not available right now.',
+    'call.callHub': 'Calls',
   },
 
   fr: {
@@ -980,6 +981,7 @@ const translations = {
     'call.personalCode': 'Votre code personnel',
     'call.openLine': 'Ouvrir ma ligne',
     'call.lineClosed': "Cette personne n'est pas disponible pour le moment.",
+    'call.callHub': 'Appels',
   },
 
   es: {
@@ -1448,6 +1450,7 @@ const translations = {
     'call.personalCode': 'Tu código personal',
     'call.openLine': 'Abrir mi línea',
     'call.lineClosed': 'Esta persona no está disponible ahora.',
+    'call.callHub': 'Llamadas',
   },
 
   ko: {
@@ -1901,6 +1904,7 @@ const translations = {
     'call.personalCode': '내 개인 코드',
     'call.openLine': '내 회선 열기',
     'call.lineClosed': '지금 이 사람은 응답할 수 없습니다.',
+    'call.callHub': '통화',
   },
 
   zh: {
@@ -2347,6 +2351,7 @@ const translations = {
     'call.personalCode': '您的个人代码',
     'call.openLine': '开放我的线路',
     'call.lineClosed': '此人当前不在线。',
+    'call.callHub': '通话',
   },
 
   pt: {
@@ -2814,6 +2819,7 @@ const translations = {
     'call.personalCode': 'Seu código pessoal',
     'call.openLine': 'Abrir minha linha',
     'call.lineClosed': 'Esta pessoa não está disponível agora.',
+    'call.callHub': 'Chamadas',
   },
 
   de: {
@@ -3285,6 +3291,7 @@ const translations = {
     'call.personalCode': 'Dein persönlicher Code',
     'call.openLine': 'Meine Leitung öffnen',
     'call.lineClosed': 'Diese Person ist gerade nicht erreichbar.',
+    'call.callHub': 'Anrufe',
   },
 
   it: {
@@ -3752,6 +3759,7 @@ const translations = {
     'call.personalCode': 'Il tuo codice personale',
     'call.openLine': 'Apri la mia linea',
     'call.lineClosed': 'Questa persona non è disponibile al momento.',
+    'call.callHub': 'Chiamate',
   },
 
   ar: {
@@ -4211,6 +4219,7 @@ const translations = {
     'call.personalCode': 'رمزك الشخصي',
     'call.openLine': 'افتح خطي',
     'call.lineClosed': 'هذا الشخص غير متاح حاليًا.',
+    'call.callHub': 'المكالمات',
   },
 
   he: {
@@ -4664,6 +4673,7 @@ const translations = {
     'call.personalCode': 'הקוד האישי שלך',
     'call.openLine': 'פתיחת הקו שלי',
     'call.lineClosed': 'אדם זה אינו זמין כרגע.',
+    'call.callHub': 'שיחות',
   },
 };
 

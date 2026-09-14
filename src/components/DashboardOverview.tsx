@@ -8,8 +8,6 @@ import { useCallContext } from '../context/CallContext';
 import VerificationBadge from './VerificationBadge';
 import EmergencyAlertBanner from './EmergencyAlertBanner';
 import EmergencyCard from './EmergencyCard';
-import CallRoomsPanel from './CallRoomsPanel';
-import PersonalLineCard from './PersonalLineCard';
 
 // ---------------------------------------------------------------------------
 // Dashboard overview — the left column of the profile dashboard.
@@ -285,9 +283,19 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
           <EmergencyCard />
 
-          <CallRoomsPanel canHost={provider} />
-
-          <PersonalLineCard />
+          {/* Call entry lives in ONE place now: the /call hub. */}
+          <div className="panel">
+            <div className="eyebrow">{t('call.callHub')}</div>
+            <button
+              type="button"
+              className="ghost-button call-join-trigger"
+              onClick={() => {
+                window.location.hash = '#call';
+              }}
+            >
+              {t('call.joinWithCode')}
+            </button>
+          </div>
 
           <div className="panel">
             <div className="eyebrow">{t('dash.quickActions')}</div>
@@ -373,9 +381,19 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
             </button>
           </div>
 
-          <CallRoomsPanel canHost={provider} />
-
-          <PersonalLineCard />
+          {/* Call entry lives in ONE place now: the /call hub. */}
+          <div className="panel">
+            <div className="eyebrow">{t('call.callHub')}</div>
+            <button
+              type="button"
+              className="ghost-button call-join-trigger"
+              onClick={() => {
+                window.location.hash = '#call';
+              }}
+            >
+              {t('call.startMeeting')}
+            </button>
+          </div>
 
           <div className="panel">
             <div className="eyebrow">{t('dash.certificationTitle')}</div>
