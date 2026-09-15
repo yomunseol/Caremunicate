@@ -197,7 +197,8 @@ export default function CallOverflowMenu({
           <span className="call-switch-label">{t('call.removeParticipant')}</span>
           <ul className="call-overflow-list">
             {remotes.length === 0 ? (
-              <li className="call-overflow-empty">—</li>
+              /* No bare '—': say why the list is empty. Not yet translated. */
+              <li className="call-overflow-empty">No one else is here yet</li>
             ) : (
               remotes.map((person) => (
                 <li key={person.id} className="call-overflow-row">

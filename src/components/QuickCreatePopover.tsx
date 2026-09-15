@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { X } from 'lucide-react';
+import { CalendarOff, X } from 'lucide-react';
 import { useLang } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
@@ -179,7 +179,12 @@ export default function QuickCreatePopover({
             ))}
           </select>
         ) : (
-          <span className="cal-popover-note">—</span>
+          /* No bare '—': say why there is nothing to pick. */
+          <span className="cal-empty-state cal-empty-state-inline">
+            <CalendarOff size={18} aria-hidden="true" />
+            {/* Not yet translated — needs the 10-locale string. */}
+            <span>No patients to book with yet.</span>
+          </span>
         )}
       </label>
 

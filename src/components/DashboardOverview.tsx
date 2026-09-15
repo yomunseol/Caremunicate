@@ -8,6 +8,8 @@ import { useCallContext } from '../context/CallContext';
 import VerificationBadge from './VerificationBadge';
 import EmergencyAlertBanner from './EmergencyAlertBanner';
 import EmergencyCard from './EmergencyCard';
+import VideoCallSheet from './VideoCallSheet';
+import BookingFlow, { type BookableProvider } from './BookingFlow';
 
 // ---------------------------------------------------------------------------
 // Dashboard overview — the left column of the profile dashboard.
@@ -67,6 +69,8 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
   const [overview, setOverview] = useState<Overview>(EMPTY_OVERVIEW);
   const [loading, setLoading] = useState(true);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
   const { startCall } = useCallContext();
 
   const load = useCallback(async () => {
@@ -220,8 +224,17 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
   ];
   const doneCount = onboarding.filter((step) => step.done).length;
 
+  /** Find care: scroll the panel in AND put the caret in its search box. */
   const focusCarePlaces = () => {
     document.getElementById('care-places-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    window.setTimeout(() => {
+      document.getElementById('care-places-search')?.focus();
+    }, 320);
+  };
+
+  /** Saved places: bring the favorites grid itself into view, not the heading. */
+  const focusFavorites = () => {
+    document.getElementById('care-places-favorites')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   const openChat = (peer?: Peer) => {
@@ -240,6 +253,16 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
   const startVideo = (peerId?: string, peerName?: string) => {
     if (peerId) void startCall(peerId, 'video', peerName);
   };
+
+  /** Providers a patient can book from the sheet. Peer carries no verification
+      flag, so the booking modal shows the badge only on the calendar path. */
+  const bookableProviders: BookableProvider[] = useMemo(
+    () =>
+      overview.peers
+        .filter((peer) => isProvider(peer.role))
+        .map((peer) => ({ id: peer.userId, name: peer.name, role: peer.role, verified: false })),
+    [overview.peers],
+  );
 
   return (
     <div className="dashboard-main">
@@ -287,21 +310,18 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           <div className="panel">
             <div className="eyebrow">{t('dash.quickActions')}</div>
             <div style={styles.actionGrid}>
-              <button type="button" className="ghost-button" onClick={() => openChat()}>
+              {/* New chat: opens the messenger with the care team preselected. */}
+              <button type="button" className="ghost-button" onClick={() => openChat(careTeam ?? undefined)}>
                 <MessageCircle size={15} aria-hidden="true" /> {t('chat.newChat')}
               </button>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => startVideo(careTeam?.userId, careTeam?.name)}
-                disabled={!careTeam}
-              >
+              {/* Video call: always enabled — the sheet offers call / join / book. */}
+              <button type="button" className="ghost-button" onClick={() => setSheetOpen(true)}>
                 <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
               </button>
               <button type="button" className="ghost-button" onClick={focusCarePlaces}>
                 <ShieldCheck size={15} aria-hidden="true" /> {t('dash.findCare')}
               </button>
-              <button type="button" className="ghost-button" onClick={focusCarePlaces}>
+              <button type="button" className="ghost-button" onClick={focusFavorites}>
                 <CheckCircle2 size={15} aria-hidden="true" /> {t('places.favorites')}
               </button>
             </div>
@@ -383,6 +403,29 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           {t('call.callHub')}
         </button>
       </div>
+
+      {sheetOpen ? (
+        <VideoCallSheet
+          careTeam={careTeam ? { userId: careTeam.userId, name: careTeam.name } : null}
+          onClose={() => setSheetOpen(false)}
+          onBook={() => setBookingOpen(true)}
+        />
+      ) : null}
+
+      {bookingOpen && user?.id ? (
+        <BookingFlow
+          patientId={user.id}
+          providers={bookableProviders}
+          initialProvider={careTeam && isProvider(careTeam.role)
+            ? { id: careTeam.userId, name: careTeam.name, role: careTeam.role, verified: false }
+            : null}
+          onClose={() => setBookingOpen(false)}
+          onBooked={() => {
+            setBookingOpen(false);
+            void load();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

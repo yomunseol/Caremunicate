@@ -171,6 +171,67 @@ export const slotsForDay = (
   return slots;
 };
 
+/**
+ * Open slots for one date, for the booking modal.
+ *
+ * Expand the weekday rule from start→end in `slot_minutes` steps, then drop:
+ *   - anything already in the past,
+ *   - anything overlapping an appointment of any status except 'cancelled',
+ *     widened by a BUFFER_MINUTES clearance so back-to-back bookings breathe.
+ *
+ * Slots are returned in local time and the caller formats each one with Intl.
+ */
+export const SLOT_BUFFER_MINUTES = 5;
+
+export const slotsForDate = (
+  day: Date,
+  rules: Availability[],
+  booked: Appointment[],
+  now = Date.now(),
+): Slot[] => {
+  const rule = rules.find((item) => Number(item.weekday) === day.getDay());
+  if (!rule) return [];
+
+  const [startHour, startMinute] = rule.start_time.split(':').map(Number);
+  const [endHour, endMinute] = rule.end_time.split(':').map(Number);
+  if ([startHour, startMinute, endHour, endMinute].some((n) => Number.isNaN(n))) return [];
+
+  const length = Number(rule.slot_minutes) * 60_000;
+  if (length <= 0) return [];
+
+  // The buffer applies to the candidate, so a booking that merely touches the
+  // slot edge still leaves a gap.
+  const buffer = SLOT_BUFFER_MINUTES * 60_000;
+
+  const dayEnd = new Date(day);
+  dayEnd.setHours(endHour, endMinute, 0, 0);
+
+  const busy = booked
+    .filter((appointment) => appointment.status !== 'cancelled')
+    .map((appointment) => ({
+      start: new Date(appointment.start_at).getTime(),
+      end: new Date(appointment.end_at).getTime(),
+    }));
+
+  const slots: Slot[] = [];
+  const cursor = new Date(day);
+  cursor.setHours(startHour, startMinute, 0, 0);
+
+  while (cursor.getTime() + length <= dayEnd.getTime()) {
+    const start = new Date(cursor);
+    const end = new Date(cursor.getTime() + length);
+
+    const blocked = busy.some(
+      (item) => start.getTime() - buffer < item.end && end.getTime() + buffer > item.start,
+    );
+
+    if (!blocked && start.getTime() > now) slots.push({ start, end });
+    cursor.setTime(cursor.getTime() + length);
+  }
+
+  return slots;
+};
+
 /** Every open slot in the booking window, in local time. */
 export const openSlots = (
   rules: Availability[],

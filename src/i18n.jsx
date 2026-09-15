@@ -530,6 +530,10 @@ const translations = {
     'cal.schedule': 'Schedule',
     'cal.create': 'Create',
     'cal.moreEvents': '+{{count}} more',
+    'cal.noSlotsYet': "This provider hasn't opened their schedule yet.",
+    'cal.selectSlot': 'Select a time',
+    'cal.booked': 'Appointment booked!',
+    'call.callCareTeam': 'Call your care team',
   },
 
   fr: {
@@ -1026,6 +1030,10 @@ const translations = {
     'cal.schedule': 'Planning',
     'cal.create': 'Créer',
     'cal.moreEvents': '+{{count}} autres',
+    'cal.noSlotsYet': "Ce professionnel n'a pas encore ouvert ses disponibilités.",
+    'cal.selectSlot': 'Choisissez un créneau',
+    'cal.booked': 'Rendez-vous confirmé !',
+    'call.callCareTeam': 'Appeler votre équipe de soins',
   },
 
   es: {
@@ -1517,6 +1525,10 @@ const translations = {
     'cal.schedule': 'Agenda',
     'cal.create': 'Crear',
     'cal.moreEvents': '+{{count}} más',
+    'cal.noSlotsYet': 'Este profesional aún no abrió su agenda.',
+    'cal.selectSlot': 'Selecciona un horario',
+    'cal.booked': '¡Cita reservada!',
+    'call.callCareTeam': 'Llamar a tu equipo de atención',
   },
 
   ko: {
@@ -1993,6 +2005,10 @@ const translations = {
     'cal.schedule': '일정',
     'cal.create': '만들기',
     'cal.moreEvents': '+{{count}} 더',
+    'cal.noSlotsYet': '이 의료진은 아직 가능 시간을 열지 않았습니다.',
+    'cal.selectSlot': '시간을 선택하세요',
+    'cal.booked': '예약이 완료되었습니다!',
+    'call.callCareTeam': '담당 의료진에게 통화',
   },
 
   zh: {
@@ -2462,6 +2478,10 @@ const translations = {
     'cal.schedule': '日程',
     'cal.create': '创建',
     'cal.moreEvents': '还有 {{count}} 项',
+    'cal.noSlotsYet': '该医生尚未开放可约时间。',
+    'cal.selectSlot': '选择时间',
+    'cal.booked': '预约成功！',
+    'call.callCareTeam': '致电您的医疗团队',
   },
 
   pt: {
@@ -2952,6 +2972,10 @@ const translations = {
     'cal.schedule': 'Agenda',
     'cal.create': 'Criar',
     'cal.moreEvents': '+{{count}} mais',
+    'cal.noSlotsYet': 'Este profissional ainda não abriu a agenda.',
+    'cal.selectSlot': 'Selecione um horário',
+    'cal.booked': 'Consulta agendada!',
+    'call.callCareTeam': 'Ligar para sua equipe de cuidados',
   },
 
   de: {
@@ -3446,6 +3470,10 @@ const translations = {
     'cal.schedule': 'Terminplan',
     'cal.create': 'Erstellen',
     'cal.moreEvents': '+{{count}} weitere',
+    'cal.noSlotsYet': 'Diese Praxis hat noch keine Verfügbarkeiten geöffnet.',
+    'cal.selectSlot': 'Zeit wählen',
+    'cal.booked': 'Termin gebucht!',
+    'call.callCareTeam': 'Dein Care-Team anrufen',
   },
 
   it: {
@@ -3936,6 +3964,10 @@ const translations = {
     'cal.schedule': 'Programma',
     'cal.create': 'Crea',
     'cal.moreEvents': '+{{count}} altri',
+    'cal.noSlotsYet': "Questo professionista non ha ancora aperto l'agenda.",
+    'cal.selectSlot': 'Seleziona un orario',
+    'cal.booked': 'Appuntamento prenotato!',
+    'call.callCareTeam': 'Chiama il tuo team di cura',
   },
 
   ar: {
@@ -4418,6 +4450,10 @@ const translations = {
     'cal.schedule': 'الجدول',
     'cal.create': 'إنشاء',
     'cal.moreEvents': '+{{count}} أخرى',
+    'cal.noSlotsYet': 'لم يفتح هذا الطبيب مواعيده بعد.',
+    'cal.selectSlot': 'اختر وقتًا',
+    'cal.booked': 'تم حجز الموعد!',
+    'call.callCareTeam': 'الاتصال بفريق الرعاية',
   },
 
   he: {
@@ -4894,6 +4930,10 @@ const translations = {
     'cal.schedule': 'לוח זמנים',
     'cal.create': 'יצירה',
     'cal.moreEvents': '+{{count}} נוספים',
+    'cal.noSlotsYet': 'הרופא טרם פתח את יומנו.',
+    'cal.selectSlot': 'בחרו שעה',
+    'cal.booked': 'הפגישה נקבעה!',
+    'call.callCareTeam': 'התקשרו לצוות הטיפול',
   },
 };
 

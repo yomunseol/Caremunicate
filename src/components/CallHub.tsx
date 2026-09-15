@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
@@ -63,6 +63,8 @@ export default function CallHub() {
   const [line, setLine] = useState<PersonalRoom | null>(null);
   const [lineBusy, setLineBusy] = useState(false);
   const [lineCopied, setLineCopied] = useState(false);
+  /** Raw reason the personal line could not be loaded, if it threw. */
+  const [lineError, setLineError] = useState<string | null>(null);
 
   // Can this account host a meeting? (doctor / department / hospital)
   useEffect(() => {
@@ -86,17 +88,26 @@ export default function CallHub() {
   }, [user?.id, user?.user_metadata?.role]);
 
   // The personal line is created lazily, once, and keeps its code forever.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!user?.id) return;
-      const created = await ensurePersonalRoom(user.id);
-      if (!cancelled) setLine(created);
-    })();
-    return () => {
-      cancelled = true;
-    };
+  // A throw is reported inline with its raw code and a retry, exactly like
+  // startFailed — never a silent empty card.
+  const loadLine = useCallback(async () => {
+    if (!user?.id) return;
+    setLineBusy(true);
+    setLineError(null);
+    try {
+      setLine(await ensurePersonalRoom(user.id));
+    } catch (error) {
+      console.error('CALL ERROR:', error);
+      const failure = error as { code?: string; message?: string } | null;
+      setLineError(failure?.code ?? failure?.message ?? String(error));
+    } finally {
+      setLineBusy(false);
+    }
   }, [user?.id]);
+
+  useEffect(() => {
+    void loadLine();
+  }, [loadLine]);
 
   const startMeeting = async (settings: MeetingSettings) => {
     setHostBusy(true);
@@ -292,44 +303,65 @@ export default function CallHub() {
           <div className="eyebrow">{t('call.personalCode')}</div>
 
           {line ? (
-            <>
-              <div style={styles.lineRow}>
-                <span
-                  className="call-code-chip"
-                  style={styles.lineChip}
-                  dir="ltr"
-                  title={line.code}
-                >
-                  {line.code}
-                </span>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={copyLineCode}
-                  title={t('call.copyCode')}
-                  aria-label={`${t('call.copyCode')} — ${line.code}`}
-                >
-                  {lineCopied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
-                </button>
-              </div>
+            /* ONE row: label · mono code · copy · flexible spacer · switch.
+               Wraps gracefully on narrow screens and nothing touches the edge. */
+            <div className="call-line-row">
+              <span className="call-line-label">{t('call.openLine')}</span>
 
-              <div style={styles.lineRow}>
-                <span className="call-switch-label">{t('call.openLine')}</span>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isLineOpen}
-                  aria-label={t('call.openLine')}
-                  className={isLineOpen ? 'call-switch is-on' : 'call-switch'}
-                  disabled={lineBusy}
-                  onClick={() => void toggleLine()}
-                >
-                  <span className="call-switch-knob" aria-hidden="true" />
-                </button>
-              </div>
-            </>
+              <span
+                className="call-code-chip"
+                style={styles.lineChip}
+                dir="ltr"
+                title={line.code}
+              >
+                {line.code}
+              </span>
+
+              <button
+                type="button"
+                className="ghost-button call-line-copy"
+                onClick={copyLineCode}
+                title={t('call.copyCode')}
+                aria-label={`${t('call.copyCode')} — ${line.code}`}
+              >
+                {lineCopied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+              </button>
+
+              <span className="call-line-spacer" aria-hidden="true" />
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={isLineOpen}
+                aria-label={t('call.openLine')}
+                className={isLineOpen ? 'call-switch is-on' : 'call-switch'}
+                disabled={lineBusy}
+                onClick={() => void toggleLine()}
+              >
+                <span className="call-switch-knob" aria-hidden="true" />
+              </button>
+            </div>
+          ) : lineError ? (
+            /* Self-reporting: the raw code, then a way to try again. */
+            <div className="call-line-error">
+              <span className="field-error">
+                {t('call.startFailed')}
+                <span className="error-detail">({lineError})</span>
+              </span>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={lineBusy}
+                aria-busy={lineBusy}
+                onClick={() => void loadLine()}
+              >
+                Retry
+              </button>
+            </div>
           ) : (
-            <span className="call-hub-muted">—</span>
+            <span className="call-hub-muted">
+              {lineBusy ? t('places.searching') : t('call.lineClosed')}
+            </span>
           )}
         </div>
       </div>

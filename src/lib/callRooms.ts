@@ -440,6 +440,37 @@ export const ensurePersonalRoom = async (userId: string): Promise<PersonalRoom |
   return null;
 };
 
+/**
+ * Read-only lookup of someone ELSE's personal line — the assigned care team
+ * member. Never creates one: a patient must not conjure a doctor's room.
+ *
+ * Returns null both when there is no row and when the read fails, and the
+ * caller treats null as "line closed" rather than offering a dead button.
+ */
+export const findPersonalRoom = async (hostId: string): Promise<PersonalRoom | null> => {
+  if (!hostId) return null;
+
+  const { data, error } = await supabase
+    .from('call_rooms')
+    .select('id, code, status')
+    .eq('host_id', hostId)
+    .eq('personal', true)
+    .maybeSingle();
+
+  if (error) {
+    console.error('CALL ERROR:', error.message);
+    return null;
+  }
+  if (!data) return null;
+
+  const row = data as { id?: string; code?: string; status?: string };
+  return {
+    id: String(row.id ?? ''),
+    code: String(row.code ?? ''),
+    status: String(row.status ?? 'waiting'),
+  };
+};
+
 /** Opens ('active') or closes ('waiting') a personal line. */
 export const setPersonalRoomStatus = async (
   roomKey: string,

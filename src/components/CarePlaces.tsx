@@ -552,7 +552,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       </div>
 
       {/* FAVORITES — newest first, above search. */}
-      <div style={styles.section}>
+      <div id="care-places-favorites" style={styles.section}>
         <div style={styles.sectionHeading}>
           <h4 style={styles.sectionTitle}>{t('places.favorites')}</h4>
           {!favoritesLoading && !favoritesError ? (
@@ -617,6 +617,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           <div style={styles.searchBox}>
             <Search size={16} style={styles.searchIcon} aria-hidden="true" />
             <input
+              id="care-places-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={t('places.searchPlaceholder')}

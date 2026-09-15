@@ -1,16 +1,17 @@
-import { useState, type CSSProperties } from 'react';
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarOff, CalendarPlus, Check, Copy, X } from 'lucide-react';
 import { createRoom } from '../lib/callRooms';
 import {
   buildIcs,
   createAppointment,
   downloadIcs,
-  formatDayLong,
-  formatRange,
+  formatTime,
   loadAvailability,
   loadBusySlots,
-  openSlots,
+  slotsForDate,
+  BOOKING_WINDOW_DAYS,
   type Appointment,
+  type Availability,
   type Slot,
 } from '../lib/appointments';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -18,14 +19,21 @@ import { roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
-// Booking flow (patient).
+// Booking modal.
 //
-//   pick a provider -> pick an open slot -> confirm
-//     -> create the call room FIRST, then the appointment that points at it
-//     -> success, showing the word code and an .ics download
+//   header  provider name + role chip + certified badge
+//   strip   the next 14 days, horizontally scrollable, Intl labels
+//   grid    slot chips for the selected date (mint fill when chosen)
+//   footer  duration · timezone · Cancel / Book
 //
-// Open slots are computed in the browser: weekly availability minus the
-// provider's busy ranges, over a two-week window.
+// Slots come from lib/appointments#slotsForDate: the weekday rule expanded from
+// start to end in slot_minutes steps, minus past times and minus anything
+// overlapping a live appointment (cancelled ones do not block), with a 5-minute
+// buffer so back-to-back bookings are not jammed together.
+//
+// Booking is two writes: a call room created with the lobby on, then the
+// appointment row that points at it. The success panel shows the room's 4-word
+// code so the patient can read it out, plus .ics and a link into the calendar.
 // ---------------------------------------------------------------------------
 
 export type BookableProvider = { id: string; name: string; role: string; verified: boolean };
@@ -33,245 +41,363 @@ export type BookableProvider = { id: string; name: string; role: string; verifie
 type BookingFlowProps = {
   patientId: string;
   providers: BookableProvider[];
+  /** Preselects and skips the provider step (used by the dashboard sheet). */
+  initialProvider?: BookableProvider | null;
   onClose: () => void;
-  onBooked?: () => void;
+  onBooked: () => void;
 };
 
-export default function BookingFlow({ patientId, providers, onClose, onBooked }: BookingFlowProps) {
+const startOfDay = (date: Date): Date => {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+};
+
+export default function BookingFlow({
+  patientId,
+  providers,
+  initialProvider = null,
+  onClose,
+  onBooked,
+}: BookingFlowProps) {
   const { t, locale } = useLang();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
-  const [step, setStep] = useState<'provider' | 'slot' | 'saving' | 'done'>('provider');
-  const [provider, setProvider] = useState<BookableProvider | null>(null);
-  const [slots, setSlots] = useState<Slot[]>([]);
-  const [chosen, setChosen] = useState<Slot | null>(null);
-  const [booked, setBooked] = useState<{ code: string; appointment: Appointment } | null>(null);
+  const [provider, setProvider] = useState<BookableProvider | null>(initialProvider);
+  const [rules, setRules] = useState<Availability[]>([]);
+  const [booked, setBooked] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
+  const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
+  const [chosen, setChosen] = useState<Slot | null>(null);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<{ code: string; appointment: Appointment } | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const pickProvider = async (next: BookableProvider) => {
-    setProvider(next);
-    setStep('slot');
+  // The next 14 days, today first.
+  const days = useMemo(() => {
+    const today = startOfDay(new Date());
+    return Array.from({ length: BOOKING_WINDOW_DAYS }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() + index);
+      return date;
+    });
+  }, []);
+
+  // Load the provider's rules and their booked appointments once chosen.
+  useEffect(() => {
+    if (!provider) return;
+    let cancelled = false;
     setLoading(true);
+    setChosen(null);
+    void (async () => {
+      const [nextRules, nextBusy] = await Promise.all([
+        loadAvailability(provider.id),
+        loadBusySlots(provider.id),
+      ]);
+      if (cancelled) return;
+      setRules(nextRules);
+      setBooked(nextBusy);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const slots = useMemo(
+    () => (provider ? slotsForDate(day, rules, booked) : []),
+    [provider, day, rules, booked],
+  );
+
+  // No availability rows at all, or nothing open anywhere in the window.
+  const nothingOpen = useMemo(() => {
+    if (!provider || loading) return false;
+    if (rules.length === 0) return true;
+    return days.every((date) => slotsForDate(date, rules, booked).length === 0);
+  }, [provider, loading, rules, booked, days]);
+
+  const book = async () => {
+    if (!provider || !chosen || saving) return;
+    setSaving(true);
     setError(null);
-
-    const [rules, busy] = await Promise.all([loadAvailability(next.id), loadBusySlots(next.id)]);
-    setSlots(openSlots(rules, busy));
-    setLoading(false);
-  };
-
-  const confirm = async () => {
-    if (!provider || !chosen) return;
-    setStep('saving');
-    setError(null);
-
     try {
-      // Room first: the appointment stores its id, and its word code gives the
-      // Join button a URL without any further lookup.
-      const room = await createRoom({ lobbyEnabled: true });
+      // The room is created with the lobby on: the patient waits until the
+      // provider admits them.
+      const room = await createRoom({
+        password: '',
+        lobbyEnabled: true,
+        autoMute: true,
+        allowShare: true,
+      });
 
       const appointment = await createAppointment({
         patientId,
         providerId: provider.id,
-        roomId: room.id || null,
+        roomId: room.id,
         roomCode: room.code,
         start: chosen.start,
         end: chosen.end,
       });
 
-      if (!appointment) throw new Error('Appointment insert failed');
+      if (!appointment) throw new Error('appointment insert returned null');
 
-      setBooked({ code: room.code, appointment });
-      setStep('done');
-      onBooked?.();
+      setDone({ code: room.code, appointment });
+      onBooked();
     } catch (caught) {
+      // Self-reporting: the raw code first, then the message. Never masked.
       console.error('CALENDAR ERROR:', caught);
-      setError('Could not book the appointment.');
-      setStep('slot');
+      const failure = caught as { code?: string; message?: string } | null;
+      setError(failure?.code ?? failure?.message ?? String(caught));
+    } finally {
+      setSaving(false);
     }
   };
 
-  const addToCalendar = () => {
-    if (!booked) return;
+  const timezone = useMemo(() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      return '';
+    }
+  }, []);
+
+  const duration = chosen ? Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000) : 0;
+
+  const copyCode = async () => {
+    if (!done) return;
+    try {
+      await navigator.clipboard.writeText(done.code);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard blocked — the code is visible anyway */
+    }
+  };
+
+  const downloadBooking = () => {
+    if (!done || !provider) return;
     const ics = buildIcs(
-      booked.appointment,
-      `${t('cal.appointments')} — ${provider?.name ?? ''}`,
-      `${window.location.origin}/call/${booked.code}`,
+      done.appointment,
+      `${t('cal.appointments')} — ${provider.name}`,
+      `${window.location.origin}/call/${done.code}`,
     );
-    downloadIcs(`caremunicate-${booked.code}`, ics);
+    downloadIcs(`caremunicate-${done.appointment.id.slice(0, 8)}`, ics);
   };
 
   return (
-    <div className="call-modal-backdrop" role="presentation" onClick={onClose}>
+    <div className="cal-modal-backdrop" role="presentation" onClick={onClose}>
       <div
         ref={trapRef}
-        className="call-modal cal-booking"
+        className="cal-modal"
         role="dialog"
         aria-modal="true"
         aria-label={t('cal.bookAppointment')}
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="call-modal-head">
-          <strong>{t('cal.bookAppointment')}</strong>
-          <button type="button" className="call-panel-close" aria-label={t('common.close')} onClick={onClose}>
-            <X size={16} />
-          </button>
-        </div>
+        {/* ---- Booked: the success panel ---- */}
+        {done ? (
+          <div className="cal-booked">
+            <span className="cal-booked-icon" aria-hidden="true">
+              <Check size={22} />
+            </span>
+            <h3 className="cal-booked-title">{t('cal.booked')}</h3>
+            <p className="cal-muted">
+              {provider?.name} ·{' '}
+              {new Intl.DateTimeFormat(locale, {
+                weekday: 'long',
+                day: 'numeric',
+                month: 'long',
+                hour: 'numeric',
+                minute: '2-digit',
+              }).format(new Date(done.appointment.start_at))}
+            </p>
 
-        {error ? <span className="field-error">{error}</span> : null}
+            <div className="cal-booked-code">
+              <span className="call-code-chip" dir="ltr" title={done.code}>
+                {done.code}
+              </span>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => void copyCode()}
+                aria-label={t('call.copyCode')}
+                title={t('call.copyCode')}
+              >
+                <Copy size={14} aria-hidden="true" /> {copied ? t('call.copied') : t('call.copyCode')}
+              </button>
+            </div>
 
-        {step === 'provider' ? (
-          <ul style={styles.list}>
-            {providers.length === 0 ? (
-              <li style={styles.muted}>—</li>
-            ) : (
-              providers.map((item) => (
-                <li key={item.id}>
-                  <button type="button" style={styles.rowButton} onClick={() => void pickProvider(item)}>
-                    <span>{item.name}</span>
-                    {item.role ? <span style={styles.roleBadge}>{t(roleLabelKey(item.role))}</span> : null}
-                    {item.verified ? (
-                      <span style={styles.verifiedBadge} title="Verified" aria-label="Verified">✓</span>
-                    ) : null}
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        ) : null}
-
-        {step === 'slot' ? (
-          <>
-            <p style={styles.muted}>{provider?.name}</p>
-            {loading ? (
-              <p style={styles.muted} aria-busy="true">{t('places.searching')}</p>
-            ) : slots.length === 0 ? (
-              <p style={styles.muted}>—</p>
-            ) : (
-              <div style={styles.slotGrid}>
-                {slots.map((slot) => {
-                  const active = chosen?.start.getTime() === slot.start.getTime();
-                  return (
-                    <button
-                      key={slot.start.toISOString()}
-                      type="button"
-                      aria-pressed={active}
-                      style={{ ...styles.slot, ...(active ? styles.slotActive : null) }}
-                      onClick={() => setChosen(slot)}
-                    >
-                      <span style={styles.slotDay}>{formatDayLong(slot.start, locale)}</span>
-                      <span style={styles.slotTime} dir="ltr">
-                        {formatRange(slot.start.toISOString(), slot.end.toISOString(), locale)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="call-modal-actions">
-              <button type="button" className="ghost-button" onClick={() => setStep('provider')}>
-                {t('common.cancel')}
+            <div className="cal-modal-footer">
+              <button type="button" className="ghost-button" onClick={downloadBooking}>
+                <CalendarPlus size={14} aria-hidden="true" /> .ics
               </button>
               <button
                 type="button"
-                className="primary-button"
-                disabled={!chosen}
-                onClick={() => void confirm()}
+                className="ghost-button"
+                onClick={() => {
+                  window.location.hash = '#calendar';
+                }}
               >
-                {t('cal.bookAppointment')}
-              </button>
-            </div>
-          </>
-        ) : null}
-
-        {step === 'saving' ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
-
-        {step === 'done' && booked ? (
-          <>
-            <span className="call-code-chip cal-booked-chip" dir="ltr" title={booked.code}>
-              {booked.code}
-            </span>
-            <p style={styles.muted}>
-              {formatDayLong(booked.appointment.start_at, locale)} ·{' '}
-              {formatRange(booked.appointment.start_at, booked.appointment.end_at, locale)}
-            </p>
-
-            <div className="call-modal-actions">
-              <button type="button" className="ghost-button" onClick={addToCalendar}>
-                {t('cal.appointments')} (.ics)
+                {t('cal.calendar')}
               </button>
               <button type="button" className="primary-button" onClick={onClose}>
                 {t('common.close')}
               </button>
             </div>
+          </div>
+        ) : !provider ? (
+          /* ---- Step 1: which provider ---- */
+          <>
+            <div className="cal-modal-head">
+              <h3 className="cal-modal-title">{t('cal.bookAppointment')}</h3>
+              <button type="button" className="cal-icon-btn ghost-button" aria-label={t('common.close')} onClick={onClose}>
+                <X size={15} aria-hidden="true" />
+              </button>
+            </div>
+
+            <ul className="cal-provider-list">
+              {providers.map((option) => (
+                <li key={option.id}>
+                  <button
+                    type="button"
+                    className="cal-provider-row"
+                    onClick={() => setProvider(option)}
+                  >
+                    <span className="cal-provider-name">
+                      {option.name || option.id}
+                      {option.verified ? <span className="cal-verified-dot" aria-label="Verified">✓</span> : null}
+                    </span>
+                    {option.role ? (
+                      <span className="cal-provider-role">{t(roleLabelKey(option.role))}</span>
+                    ) : null}
+                  </button>
+                </li>
+              ))}
+            </ul>
           </>
-        ) : null}
+        ) : (
+          /* ---- Step 2: date + slot ---- */
+          <>
+            <div className="cal-modal-head">
+              <div>
+                <h3 className="cal-modal-title">
+                  {provider.name}
+                  {provider.verified ? (
+                    <span className="cal-verified-dot" title="Verified" aria-label="Verified">
+                      ✓
+                    </span>
+                  ) : null}
+                </h3>
+                {provider.role ? (
+                  <span className="cal-provider-role">{t(roleLabelKey(provider.role))}</span>
+                ) : null}
+              </div>
+              <button type="button" className="cal-icon-btn ghost-button" aria-label={t('common.close')} onClick={onClose}>
+                <X size={15} aria-hidden="true" />
+              </button>
+            </div>
+
+            {/* Date strip — Intl labels, today filled mint. */}
+            <div className="cal-date-strip" role="tablist" aria-label={t('cal.selectSlot')}>
+              {days.map((date) => {
+                const isToday = date.getTime() === startOfDay(new Date()).getTime();
+                const active = date.getTime() === day.getTime();
+                const open = slotsForDate(date, rules, booked).length;
+                return (
+                  <button
+                    key={date.toISOString()}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={[
+                      'cal-date-cell',
+                      isToday ? 'is-today' : '',
+                      active ? 'is-active' : '',
+                      open === 0 ? 'is-empty' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    onClick={() => {
+                      setDay(date);
+                      setChosen(null);
+                    }}
+                  >
+                    <span className="cal-date-wd">
+                      {new Intl.DateTimeFormat(locale, { weekday: 'narrow' }).format(date)}
+                    </span>
+                    <span className="cal-date-num">{date.getDate()}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Slot chips */}
+            <div className="cal-slot-grid">
+              {loading ? (
+                <p className="cal-muted" aria-busy="true">{t('places.searching')}</p>
+              ) : slots.length === 0 ? (
+                <div className="cal-empty-state">
+                  <CalendarOff size={22} aria-hidden="true" />
+                  <p>{t('cal.noSlotsYet')}</p>
+                </div>
+              ) : (
+                slots.map((slot) => {
+                  const active = chosen?.start.getTime() === slot.start.getTime();
+                  return (
+                    <button
+                      key={slot.start.toISOString()}
+                      type="button"
+                      dir="ltr"
+                      className={active ? 'cal-slot is-active' : 'cal-slot'}
+                      aria-pressed={active}
+                      onClick={() => setChosen(slot)}
+                    >
+                      {formatTime(slot.start, locale)}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* The window is empty even though rules exist: say so, never '—'. */}
+            {nothingOpen && slots.length > 0 ? (
+              <div className="cal-empty-state">
+                <CalendarOff size={22} aria-hidden="true" />
+                <p>{t('cal.noSlotsYet')}</p>
+              </div>
+            ) : null}
+
+            {error ? (
+              <span className="field-error">
+                {/* Not yet translated — needs the 10-locale string. */}
+                Booking failed
+                <span className="error-detail">({error})</span>
+              </span>
+            ) : null}
+
+            <div className="cal-modal-footer">
+              <span className="cal-footer-note">
+                {chosen ? `${duration} min · ` : ''}
+                {timezone}
+              </span>
+              <button type="button" className="ghost-button" onClick={onClose}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!chosen || saving}
+                aria-busy={saving}
+                title={chosen ? undefined : t('cal.selectSlot')}
+                onClick={() => void book()}
+              >
+                {t('cal.bookAppointment')}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  list: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.4rem' },
-  rowButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    width: '100%',
-    paddingBlock: '0.6rem',
-    paddingInline: '0.7rem',
-    borderRadius: '0.8rem',
-    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
-    background: '#fff',
-    color: 'var(--text, #133b35)',
-    fontSize: '0.86rem',
-    fontWeight: 600,
-    textAlign: 'start',
-    cursor: 'pointer',
-    minHeight: 48,
-  },
-  roleBadge: {
-    paddingBlock: '0.1rem',
-    paddingInline: '0.5rem',
-    borderRadius: '999px',
-    background: 'rgba(62, 169, 133, 0.14)',
-    color: 'var(--accent-strong, #216e5d)',
-    fontSize: '0.66rem',
-    fontWeight: 800,
-    textTransform: 'uppercase',
-  },
-  verifiedBadge: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 16,
-    height: 16,
-    borderRadius: '50%',
-    background: 'var(--accent, #3ea985)',
-    color: '#06231d',
-    fontSize: '0.66rem',
-    fontWeight: 900,
-  },
-  muted: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.84rem' },
-  slotGrid: { display: 'grid', gap: '0.4rem', maxHeight: '18rem', overflowY: 'auto' },
-  slot: {
-    display: 'grid',
-    gap: '0.1rem',
-    paddingBlock: '0.55rem',
-    paddingInline: '0.7rem',
-    borderRadius: '0.8rem',
-    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
-    background: '#fff',
-    color: 'var(--text, #133b35)',
-    textAlign: 'start',
-    cursor: 'pointer',
-    minHeight: 48,
-  },
-  slotActive: {
-    borderColor: 'rgba(62, 169, 133, 0.6)',
-    background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
-  },
-  slotDay: { fontSize: '0.82rem', fontWeight: 700 },
-  slotTime: { fontSize: '0.78rem', color: 'var(--text-muted, #557b76)' },
-};
