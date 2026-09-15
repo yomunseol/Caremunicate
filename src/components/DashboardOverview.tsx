@@ -283,19 +283,6 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
 
           <EmergencyCard />
 
-          {/* Call entry lives in ONE place now: the /call hub. */}
-          <div className="panel">
-            <div className="eyebrow">{t('call.callHub')}</div>
-            <button
-              type="button"
-              className="ghost-button call-join-trigger"
-              onClick={() => {
-                window.location.hash = '#call';
-              }}
-            >
-              {t('call.joinWithCode')}
-            </button>
-          </div>
 
           <div className="panel">
             <div className="eyebrow">{t('dash.quickActions')}</div>
@@ -368,24 +355,6 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
             {loading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
           </div>
 
-          {/* The VIDEO CONSULTATION card is gone — it duplicated the hub and
-              started a call from the dashboard. 1:1 calls are started from a
-              care-team or quick-action row; meetings from /call. */}
-
-          {/* The dashboard keeps exactly ONE call entry: the /call hub. */}
-          <div className="panel">
-            <div className="eyebrow">{t('call.callHub')}</div>
-            <button
-              type="button"
-              className="ghost-button call-join-trigger"
-              onClick={() => {
-                window.location.hash = '#call';
-              }}
-            >
-              {t('call.startMeeting')}
-            </button>
-          </div>
-
           <div className="panel">
             <div className="eyebrow">{t('dash.certificationTitle')}</div>
             {/* Driven solely by profiles.verification_status — never by email
@@ -399,6 +368,21 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           </div>
         </>
       )}
+
+      {/* The dashboard has exactly ONE call entry, shared by both roles, and it
+          only navigates: everything call-related lives in the /call hub. */}
+      <div className="panel">
+        <div className="eyebrow">{t('call.callHub')}</div>
+        <button
+          type="button"
+          className="ghost-button call-join-trigger"
+          onClick={() => {
+            window.location.hash = '#call';
+          }}
+        >
+          {t('call.callHub')}
+        </button>
+      </div>
     </div>
   );
 }

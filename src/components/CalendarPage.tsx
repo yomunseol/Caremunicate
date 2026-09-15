@@ -1,56 +1,48 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
 import {
   buildIcs,
   downloadIcs,
-  effectiveStatus,
   formatDayLong,
   formatDayShort,
   formatMonth,
-  formatRange,
-  formatTime,
-  formatWeekdayNarrow,
   loadAppointments,
   loadPeople,
   loadProviders,
+  loadBusySlots,
   localDayKey,
   setAppointmentStatus,
-  weekStartsOn,
+  effectiveStatus,
   type Appointment,
   type PersonInfo,
 } from '../lib/appointments';
+import { addDays, startOfDay } from '../lib/calendarLayout';
 import { useLang } from '../i18n';
-import AppointmentCard from './AppointmentCard';
+import CalendarToolbar, { type CalendarView } from './CalendarToolbar';
+import CalendarSidebar from './CalendarSidebar';
+import CalendarWeekView from './CalendarWeekView';
+import CalendarMonthView from './CalendarMonthView';
+import CalendarScheduleView from './CalendarScheduleView';
+import CalendarEventPopover, { type Anchor } from './CalendarEventPopover';
+import QuickCreatePopover from './QuickCreatePopover';
 import BookingFlow from './BookingFlow';
 import AvailabilityEditor from './AvailabilityEditor';
 
 // ---------------------------------------------------------------------------
-// /calendar — role aware.
+// /calendar — role aware, Google Calendar design language.
 //
-//   patient  : agenda list, with a month toggle
-//   provider : week grid by default, plus day and agenda
+//   Sidebar   mint Create + mini month
+//   Toolbar   Today · ‹ › · Intl range label · Day/Week/Month/Schedule
+//   Views     time grid (Day/Week), month grid, and the Schedule list
 //
-// Every date goes through Intl.DateTimeFormat with the active locale, weeks
-// start on the locale's first day, stored UTC is rendered in local time, and
-// the grids mirror under RTL because they are laid out with logical properties.
+// Every date goes through Intl with the active locale; weeks start on the
+// locale's first day; stored UTC renders in local time; the whole layout uses
+// logical properties so it mirrors under RTL.
 // ---------------------------------------------------------------------------
 
-type View = 'agenda' | 'month' | 'week' | 'day';
-
-const startOfDay = (date: Date): Date => {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-};
-
-const addDays = (date: Date, days: number): Date => {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
-  return copy;
-};
+type Side = 'patient' | 'provider';
 
 export default function CalendarPage() {
   const { t, locale } = useLang();
@@ -60,14 +52,15 @@ export default function CalendarPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [people, setPeople] = useState<Map<string, PersonInfo>>(new Map());
   const [providers, setProviders] = useState<PersonInfo[]>([]);
-  const [view, setView] = useState<View>('agenda');
+  const [view, setView] = useState<CalendarView>('schedule');
   const [cursor, setCursor] = useState(() => startOfDay(new Date()));
   const [bookingOpen, setBookingOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [detail, setDetail] = useState<{ appointment: Appointment; anchor: Anchor } | null>(null);
+  const [quickCreate, setQuickCreate] = useState<{ anchor: Anchor; day: Date; minutes: number } | null>(null);
 
-  const side: 'patient' | 'provider' = isProvider(role) ? 'provider' : 'patient';
-  const firstDay = weekStartsOn(locale);
+  const side: Side = isProvider(role) ? 'provider' : 'patient';
 
   useEffect(() => {
     let cancelled = false;
@@ -79,12 +72,10 @@ export default function CalendarPage() {
         .eq('user_id', user.id)
         .maybeSingle();
       if (cancelled) return;
-      const next = String(
-        (data as { role?: string } | null)?.role ?? user.user_metadata?.role ?? '',
-      );
+      const next = String((data as { role?: string } | null)?.role ?? user.user_metadata?.role ?? '');
       setRole(next);
-      // Providers open on the week grid; patients on the agenda.
-      setView(isProvider(next) ? 'week' : 'agenda');
+      // Providers open on the week grid; patients on the schedule list.
+      setView(isProvider(next) ? 'week' : 'schedule');
     })();
     return () => {
       cancelled = true;
@@ -124,18 +115,27 @@ export default function CalendarPage() {
     [people, side],
   );
 
-  const byDay = useMemo(() => {
-    const map = new Map<string, Appointment[]>();
+  /** Patients this provider already has appointments with — the quick-create list. */
+  const patients = useMemo(() => {
+    const seen = new Map<string, PersonInfo>();
     for (const appointment of appointments) {
-      const key = localDayKey(new Date(appointment.start_at));
-      map.set(key, [...(map.get(key) ?? []), appointment]);
+      if (!appointment.patient_id) continue;
+      seen.set(
+        appointment.patient_id,
+        people.get(appointment.patient_id) ?? {
+          id: appointment.patient_id,
+          name: '',
+          role: '',
+          verified: false,
+        },
+      );
     }
-    return map;
-  }, [appointments]);
+    return [...seen.values()];
+  }, [appointments, people]);
 
-  const upcoming = useMemo(
-    () => appointments.filter((a) => effectiveStatus(a) !== 'completed').slice(0, 40),
-    [appointments],
+  const titleFor = useCallback(
+    (appointment: Appointment) => counterpartFor(appointment).name || t('chat.participant'),
+    [counterpartFor, t],
   );
 
   const join = (appointment: Appointment) => {
@@ -145,17 +145,20 @@ export default function CalendarPage() {
 
   const cancel = async (appointment: Appointment) => {
     await setAppointmentStatus(appointment.id, 'cancelled');
+    setDetail(null);
     refresh();
   };
 
   const confirm = async (appointment: Appointment) => {
     await setAppointmentStatus(appointment.id, 'confirmed');
+    setDetail(null);
     refresh();
   };
 
   const reschedule = async (appointment: Appointment) => {
     // Slots are immutable, so rescheduling is cancel + rebook.
     await setAppointmentStatus(appointment.id, 'cancelled');
+    setDetail(null);
     refresh();
     setBookingOpen(true);
   };
@@ -170,156 +173,178 @@ export default function CalendarPage() {
     downloadIcs(`caremunicate-${appointment.id.slice(0, 8)}`, ics);
   };
 
-  const renderCard = (appointment: Appointment) => (
-    <AppointmentCard
-      key={appointment.id}
-      appointment={appointment}
-      counterpart={{
-        name: counterpartFor(appointment).name,
-        role: counterpartFor(appointment).role,
-        verified: counterpartFor(appointment).verified,
-      }}
-      side={side}
-      onJoin={join}
-      onCancel={(a) => void cancel(a)}
-      onConfirm={(a) => void confirm(a)}
-      onReschedule={(a) => void reschedule(a)}
-      onAddToCalendar={addToCalendar}
-    />
-  );
-
-  const weekDays = useMemo(() => {
-    const offset = (cursor.getDay() - firstDay + 7) % 7;
-    const start = addDays(cursor, -offset);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
-  }, [cursor, firstDay]);
-
-  const monthCells = useMemo(() => {
-    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-    const offset = (first.getDay() - firstDay + 7) % 7;
-    const start = addDays(first, -offset);
-    return Array.from({ length: 42 }, (_, index) => addDays(start, index));
-  }, [cursor, firstDay]);
-
-  const monthAppointments = (day: Date) => byDay.get(localDayKey(day)) ?? [];
-
-  const step = (direction: number) => {
-    if (view === 'month') {
-      setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1));
-    } else if (view === 'week') {
-      setCursor(addDays(cursor, direction * 7));
-    } else {
-      setCursor(addDays(cursor, direction));
-    }
+  // An empty slot: providers quick-create, patients get the booking flow.
+  const onSlotClick = (day: Date, minutes: number, anchor: Anchor) => {
+    if (side === 'provider') setQuickCreate({ anchor, day, minutes });
+    else setBookingOpen(true);
   };
 
-  const heading =
-    view === 'month' ? formatMonth(cursor, locale) : view === 'week'
-      ? `${formatDayShort(weekDays[0], locale)} – ${formatDayShort(weekDays[6], locale)}`
-      : formatDayLong(cursor, locale);
+  const step = (direction: number) => {
+    if (view === 'month') setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1));
+    else if (view === 'week') setCursor(addDays(cursor, direction * 7));
+    else if (view === 'day') setCursor(addDays(cursor, direction));
+    else setCursor(addDays(cursor, direction * 7));
+  };
 
-  const tabs: View[] = side === 'provider' ? ['week', 'day', 'agenda'] : ['agenda', 'month'];
+  const weekDays = useMemo(() => {
+    const firstDay = new Date(cursor);
+    // Week starts on Monday for the grid; Intl handles the label.
+    const offset = (firstDay.getDay() + 6) % 7;
+    const start = addDays(firstDay, -offset);
+    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  }, [cursor]);
+
+  const rangeLabel = useMemo(() => {
+    if (view === 'day') return formatDayLong(cursor, locale);
+    if (view === 'week') {
+      const first = weekDays[0];
+      const last = weekDays[6];
+      // Same month → "September 2026"; straddling two → a short range.
+      if (first.getMonth() === last.getMonth()) return formatMonth(first, locale);
+      return `${formatDayShort(first, locale)} – ${formatDayShort(last, locale)}`;
+    }
+    return formatMonth(cursor, locale);
+  }, [view, cursor, weekDays, locale]);
+
+  // Busiest first paint: nothing to do for month/schedule beyond the list.
+  useEffect(() => {
+    if (side !== 'provider' || !user?.id) return;
+    void loadBusySlots(user.id);
+  }, [side, user?.id]);
+
+  const dayAppointments = useMemo(
+    () => appointments.filter((a) => localDayKey(new Date(a.start_at)) === localDayKey(cursor)),
+    [appointments, cursor],
+  );
+
+  const counterpart = (appointment: Appointment) => {
+    const person = counterpartFor(appointment);
+    return { name: person.name, role: person.role, verified: person.verified };
+  };
 
   return (
     <section className="section cal-page" aria-labelledby="cal-heading">
-      <div className="section-heading">
-        <div className="eyebrow">{t('common.appName')}</div>
-        <h2 id="cal-heading">{t('cal.calendar')}</h2>
+      <div className="cal-shell">
+        <CalendarSidebar
+          cursor={cursor}
+          onPickDay={(day) => {
+            setCursor(day);
+            setView(side === 'provider' ? 'day' : 'schedule');
+          }}
+          onMonth={(direction) =>
+            setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1))
+          }
+          onCreate={() => (side === 'provider' ? setQuickCreate({
+            anchor: { x: window.innerWidth / 2, y: 140 },
+            day: cursor,
+            minutes: 9 * 60,
+          }) : setBookingOpen(true))}
+          showCreate
+        />
+
+        <div className="cal-main">
+          <h2 id="cal-heading" className="sr-only">{t('cal.calendar')}</h2>
+
+          <CalendarToolbar
+            view={view}
+            onView={setView}
+            label={rangeLabel}
+            onToday={() => setCursor(startOfDay(new Date()))}
+            onPrev={() => step(-1)}
+            onNext={() => step(1)}
+            onCreate={() => (side === 'provider' ? setQuickCreate({
+              anchor: { x: window.innerWidth / 2, y: 140 },
+              day: cursor,
+              minutes: 9 * 60,
+            }) : setBookingOpen(true))}
+            showCreate={side === 'patient'}
+          />
+
+          {loading ? <p className="cal-muted" aria-busy="true">{t('places.searching')}</p> : null}
+
+          {view === 'week' ? (
+            <CalendarWeekView
+              days={weekDays}
+              appointments={appointments}
+              titleFor={titleFor}
+              statusOf={(appointment) => effectiveStatus(appointment)}
+              onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
+              onSlotClick={onSlotClick}
+            />
+          ) : null}
+
+          {view === 'day' ? (
+            <CalendarWeekView
+              days={[cursor]}
+              appointments={dayAppointments}
+              titleFor={titleFor}
+              statusOf={(appointment) => effectiveStatus(appointment)}
+              onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
+              onSlotClick={onSlotClick}
+            />
+          ) : null}
+
+          {view === 'month' ? (
+            <CalendarMonthView
+              cursor={cursor}
+              appointments={appointments}
+              titleFor={titleFor}
+              onPickDay={(day) => {
+                setCursor(day);
+                setView('day');
+              }}
+              onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
+            />
+          ) : null}
+
+          {view === 'schedule' ? (
+            <CalendarScheduleView
+              appointments={appointments}
+              side={side}
+              counterpartFor={counterpart}
+              onJoin={join}
+              onCancel={(a) => void cancel(a)}
+              onConfirm={(a) => void confirm(a)}
+              onReschedule={(a) => void reschedule(a)}
+              onAddToCalendar={addToCalendar}
+            />
+          ) : null}
+
+          {side === 'provider' && user?.id ? <AvailabilityEditor providerId={user.id} /> : null}
+        </div>
       </div>
 
-      <div style={styles.toolbar}>
-        <div role="tablist" aria-label={t('cal.calendar')} style={styles.tabs}>
-          {tabs.map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              aria-selected={view === tab}
-              className={view === tab ? 'cal-tab is-active' : 'cal-tab'}
-              style={{ ...styles.tab, ...(view === tab ? styles.tabActive : null) }}
-              onClick={() => setView(tab)}
-            >
-              {tab === 'agenda' ? t('cal.appointments') : tab === 'month' ? t('cal.calendar') : t('cal.calendar')}
-            </button>
-          ))}
-        </div>
-
-        {view !== 'agenda' ? (
-          <div style={styles.pager}>
-            <button type="button" className="ghost-button" style={styles.icon} aria-label="Previous" onClick={() => step(-1)}>
-              <ChevronLeft size={16} aria-hidden="true" />
-            </button>
-            <span style={styles.pagerLabel}>{heading}</span>
-            <button type="button" className="ghost-button" style={styles.icon} aria-label="Next" onClick={() => step(1)}>
-              <ChevronRight size={16} aria-hidden="true" />
-            </button>
-          </div>
-        ) : null}
-
-        {side === 'patient' ? (
-          <button type="button" className="primary-button" onClick={() => setBookingOpen(true)}>
-            <Plus size={15} aria-hidden="true" /> {t('cal.bookAppointment')}
-          </button>
-        ) : null}
-      </div>
-
-      {loading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
-
-      {view === 'agenda' ? (
-        upcoming.length === 0 ? (
-          <p style={styles.muted}>{t('cal.appointments')} —</p>
-        ) : (
-          <ul style={styles.list}>{upcoming.map(renderCard)}</ul>
-        )
+      {detail ? (
+        <CalendarEventPopover
+          appointment={detail.appointment}
+          anchor={detail.anchor}
+          title={titleFor(detail.appointment)}
+          role={counterpartFor(detail.appointment).role}
+          verified={counterpartFor(detail.appointment).verified}
+          side={side}
+          onClose={() => setDetail(null)}
+          onJoin={(a) => {
+            setDetail(null);
+            join(a);
+          }}
+          onCancel={(a) => void cancel(a)}
+          onConfirm={(a) => void confirm(a)}
+          onReschedule={(a) => void reschedule(a)}
+          onAddToCalendar={addToCalendar}
+        />
       ) : null}
 
-      {view === 'week' || view === 'month' ? (
-        <div className="cal-grid" style={styles.grid} role="grid">
-          {Array.from({ length: 7 }, (_, index) => {
-            const day = view === 'week' ? weekDays[index] : addDays(monthCells[0], index);
-            return (
-              <div key={`head-${index}`} style={styles.gridHead} role="columnheader">
-                {formatWeekdayNarrow(day, locale)}
-              </div>
-            );
-          })}
-
-          {(view === 'week' ? weekDays : monthCells).map((day) => {
-            const items = monthAppointments(day);
-            const inMonth = view === 'week' || day.getMonth() === cursor.getMonth();
-            return (
-              <div key={localDayKey(day)} style={{ ...styles.cell, opacity: inMonth ? 1 : 0.45 }} role="gridcell">
-                <span style={styles.cellDay}>{day.getDate()}</span>
-                {items.slice(0, 3).map((appointment) => (
-                  <span key={appointment.id} style={styles.cellItem} dir="ltr">
-                    {formatTime(appointment.start_at, locale)}
-                  </span>
-                ))}
-                {items.length > 3 ? <span style={styles.cellMore}>+{items.length - 3}</span> : null}
-              </div>
-            );
-          })}
-        </div>
+      {quickCreate && user?.id ? (
+        <QuickCreatePopover
+          anchor={quickCreate.anchor}
+          day={quickCreate.day}
+          minutes={quickCreate.minutes}
+          providerId={user.id}
+          patients={patients}
+          onClose={() => setQuickCreate(null)}
+          onCreated={refresh}
+        />
       ) : null}
-
-      {view === 'day' ? (
-        (byDay.get(localDayKey(cursor)) ?? []).length === 0 ? (
-          <p style={styles.muted}>—</p>
-        ) : (
-          <ul style={styles.list}>{(byDay.get(localDayKey(cursor)) ?? []).map(renderCard)}</ul>
-        )
-      ) : null}
-
-      {/* Appointments for the focused week / month, so the grid stays scannable. */}
-      {view === 'week' ? (
-        <ul style={styles.list}>
-          {weekDays
-            .flatMap((day) => monthAppointments(day))
-            .map(renderCard)}
-        </ul>
-      ) : null}
-
-      {side === 'provider' && user?.id ? <AvailabilityEditor providerId={user.id} /> : null}
 
       {bookingOpen && user?.id ? (
         <BookingFlow
@@ -332,49 +357,3 @@ export default function CalendarPage() {
     </section>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  toolbar: { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap', marginBlockEnd: '0.9rem' },
-  tabs: { display: 'inline-flex', gap: '0.3rem', padding: '0.2rem', borderRadius: '999px', background: 'var(--bg-panel-soft, rgba(7,39,33,0.04))' },
-  tab: {
-    paddingBlock: '0.4rem',
-    paddingInline: '0.8rem',
-    border: 'none',
-    borderRadius: '999px',
-    background: 'transparent',
-    color: 'var(--text-muted, #557b76)',
-    fontWeight: 700,
-    fontSize: '0.8rem',
-    cursor: 'pointer',
-    minHeight: 40,
-  },
-  tabActive: { background: '#fff', color: 'var(--accent-strong, #216e5d)', boxShadow: '0 2px 8px rgba(17,55,47,0.08)' },
-  pager: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem' },
-  pagerLabel: { fontSize: '0.84rem', fontWeight: 700, color: 'var(--text, #133b35)' },
-  icon: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, borderRadius: '50%' },
-  muted: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.86rem' },
-  list: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.6rem' },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: '0.3rem', marginBlockEnd: '1rem' },
-  gridHead: { textAlign: 'center', fontSize: '0.7rem', fontWeight: 800, color: 'var(--text-muted, #557b76)', textTransform: 'uppercase' },
-  cell: {
-    display: 'grid',
-    gap: '0.15rem',
-    alignContent: 'start',
-    minHeight: '4.2rem',
-    padding: '0.35rem',
-    borderRadius: '0.6rem',
-    background: '#fff',
-    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
-  },
-  cellDay: { fontSize: '0.72rem', fontWeight: 800, color: 'var(--text, #133b35)' },
-  cellItem: {
-    fontSize: '0.62rem',
-    fontWeight: 700,
-    color: 'var(--accent-strong, #216e5d)',
-    background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
-    borderRadius: '999px',
-    paddingBlock: '0.05rem',
-    paddingInline: '0.3rem',
-  },
-  cellMore: { fontSize: '0.6rem', color: 'var(--text-muted, #557b76)' },
-};

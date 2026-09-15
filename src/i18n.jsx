@@ -523,6 +523,13 @@ const translations = {
     'cal.reschedule': 'Reschedule',
     'cal.cancelAppointment': 'Cancel appointment',
     'call.startFailed': 'Could not start the meeting. Try again.',
+    'cal.today': 'Today',
+    'cal.day': 'Day',
+    'cal.week': 'Week',
+    'cal.month': 'Month',
+    'cal.schedule': 'Schedule',
+    'cal.create': 'Create',
+    'cal.moreEvents': '+{{count}} more',
   },
 
   fr: {
@@ -1012,6 +1019,13 @@ const translations = {
     'cal.reschedule': 'Reprogrammer',
     'cal.cancelAppointment': 'Annuler le rendez-vous',
     'call.startFailed': 'Impossible de démarrer la réunion. Réessayez.',
+    'cal.today': "Aujourd'hui",
+    'cal.day': 'Jour',
+    'cal.week': 'Semaine',
+    'cal.month': 'Mois',
+    'cal.schedule': 'Planning',
+    'cal.create': 'Créer',
+    'cal.moreEvents': '+{{count}} autres',
   },
 
   es: {
@@ -1496,6 +1510,13 @@ const translations = {
     'cal.reschedule': 'Reprogramar',
     'cal.cancelAppointment': 'Cancelar cita',
     'call.startFailed': 'No se pudo iniciar la reunión. Inténtalo de nuevo.',
+    'cal.today': 'Hoy',
+    'cal.day': 'Día',
+    'cal.week': 'Semana',
+    'cal.month': 'Mes',
+    'cal.schedule': 'Agenda',
+    'cal.create': 'Crear',
+    'cal.moreEvents': '+{{count}} más',
   },
 
   ko: {
@@ -1965,6 +1986,13 @@ const translations = {
     'cal.reschedule': '일정 변경',
     'cal.cancelAppointment': '예약 취소',
     'call.startFailed': '회의를 시작할 수 없습니다. 다시 시도해 주세요.',
+    'cal.today': '오늘',
+    'cal.day': '일',
+    'cal.week': '주',
+    'cal.month': '월',
+    'cal.schedule': '일정',
+    'cal.create': '만들기',
+    'cal.moreEvents': '+{{count}} 더',
   },
 
   zh: {
@@ -2427,6 +2455,13 @@ const translations = {
     'cal.reschedule': '改期',
     'cal.cancelAppointment': '取消预约',
     'call.startFailed': '无法开始会议，请重试。',
+    'cal.today': '今天',
+    'cal.day': '日',
+    'cal.week': '周',
+    'cal.month': '月',
+    'cal.schedule': '日程',
+    'cal.create': '创建',
+    'cal.moreEvents': '还有 {{count}} 项',
   },
 
   pt: {
@@ -2910,6 +2945,13 @@ const translations = {
     'cal.reschedule': 'Reagendar',
     'cal.cancelAppointment': 'Cancelar consulta',
     'call.startFailed': 'Não foi possível iniciar a reunião. Tente novamente.',
+    'cal.today': 'Hoje',
+    'cal.day': 'Dia',
+    'cal.week': 'Semana',
+    'cal.month': 'Mês',
+    'cal.schedule': 'Agenda',
+    'cal.create': 'Criar',
+    'cal.moreEvents': '+{{count}} mais',
   },
 
   de: {
@@ -3397,6 +3439,13 @@ const translations = {
     'cal.reschedule': 'Verschieben',
     'cal.cancelAppointment': 'Termin stornieren',
     'call.startFailed': 'Meeting konnte nicht gestartet werden. Erneut versuchen.',
+    'cal.today': 'Heute',
+    'cal.day': 'Tag',
+    'cal.week': 'Woche',
+    'cal.month': 'Monat',
+    'cal.schedule': 'Terminplan',
+    'cal.create': 'Erstellen',
+    'cal.moreEvents': '+{{count}} weitere',
   },
 
   it: {
@@ -3880,6 +3929,13 @@ const translations = {
     'cal.reschedule': 'Riprogramma',
     'cal.cancelAppointment': 'Annulla appuntamento',
     'call.startFailed': 'Impossibile avviare la riunione. Riprova.',
+    'cal.today': 'Oggi',
+    'cal.day': 'Giorno',
+    'cal.week': 'Settimana',
+    'cal.month': 'Mese',
+    'cal.schedule': 'Programma',
+    'cal.create': 'Crea',
+    'cal.moreEvents': '+{{count}} altri',
   },
 
   ar: {
@@ -4355,6 +4411,13 @@ const translations = {
     'cal.reschedule': 'إعادة الجدولة',
     'cal.cancelAppointment': 'إلغاء الموعد',
     'call.startFailed': 'تعذر بدء الاجتماع. حاول مجددًا.',
+    'cal.today': 'اليوم',
+    'cal.day': 'يوم',
+    'cal.week': 'أسبوع',
+    'cal.month': 'شهر',
+    'cal.schedule': 'الجدول',
+    'cal.create': 'إنشاء',
+    'cal.moreEvents': '+{{count}} أخرى',
   },
 
   he: {
@@ -4824,6 +4887,13 @@ const translations = {
     'cal.reschedule': 'שינוי מועד',
     'cal.cancelAppointment': 'ביטול פגישה',
     'call.startFailed': 'לא ניתן להתחיל את הפגישה. נסו שוב.',
+    'cal.today': 'היום',
+    'cal.day': 'יום',
+    'cal.week': 'שבוע',
+    'cal.month': 'חודש',
+    'cal.schedule': 'לוח זמנים',
+    'cal.create': 'יצירה',
+    'cal.moreEvents': '+{{count}} נוספים',
   },
 };
 

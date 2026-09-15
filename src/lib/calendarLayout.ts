@@ -1,0 +1,154 @@
+// ---------------------------------------------------------------------------
+// Time-grid geometry — the Google Calendar overlap model.
+//
+// Two rules, and nothing else:
+//
+//   1. Events that intersect in TIME are laid side by side. Overlap is
+//      transitive: A∩B and B∩C put A, B and C in one group even when A and C
+//      never touch. Members of a group are packed into the fewest columns,
+//      each event taking the first column that is free when it starts.
+//   2. Inside a group every event gets the SAME width — 100% / columns — and
+//      left = column × width. Nothing is stacked behind anything and nothing is
+//      hidden, so a column count can only grow when an event genuinely needs a
+//      new column.
+//
+// Vertical geometry is minutes-from-midnight: top = start, height = duration,
+// both as a percentage of the 24-hour day so any gutter height works.
+// ---------------------------------------------------------------------------
+
+export const DAY_MINUTES = 24 * 60;
+
+/** A block is never thinner than this, so a 15-minute event stays clickable. */
+export const MIN_EVENT_MINUTES = 20;
+
+export type PositionedEvent<T> = {
+  event: T;
+  /** Column within its overlap group, 0-based. */
+  column: number;
+  /** Columns in the group — drives both width and offset. */
+  columns: number;
+  topPct: number;
+  heightPct: number;
+  leftPct: number;
+  widthPct: number;
+};
+
+type TimeSpan = { start: Date; end: Date };
+
+export const startOfDay = (date: Date): Date => {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+};
+
+export const addDays = (date: Date, days: number): Date => {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+};
+
+/** Wall-clock minutes since local midnight — 0..1439. */
+export const minutesOfDay = (date: Date): number => date.getHours() * 60 + date.getMinutes();
+
+/**
+ * Split events into transitively-overlapping groups.
+ *
+ * Sorted by start; a group stays open until an event begins at or after the
+ * latest end seen so far. Touching counts as NOT overlapping: 09:00–10:00 and
+ * 10:00–11:00 are two groups, which is what a calendar should look like.
+ */
+export const overlapGroups = <T extends TimeSpan>(events: T[]): T[][] => {
+  const sorted = [...events].sort(
+    (a, b) => a.start.getTime() - b.start.getTime() || a.end.getTime() - b.end.getTime(),
+  );
+
+  const groups: T[][] = [];
+  let current: T[] = [];
+  let groupEnd = Number.NEGATIVE_INFINITY;
+
+  for (const event of sorted) {
+    if (current.length > 0 && event.start.getTime() >= groupEnd) {
+      groups.push(current);
+      current = [];
+      groupEnd = Number.NEGATIVE_INFINITY;
+    }
+    current.push(event);
+    groupEnd = Math.max(groupEnd, event.end.getTime());
+  }
+
+  if (current.length > 0) groups.push(current);
+  return groups;
+};
+
+/**
+ * Position every event that touches `day` on that day's grid.
+ *
+ * The page is clipped to the day being drawn: an event that began yesterday
+ * starts at 00:00 and one that runs past midnight ends at 24:00, so a
+ * multi-day appointment can never overflow the column it belongs to.
+ */
+export const layoutDay = <T extends TimeSpan & { id: string }>(
+  events: T[],
+  day: Date,
+): PositionedEvent<T>[] => {
+  const dayStart = startOfDay(day).getTime();
+
+  const clamp = (date: Date): number =>
+    Math.min(DAY_MINUTES, Math.max(0, Math.round((date.getTime() - dayStart) / 60_000)));
+
+  const positioned: PositionedEvent<T>[] = [];
+
+  for (const group of overlapGroups(events)) {
+    // Each column remembers when the event last placed in it finishes.
+    const columnEnds: number[] = [];
+    const placed: Array<{ event: T; column: number; start: number; end: number }> = [];
+
+    for (const event of group) {
+      const start = event.start.getTime();
+      let column = columnEnds.findIndex((endsAt) => endsAt <= start);
+      if (column === -1) {
+        column = columnEnds.length;
+        columnEnds.push(Number.NEGATIVE_INFINITY);
+      }
+      columnEnds[column] = event.end.getTime();
+      placed.push({ event, column, start: clamp(event.start), end: clamp(event.end) });
+    }
+
+    const columns = columnEnds.length;
+    const width = 100 / columns;
+
+    for (const item of placed) {
+      const top = item.start;
+      // Always at least MIN_EVENT_MINUTES tall, never past the end of the day.
+      const height = Math.min(
+        DAY_MINUTES - top,
+        Math.max(MIN_EVENT_MINUTES, item.end - item.start),
+      );
+
+      positioned.push({
+        event: item.event,
+        column: item.column,
+        columns,
+        topPct: (top / DAY_MINUTES) * 100,
+        heightPct: (height / DAY_MINUTES) * 100,
+        leftPct: item.column * width,
+        widthPct: width,
+      });
+    }
+  }
+
+  return positioned;
+};
+
+/** Does this event touch the given local day at all? */
+export const spansDay = (event: TimeSpan, day: Date): boolean => {
+  const from = startOfDay(day).getTime();
+  const to = addDays(startOfDay(day), 1).getTime();
+  return event.start.getTime() < to && event.end.getTime() > from;
+};
+
+/** The 24 hour-gutter labels: "12 AM", "1 AM", … in the active locale. */
+export const hourLabels = (locale: string): string[] =>
+  Array.from({ length: 24 }, (_, hour) =>
+    new Intl.DateTimeFormat(locale, { hour: 'numeric' }).format(new Date(2024, 0, 1, hour)),
+  );

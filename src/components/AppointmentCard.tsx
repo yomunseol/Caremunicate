@@ -107,19 +107,19 @@ export default function AppointmentCard({
           className={live ? 'appt-join is-live' : 'appt-join'}
           style={{ ...styles.join, ...(joinable ? styles.joinReady : null) }}
           disabled={!joinable}
-          title={joinable ? t('call.joinCall') : t('call.joinTooEarly')}
-          aria-label={t('call.joinCall')}
+          title={joinable ? t('cal.joinCall') : t('cal.joinTooEarly')}
+          aria-label={t('cal.joinCall')}
           onClick={() => onJoin(appointment)}
         >
-          <Phone size={15} aria-hidden="true" /> {t('call.joinCall')}
+          <Phone size={15} aria-hidden="true" /> {t('cal.joinCall')}
         </button>
 
         <button
           type="button"
           className="ghost-button"
           style={styles.iconButton}
-          aria-label={t('call.appointments')}
-          title={t('call.appointments')}
+          aria-label={t('cal.appointments')}
+          title={t('cal.appointments')}
           onClick={() => onAddToCalendar(appointment)}
         >
           <CalendarPlus size={15} aria-hidden="true" />
@@ -164,7 +164,7 @@ export default function AppointmentCard({
                   onReschedule(appointment);
                 }}
               >
-                {t('call.reschedule')}
+                {t('cal.reschedule')}
               </button>
 
               {!cancelled ? (
@@ -177,7 +177,7 @@ export default function AppointmentCard({
                     onCancel(appointment);
                   }}
                 >
-                  {t('call.cancelAppointment')}
+                  {t('cal.cancelAppointment')}
                 </button>
               ) : null}
             </div>
