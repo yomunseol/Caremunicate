@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import { isProvider } from '../lib/roles';
 import { supabase } from '../lib/supabase';
@@ -42,11 +43,14 @@ const goToRoom = (code: string) => {
 export default function CallHub() {
   const { t } = useLang();
   const { user } = useAuth();
+  const { rememberCreatedRoom } = useCallContext();
 
   const [canHost, setCanHost] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hostBusy, setHostBusy] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
+  /** The raw Postgres/Supabase code or message behind hostError. */
+  const [hostErrorDetail, setHostErrorDetail] = useState<string | null>(null);
 
   const [joinCode, setJoinCode] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
@@ -97,18 +101,23 @@ export default function CallHub() {
   const startMeeting = async (settings: MeetingSettings) => {
     setHostBusy(true);
     setHostError(null);
+    setHostErrorDetail(null);
     try {
       // The plaintext password only travels into createRoom, which hashes it.
       const password = settings.requirePassword ? settings.password : '';
 
-      // createRoom awaits the insert fully before returning the code, so the
-      // row exists by the time the route guard looks for it.
-      const { code } = await createRoom({
+      // createRoom awaits the insert fully before returning, so the row exists
+      // by the time the route guard looks for it.
+      const room = await createRoom({
         password,
         lobbyEnabled: settings.waitingRoom,
         autoMute: settings.autoMute,
         allowShare: settings.allowScreenShare,
       });
+
+      // Hand the room to the provider so /call/<code> opens it by id — the
+      // channel is call:${room.id} and the host needs no lookup at all.
+      rememberCreatedRoom(room);
 
       if (user?.id) {
         void saveCallPrefs(user.id, {
@@ -127,12 +136,15 @@ export default function CallHub() {
       });
 
       setSettingsOpen(false);
-      goToRoom(code);
+      goToRoom(room.code);
     } catch (error) {
       // SECTION 2: a start failure is reported under the START card only,
-      // as startFailed — never as a missing room.
+      // as startFailed — never as a missing room. The raw code is shown
+      // alongside it: no masked errors, ever.
       console.error('CALL ERROR:', error);
+      const failure = error as { code?: string; message?: string } | null;
       setHostError('call.startFailed');
+      setHostErrorDetail(failure?.code ?? failure?.message ?? String(error));
     } finally {
       setHostBusy(false);
     }
@@ -166,7 +178,8 @@ export default function CallHub() {
       // The guard threw — the RPC failed or we have a bug. Show the REAL
       // message rather than blaming a room that may well exist.
       console.error('CALL ERROR:', error);
-      setJoinGuardError(error instanceof Error ? error.message : String(error));
+      const failure = error as { code?: string; message?: string } | null;
+      setJoinGuardError(failure?.code ?? failure?.message ?? String(error));
     } finally {
       setJoinBusy(false);
     }
@@ -218,7 +231,14 @@ export default function CallHub() {
             >
               {t('call.startMeeting')}
             </button>
-            {hostError ? <span className="field-error">{t(hostError)}</span> : null}
+            {hostError ? (
+              <span className="field-error">
+                {t(hostError)}
+                {hostErrorDetail ? (
+                  <span className="error-detail">({hostErrorDetail})</span>
+                ) : null}
+              </span>
+            ) : null}
           </div>
         ) : null}
 
@@ -261,47 +281,57 @@ export default function CallHub() {
           {joinError ? <span className="field-error">{t(joinError)}</span> : null}
           {joinGuardError && import.meta.env.DEV ? (
             <span className="call-dev-banner" role="alert">
-              Guard threw: {joinGuardError}
+              Guard threw: <span className="error-detail">{joinGuardError}</span>
             </span>
           ) : null}
         </div>
 
-        {/* Your personal line. */}
-        {line ? (
-          <div className="panel">
-            <div className="eyebrow">{t('call.personalCode')}</div>
+        {/* Your personal line. Rendered unconditionally so /call is always
+            exactly three cards; the body degrades if the row is unavailable. */}
+        <div className="panel">
+          <div className="eyebrow">{t('call.personalCode')}</div>
 
-            <div style={styles.lineRow}>
-              <span className="call-code-chip" style={styles.lineChip} dir="ltr" title={line.code}>
-                {line.code}
-              </span>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={copyLineCode}
-                title={t('call.copyCode')}
-                aria-label={`${t('call.copyCode')} — ${line.code}`}
-              >
-                {lineCopied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
-              </button>
-            </div>
+          {line ? (
+            <>
+              <div style={styles.lineRow}>
+                <span
+                  className="call-code-chip"
+                  style={styles.lineChip}
+                  dir="ltr"
+                  title={line.code}
+                >
+                  {line.code}
+                </span>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={copyLineCode}
+                  title={t('call.copyCode')}
+                  aria-label={`${t('call.copyCode')} — ${line.code}`}
+                >
+                  {lineCopied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+                </button>
+              </div>
 
-            <div style={styles.lineRow}>
-              <span className="call-switch-label">{t('call.openLine')}</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={isLineOpen}
-                aria-label={t('call.openLine')}
-                className={isLineOpen ? 'call-switch is-on' : 'call-switch'}
-                disabled={lineBusy}
-                onClick={() => void toggleLine()}
-              >
-                <span className="call-switch-knob" aria-hidden="true" />
-              </button>
-            </div>
-          </div>
-        ) : null}
+              <div style={styles.lineRow}>
+                <span className="call-switch-label">{t('call.openLine')}</span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isLineOpen}
+                  aria-label={t('call.openLine')}
+                  className={isLineOpen ? 'call-switch is-on' : 'call-switch'}
+                  disabled={lineBusy}
+                  onClick={() => void toggleLine()}
+                >
+                  <span className="call-switch-knob" aria-hidden="true" />
+                </button>
+              </div>
+            </>
+          ) : (
+            <span className="call-hub-muted">—</span>
+          )}
+        </div>
       </div>
 
       {settingsOpen ? (

@@ -2133,3 +2133,18 @@ img {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   overflow-wrap: anywhere;
 }
+
+/* Raw error code appended to a message. Mono, small, never hidden. */
+.error-detail {
+  margin-inline-start: 0.35rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.call-hub-muted {
+  color: var(--muted, #6b8b83);
+  font-size: 0.8rem;
+}

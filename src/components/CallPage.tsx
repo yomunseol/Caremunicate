@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
 import { resolveJoin, type JoinRefusal } from '../lib/callRooms';
 import { normalizeCode } from '../lib/wordcode';
-import { takePendingPolicy } from '../lib/callPrefs';
+import { takeCreatedRoom, takePendingPolicy } from '../lib/callPrefs';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -66,6 +66,28 @@ export default function CallPage({ code }: CallPageProps) {
         return;
       }
 
+      // Host path: the room was created a moment ago and handed over. Open it
+      // by id — no RPC, no read-after-write race, channel call:${room.id}.
+      const created = secret ? null : takeCreatedRoom(normalized);
+      if (created) {
+        window.history.replaceState({}, '', `/call/${created.code}`);
+        setError(null);
+        setNeedsPassword(false);
+        setChecking(false);
+
+        if (opened.current !== created.code) {
+          opened.current = created.code;
+          await openRoom(created.id, {
+            isHost: true,
+            code: created.code,
+            personal: false,
+            lobby: false,
+            policy: takePendingPolicy() ?? undefined,
+          });
+        }
+        return;
+      }
+
       setBusy(true);
       setGuardError(null);
       try {
@@ -122,7 +144,9 @@ export default function CallPage({ code }: CallPageProps) {
         // SECTION 2: log it, show the REAL message in a dev banner, and stay
         // put rather than mislabelling it roomNotFound and bouncing home.
         console.error('CALL ERROR:', caught);
-        setGuardError(caught instanceof Error ? caught.message : String(caught));
+        const failure = caught as { code?: string; message?: string } | null;
+        // Raw Postgres/Supabase code first, then the message. No masking.
+        setGuardError(failure?.code ?? failure?.message ?? String(caught));
         setChecking(false);
       } finally {
         setBusy(false);
@@ -161,7 +185,13 @@ export default function CallPage({ code }: CallPageProps) {
   // neutral line instead — but never "room not found".
   const devBanner = guardError ? (
     <div className="call-dev-banner" role="alert">
-      {import.meta.env.DEV ? `Guard threw: ${guardError}` : t('call.connecting')}
+      {import.meta.env.DEV ? (
+        <>
+          Guard threw: <span className="error-detail">{guardError}</span>
+        </>
+      ) : (
+        t('call.connecting')
+      )}
     </div>
   ) : null;
 

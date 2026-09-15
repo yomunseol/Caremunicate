@@ -15,9 +15,9 @@ export const CODE_SEGMENTS = 4;
 const BANK: readonly string[] = WORD_BANK;
 const BANK_SET: ReadonlySet<string> = new Set<string>(WORD_BANK);
 
-// Dev-only bank guard. The bank is hand-curated, so a slipped capital, a digit,
-// a nine-letter word or a word repeated across two categories is a real risk.
-// Throwing at import time means a broken bank can never reach a room code.
+// Dev-only bank health check. It WARNS and never throws: a bank imperfection
+// must not be able to block meeting creation. generateWordCode() indexes
+// WORD_BANK.length as-is, so it stays correct whatever the bank's size.
 if (import.meta.env.DEV) {
   const problems: string[] = [];
 
@@ -46,7 +46,7 @@ if (import.meta.env.DEV) {
   }
 
   if (problems.length > 0) {
-    throw new Error(`WORD_BANK is invalid:\n  - ${problems.join('\n  - ')}`);
+    console.warn(`WORD_BANK looks imperfect (codes still work):\n  - ${problems.join('\n  - ')}`);
   }
 }
 

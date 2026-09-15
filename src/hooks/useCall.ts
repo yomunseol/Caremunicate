@@ -4,7 +4,9 @@ import {
   forgetActiveRoom,
   readSoundsEnabled,
   rememberActiveRoom,
+  stashCreatedRoom,
   storeSoundsEnabled,
+  type CreatedRoom,
 } from '../lib/callPrefs';
 import {
   DEFAULT_POLICY,
@@ -391,6 +393,11 @@ export type UseCallResult = {
   lobby: LobbyGuest[];
   lobbyEnabled: boolean;
   devices: { mics: DeviceOption[]; cams: DeviceOption[]; sinks: DeviceOption[] };
+  /**
+   * Keep the room returned by createRoom so the host can open it directly:
+   * `call:${room.id}` with no resolution round-trip.
+   */
+  rememberCreatedRoom: (room: CreatedRoom) => void;
   /** Event chimes on/off (default on). */
   sounds: boolean;
   toggleSounds: () => void;
@@ -1866,6 +1873,11 @@ export function useCall(
   const notify = useCallback((messageKey: string) => setNotice(messageKey), []);
   const clearNotice = useCallback(() => setNotice(null), []);
 
+  /** onStart: keep the created room so /call/<code> can open it by id. */
+  const rememberCreatedRoom = useCallback((room: CreatedRoom) => {
+    stashCreatedRoom(room);
+  }, []);
+
   /** Event chimes on/off. Defaults on; the choice survives a reload. */
   const toggleSounds = useCallback(() => {
     setSounds((previous) => {
@@ -2228,6 +2240,7 @@ export function useCall(
     lobby,
     lobbyEnabled,
     devices: { mics, cams, sinks },
+    rememberCreatedRoom,
     sounds,
     toggleSounds,
     sinkId,

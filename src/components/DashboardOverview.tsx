@@ -368,20 +368,11 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
             {loading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
           </div>
 
-          <div className="panel">
-            <div className="eyebrow">{t('dash.videoTitle')}</div>
-            <button
-              type="button"
-              className="primary-button"
-              style={{ width: '100%' }}
-              onClick={() => startVideo(overview.peers[0]?.userId, overview.peers[0]?.name)}
-              disabled={overview.peers.length === 0}
-            >
-              <Video size={16} aria-hidden="true" /> {t('dash.startVideoConsult')}
-            </button>
-          </div>
+          {/* The VIDEO CONSULTATION card is gone — it duplicated the hub and
+              started a call from the dashboard. 1:1 calls are started from a
+              care-team or quick-action row; meetings from /call. */}
 
-          {/* Call entry lives in ONE place now: the /call hub. */}
+          {/* The dashboard keeps exactly ONE call entry: the /call hub. */}
           <div className="panel">
             <div className="eyebrow">{t('call.callHub')}</div>
             <button

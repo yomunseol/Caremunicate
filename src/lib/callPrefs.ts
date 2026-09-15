@@ -107,6 +107,34 @@ export const readActiveRoom = (): string | null => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// The room the host JUST created.
+//
+// onStart is: `const room = await createRoom(settings)` → keep the room → route
+// to /call/<room.code>. Because createRoom has already waited for the insert,
+// the host needs no resolution round-trip and cannot hit the read-after-write
+// race at all. This is deliberately a module-level value, not React state: it
+// must be readable synchronously by the route that mounts on the same tick.
+//
+// It is single-use — the guard consumes it, so a later visit to the same code
+// resolves normally.
+// ---------------------------------------------------------------------------
+
+export type CreatedRoom = { id: string; code: string };
+
+let createdRoom: CreatedRoom | null = null;
+
+export const stashCreatedRoom = (room: CreatedRoom): void => {
+  createdRoom = room?.id && room?.code ? { id: room.id, code: room.code } : null;
+};
+
+export const takeCreatedRoom = (code: string): CreatedRoom | null => {
+  const room = createdRoom;
+  createdRoom = null;
+  if (!room) return null;
+  return room.code.toLowerCase() === String(code ?? '').toLowerCase() ? room : null;
+};
+
 // The host's chosen policy for the room they are about to open. Handed to
 // CallPage through sessionStorage so the in-call Security panel starts from the
 // real values even when check_call_room does not echo them back.
