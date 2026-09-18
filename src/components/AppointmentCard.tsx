@@ -65,7 +65,9 @@ export default function AppointmentCard({
   }, [menuOpen]);
 
   const status = effectiveStatus(appointment, now);
-  const joinable = canJoin(appointment, now);
+  // A roomless appointment (provider quick-create) has nothing to join, so the
+  // button must not light up and then no-op.
+  const joinable = canJoin(appointment, now) && Boolean(appointment.room_code);
   const live = isLive(appointment, now);
   const cancelled = status === 'cancelled';
 

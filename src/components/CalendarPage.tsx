@@ -11,10 +11,10 @@ import {
   loadAppointments,
   loadPeople,
   loadProviders,
-  loadBusySlots,
   localDayKey,
   setAppointmentStatus,
   effectiveStatus,
+  weekStartsOn,
   type Appointment,
   type PersonInfo,
 } from '../lib/appointments';
@@ -188,11 +188,11 @@ export default function CalendarPage() {
 
   const weekDays = useMemo(() => {
     const firstDay = new Date(cursor);
-    // Week starts on Monday for the grid; Intl handles the label.
-    const offset = (firstDay.getDay() + 6) % 7;
+    // Same first-day-of-week the mini month uses, so the two grids agree.
+    const offset = (firstDay.getDay() - weekStartsOn(locale) + 7) % 7;
     const start = addDays(firstDay, -offset);
     return Array.from({ length: 7 }, (_, index) => addDays(start, index));
-  }, [cursor]);
+  }, [cursor, locale]);
 
   const rangeLabel = useMemo(() => {
     if (view === 'day') return formatDayLong(cursor, locale);
@@ -205,12 +205,6 @@ export default function CalendarPage() {
     }
     return formatMonth(cursor, locale);
   }, [view, cursor, weekDays, locale]);
-
-  // Busiest first paint: nothing to do for month/schedule beyond the list.
-  useEffect(() => {
-    if (side !== 'provider' || !user?.id) return;
-    void loadBusySlots(user.id);
-  }, [side, user?.id]);
 
   const dayAppointments = useMemo(
     () => appointments.filter((a) => localDayKey(new Date(a.start_at)) === localDayKey(cursor)),

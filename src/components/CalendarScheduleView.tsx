@@ -36,8 +36,12 @@ export default function CalendarScheduleView({
   const groups = useMemo(() => {
     const now = Date.now();
     const ordered = [...appointments].sort((a, b) => a.start_at.localeCompare(b.start_at));
-    const upcoming = ordered.filter((appointment) => effectiveStatus(appointment, now) !== 'completed');
-    const past = ordered.filter((appointment) => effectiveStatus(appointment, now) === 'completed');
+    const isDone = (appointment: Appointment) => {
+      const status = effectiveStatus(appointment, now);
+      return status === 'completed' || status === 'cancelled';
+    };
+    const upcoming = ordered.filter((appointment) => !isDone(appointment));
+    const past = ordered.filter(isDone);
 
     const bucket = (list: Appointment[]) => {
       const byDay = new Map<string, Appointment[]>();

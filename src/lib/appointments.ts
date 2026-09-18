@@ -128,49 +128,6 @@ export const isLive = (appointment: Appointment, now = Date.now()): boolean => {
 // Slot computation
 // ---------------------------------------------------------------------------
 
-/** Open slots for one LOCAL day: the weekday rule minus booked overlap. */
-export const slotsForDay = (
-  day: Date,
-  rules: Availability[],
-  booked: Appointment[],
-  now = Date.now(),
-): Slot[] => {
-  const rule = rules.find((item) => Number(item.weekday) === day.getDay());
-  if (!rule) return [];
-
-  const [startHour, startMinute] = rule.start_time.split(':').map(Number);
-  const [endHour, endMinute] = rule.end_time.split(':').map(Number);
-  if ([startHour, startMinute, endHour, endMinute].some((n) => Number.isNaN(n))) return [];
-
-  const dayEnd = new Date(day);
-  dayEnd.setHours(endHour, endMinute, 0, 0);
-
-  const length = Number(rule.slot_minutes) * 60_000;
-  const step = length + Number(rule.buffer_minutes) * 60_000;
-  if (length <= 0 || step <= 0) return [];
-
-  const cursor = new Date(day);
-  cursor.setHours(startHour, startMinute, 0, 0);
-
-  const slots: Slot[] = [];
-  while (cursor.getTime() + length <= dayEnd.getTime()) {
-    const start = new Date(cursor);
-    const end = new Date(cursor.getTime() + length);
-
-    const overlaps = booked.some((appointment) => {
-      if (appointment.status === 'cancelled') return false;
-      const bookedStart = new Date(appointment.start_at).getTime();
-      const bookedEnd = new Date(appointment.end_at).getTime();
-      return start.getTime() < bookedEnd && end.getTime() > bookedStart;
-    });
-
-    if (!overlaps && start.getTime() > now) slots.push({ start, end });
-    cursor.setTime(cursor.getTime() + step);
-  }
-
-  return slots;
-};
-
 /**
  * Open slots for one date, for the booking modal.
  *
@@ -230,23 +187,6 @@ export const slotsForDate = (
   }
 
   return slots;
-};
-
-/** Every open slot in the booking window, in local time. */
-export const openSlots = (
-  rules: Availability[],
-  booked: Appointment[],
-  now = Date.now(),
-): Slot[] => {
-  const out: Slot[] = [];
-  const day = new Date();
-  day.setHours(0, 0, 0, 0);
-
-  for (let i = 0; i < BOOKING_WINDOW_DAYS; i += 1) {
-    out.push(...slotsForDay(new Date(day), rules, booked, now));
-    day.setDate(day.getDate() + 1);
-  }
-  return out;
 };
 
 // ---------------------------------------------------------------------------
