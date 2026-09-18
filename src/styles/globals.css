@@ -2177,7 +2177,6 @@ img {
 .cal-main { min-width: 0; }
 
 .cal-muted { margin: 0; color: var(--text-muted, #557b76); font-size: 0.86rem; }
-.cal-empty { margin: 0; color: var(--text-muted, #557b76); font-size: 0.9rem; }
 
 /* ---- Sidebar: Create + mini month ---------------------------------------- */
 .cal-sidebar { display: grid; gap: 1rem; }

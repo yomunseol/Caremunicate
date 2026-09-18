@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { CalendarOff } from 'lucide-react';
 import { useLang } from '../i18n';
 import { effectiveStatus, formatDayLong, type Appointment } from '../lib/appointments';
 import AppointmentCard, { type Counterpart } from './AppointmentCard';
@@ -66,7 +67,14 @@ export default function CalendarScheduleView({
   );
 
   if (appointments.length === 0) {
-    return <p className="cal-empty">{t('cal.appointments')} —</p>;
+    /* Never a bare '—': an icon and a sentence. */
+    return (
+      <div className="cal-empty-state">
+        <CalendarOff size={22} aria-hidden="true" />
+        {/* Not yet translated — needs the 10-locale string. */}
+        <p>No appointments yet.</p>
+      </div>
+    );
   }
 
   return (
@@ -80,7 +88,7 @@ export default function CalendarScheduleView({
 
       {groups.past.length > 0 ? (
         <section className="cal-schedule-day is-past">
-          <h3 className="cal-schedule-date">{t('cal.appointments')} ·</h3>
+          <h3 className="cal-schedule-date">{t('cal.appointments')}</h3>
           <ul className="cal-schedule-list">
             {groups.past.flatMap(([, items]) => items).map(renderRow)}
           </ul>

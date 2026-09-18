@@ -110,13 +110,6 @@ export default function BookingFlow({
     [provider, day, rules, booked],
   );
 
-  // No availability rows at all, or nothing open anywhere in the window.
-  const nothingOpen = useMemo(() => {
-    if (!provider || loading) return false;
-    if (rules.length === 0) return true;
-    return days.every((date) => slotsForDate(date, rules, booked).length === 0);
-  }, [provider, loading, rules, booked, days]);
-
   const book = async () => {
     if (!provider || !chosen || saving) return;
     setSaving(true);
@@ -359,14 +352,6 @@ export default function BookingFlow({
                 })
               )}
             </div>
-
-            {/* The window is empty even though rules exist: say so, never '—'. */}
-            {nothingOpen && slots.length > 0 ? (
-              <div className="cal-empty-state">
-                <CalendarOff size={22} aria-hidden="true" />
-                <p>{t('cal.noSlotsYet')}</p>
-              </div>
-            ) : null}
 
             {error ? (
               <span className="field-error">
