@@ -18,7 +18,8 @@ const VIEWPORT_GUTTER = 8;
 
 type MenuPosition = {
   top: number;
-  left: number;
+  /** Offset from the viewport's inline-start edge (left in LTR, right in RTL). */
+  inlineStart: number;
   minWidth: number;
 };
 
@@ -41,13 +42,15 @@ export default function LanguageSwitcher() {
     const rect = trigger.getBoundingClientRect();
     const minWidth = Math.max(rect.width, MENU_MIN_WIDTH);
     const top = rect.bottom + VIEWPORT_GUTTER;
-    const rawLeft = isRtl ? rect.right - minWidth : rect.left;
+    // Measured from the inline-start edge, so the menu opens toward the inline
+    // start in both directions without a per-direction branch in the layout.
+    const rawStart = isRtl ? window.innerWidth - rect.right : rect.left;
 
     // Keep it inside the viewport on narrow screens.
-    const maxLeft = Math.max(VIEWPORT_GUTTER, window.innerWidth - minWidth - VIEWPORT_GUTTER);
-    const left = Math.min(Math.max(VIEWPORT_GUTTER, rawLeft), maxLeft);
+    const maxStart = Math.max(VIEWPORT_GUTTER, window.innerWidth - minWidth - VIEWPORT_GUTTER);
+    const inlineStart = Math.min(Math.max(VIEWPORT_GUTTER, rawStart), maxStart);
 
-    setPosition({ top, left, minWidth });
+    setPosition({ top, inlineStart, minWidth });
   }, [isRtl]);
 
   // Measure before paint so the first frame isn't at a stale position.
@@ -114,8 +117,8 @@ export default function LanguageSwitcher() {
             style={{
               position: 'fixed',
               top: position.top,
-              left: position.left,
-              right: 'auto',
+              insetInlineStart: position.inlineStart,
+              insetInlineEnd: 'auto',
               minWidth: position.minWidth,
               zIndex: 2000,
             }}

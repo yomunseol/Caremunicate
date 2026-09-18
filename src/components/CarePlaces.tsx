@@ -216,7 +216,7 @@ function MapFocus({
 
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
-  const { t } = useLang();
+  const { t, tString } = useLang();
 
   const effectiveRole = (role || String(user?.user_metadata?.role ?? '')).toLowerCase();
   // Provider accounts (doctor / department / hospital) get the network heading.
@@ -488,7 +488,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         }}
         disabled={busy}
         aria-pressed={saved}
-        aria-label={saved ? t('places.removeSaved', { name }) : t('places.save', { name })}
+        aria-label={saved ? tString('places.removeSaved', { name }) : tString('places.save', { name })}
         title={saved ? t('places.removeTitle') : t('places.saveTitle')}
         style={{
           ...styles.starButton,
@@ -577,7 +577,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                       type="button"
                       disabled={savingPlaceId === favorite.place_id}
                       aria-pressed
-                      aria-label={t('places.removeSaved', { name: favorite.name })}
+                      aria-label={tString('places.removeSaved', { name: favorite.name })}
                       title={t('places.removeTitle')}
                       onClick={() =>
                         void toggleFavorite({

@@ -188,7 +188,7 @@ const styles: Record<string, CSSProperties> = {
   },
   searchIcon: {
     position: 'absolute',
-    left: 12,
+    insetInlineStart: 12,
     color: 'var(--text-muted, #777)',
   },
   input: {
@@ -203,7 +203,7 @@ const styles: Record<string, CSSProperties> = {
   },
   spinner: {
     position: 'absolute',
-    right: 14,
+    insetInlineEnd: 14,
     width: 12,
     height: 12,
     border: '2px solid rgba(62, 169, 133, 0.3)',
@@ -240,7 +240,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
     width: '100%',
-    textAlign: 'left',
+    textAlign: 'start',
     fontFamily: 'inherit',
     padding: '8px 10px',
     background: '#fff',

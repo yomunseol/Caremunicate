@@ -62,7 +62,7 @@ type ChatListProps = {
 //   - 0 conversations + no error -> friendly empty state.
 //   - error truthy               -> the REAL database error message in red.
 export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: ChatListProps) {
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const [items, setItems] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -228,7 +228,7 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
               type="button"
               onClick={() => onOpenChat(item)}
               style={styles.row}
-              aria-label={t('chat.openWith', { name: item.peerName })}
+              aria-label={tString('chat.openWith', { name: item.peerName })}
             >
               <span style={styles.avatar}>{item.peerName.charAt(0).toUpperCase()}</span>
               <span style={styles.copy}>
@@ -263,7 +263,7 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 10,
     width: '100%',
-    textAlign: 'left',
+    textAlign: 'start',
     fontFamily: 'inherit',
     padding: '10px',
     background: '#fff',

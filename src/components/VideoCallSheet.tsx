@@ -128,7 +128,7 @@ export default function VideoCallSheet({ careTeam, onClose, onBook }: VideoCallS
               <strong>{t('call.joinWithCode')}</strong>
               {/* The format is a literal, so it needs no translation. */}
               <input
-                className="input"
+                className="input ltr-isolate"
                 dir="ltr"
                 value={code}
                 placeholder="word-word-word-word"

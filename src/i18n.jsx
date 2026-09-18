@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState } from 'react';
 
 // ---------------------------------------------------------------------------
 // App-wide i18n. Zero dependencies: a plain dictionary + React context.
@@ -4954,92 +4954,130 @@ function detectLocale() {
   return supportedLocales.includes(prefix) ? prefix : 'en';
 }
 
-// Restores the persisted direction so the very first paint is already correct;
-// falls back to deriving it from the restored locale.
-function detectDirection(locale) {
-  if (typeof window === 'undefined') return resolveDirection(locale);
+// ---------------------------------------------------------------------------
+// Direction of the document.
+//
+// <html lang> and <html dir> follow the active locale, written in a layout
+// effect so the direction is already right on the first paint (not after it).
+// The resolved direction is persisted too, so a reload restores it immediately.
+// ---------------------------------------------------------------------------
 
-  try {
-    const stored = window.localStorage.getItem(DIRECTION_KEY);
-    if (stored === 'rtl' || stored === 'ltr') return stored;
-  } catch {
-    // Storage may be blocked; fall back to the derived direction.
+function useDocumentDirection(locale) {
+  const dir = resolveDirection(locale);
+
+  useLayoutEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    document.documentElement.lang = locale;
+    document.documentElement.dir = dir;
+
+    try {
+      window.localStorage.setItem(DIRECTION_KEY, dir);
+    } catch {
+      // Best-effort persistence; the in-memory direction still applies.
+    }
+  }, [locale, dir]);
+
+  return dir;
+}
+
+const TOKEN_RE = /\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}/g;
+
+/** Belt and braces: no {{...}} fragment may ever reach the UI. */
+const stripTokens = (text) => text.replace(/\{\{[\s\S]*?\}\}/g, '').replace(/\{\{|\}\}/g, '');
+
+/**
+ * Resolve a key and interpolate its tokens.
+ *
+ * `wrap(value, index)` isolates each interpolated value, so mixed-direction
+ * content cannot scramble: t() uses <bdi>, tString() uses the Unicode isolate
+ * characters (which are legal inside a plain string).
+ *
+ * Returns a string when the key has no tokens — so string call sites keep
+ * working — and an array of strings/elements when it does.
+ */
+function buildMessage(key, locale, vars, wrap) {
+  const table = translations[locale] || translations.en;
+  let value = table[key];
+  // Missing-key safety: fall back to English, then to the key itself.
+  if (value === undefined) value = translations.en[key];
+  if (value === undefined) return key;
+
+  const hasVars = vars !== undefined && vars !== null;
+  const hasToken = /\{\{?\s*\w+\s*\}?\}/.test(value);
+
+  if (!hasVars && value.includes('{{')) {
+    warn(`"${key}" (${locale}) contains a {{token}} but no vars were passed.`);
   }
 
-  return resolveDirection(locale);
+  if (!hasToken) return stripTokens(value);
+
+  // Supports both {{name}} and the legacy {name}. A token with no value is
+  // dropped entirely — a missing var must never leave a raw token behind.
+  const pieces = [];
+  let cursor = 0;
+  let index = 0;
+
+  value.replace(TOKEN_RE, (match, double, single, offset) => {
+    const token = double ?? single;
+    pieces.push(stripTokens(value.slice(cursor, offset)));
+    cursor = offset + match.length;
+
+    if (hasVars && Object.prototype.hasOwnProperty.call(vars, token)) {
+      pieces.push(wrap(String(vars[token]), index, token));
+    } else {
+      warn(`"${key}" (${locale}) has no value for {${token}}; the token was removed.`);
+    }
+
+    index += 1;
+    return match;
+  });
+
+  pieces.push(stripTokens(value.slice(cursor)));
+  return pieces;
 }
 
 const LangContext = createContext(undefined);
 
 export function LangProvider({ children }) {
   const [locale, setLocaleState] = useState(detectLocale);
-  const [dir, setDirState] = useState(() => detectDirection(detectLocale()));
-
-  // Single source of truth for the document's language + direction. Runs on
-  // mount (restore) and on every locale change (switch).
-  useEffect(() => {
-    const nextDir = resolveDirection(locale);
-
-    setDirState(nextDir);
-    document.documentElement.lang = locale;
-    document.documentElement.dir = nextDir;
-
-    try {
-      window.localStorage.setItem(DIRECTION_KEY, nextDir);
-    } catch {
-      // Best-effort persistence; the in-memory direction still applies.
-    }
-  }, [locale]);
+  const dir = useDocumentDirection(locale);
 
   const setLocale = useCallback((next) => {
     if (!supportedLocales.includes(next)) return;
     setLocaleState(next);
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
-      window.localStorage.setItem(DIRECTION_KEY, resolveDirection(next));
     } catch {
       // Persisting is best-effort; the in-memory locale still applies.
     }
   }, []);
 
+  // JSX side: each interpolated value is wrapped in <bdi>, so a name, code or
+  // number cannot reorder the sentence around it in mixed RTL/LTR content.
   const t = useCallback(
+    (key, vars) =>
+      buildMessage(key, locale, vars, (text, index) => (
+        <bdi key={`${key}-${index}`}>{text}</bdi>
+      )),
+    [locale],
+  );
+
+  // String side: identical interpolation for contexts that must remain strings
+  // (aria-label, title, toast state, ICS). Isolation comes from the Unicode
+  // isolate characters instead of an element.
+  const tString = useCallback(
     (key, vars) => {
-      const table = translations[locale] || translations.en;
-      let value = table[key];
-      // Missing-key safety: fall back to English, then to the key itself.
-      if (value === undefined) value = translations.en[key];
-      if (value === undefined) return key;
-
-      const hasVars = vars !== undefined && vars !== null;
-      const hasToken = /\{\{?\s*\w+\s*\}?\}/.test(value);
-
-      if (!hasVars && value.includes('{{')) {
-        warn(`"${key}" (${locale}) contains a {{token}} but no vars were passed.`);
-      }
-
-      if (hasToken) {
-        // Supports both {{name}} and the legacy {name}. A token with no value is
-        // dropped entirely — a missing var must never leave a raw token behind.
-        value = value.replace(
-          /\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}/g,
-          (match, double, single) => {
-            const token = double ?? single;
-            if (hasVars && Object.prototype.hasOwnProperty.call(vars, token)) {
-              return String(vars[token]);
-            }
-            warn(`"${key}" (${locale}) has no value for {${token}}; the token was removed.`);
-            return '';
-          },
-        );
-      }
-
-      // Belt and braces: no {{...}} fragment may ever reach the UI.
-      return value.replace(/\{\{[\s\S]*?\}\}/g, '').replace(/\{\{|\}\}/g, '');
+      const message = buildMessage(key, locale, vars, (text) => `\u2068${text}\u2069`);
+      return Array.isArray(message) ? message.join('') : message;
     },
     [locale],
   );
 
-  const value = useMemo(() => ({ locale, dir, setLocale, t }), [locale, dir, setLocale, t]);
+  const value = useMemo(
+    () => ({ locale, dir, setLocale, t, tString }),
+    [locale, dir, setLocale, t, tString],
+  );
 
   return <LangContext.Provider value={value}>{children}</LangContext.Provider>;
 }

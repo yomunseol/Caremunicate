@@ -125,12 +125,14 @@ img {
   align-items: center;
   gap: 0.65rem;
   min-width: 11.5rem;
-  padding: 0.38rem 0.65rem 0.38rem 0.4rem;
+  /* Asymmetric: tighter on the avatar side — logical so it mirrors. */
+  padding-block: 0.38rem;
+  padding-inline: 0.4rem 0.65rem;
   border: 1px solid rgba(62, 169, 133, 0.2);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.86);
   color: var(--text);
-  text-align: left;
+  text-align: start;
   box-shadow: 0 8px 20px rgba(17, 55, 47, 0.06);
 }
 
@@ -177,7 +179,7 @@ img {
 }
 
 .profile-chevron {
-  margin-left: auto;
+  margin-inline-start: auto;
   color: var(--accent-strong);
   font-size: 0.62rem;
 }
@@ -185,7 +187,7 @@ img {
 .profile-popover {
   position: absolute;
   top: calc(100% + 0.75rem);
-  right: 0;
+  inset-inline-end: 0;
   z-index: 30;
   width: min(21rem, calc(100vw - 2rem));
   padding: 1rem;
@@ -278,7 +280,7 @@ img {
   width: 100%;
   padding: 0.72rem 0.8rem;
   border-radius: 0.75rem;
-  text-align: left;
+  text-align: start;
 }
 
 .upgrade-button {
@@ -348,7 +350,7 @@ img {
 .lang-menu {
   position: absolute;
   top: calc(100% + 0.5rem);
-  right: 0;
+  inset-inline-end: 0;
   z-index: 40;
   min-width: 11rem;
   max-width: calc(100vw - 2rem);
@@ -374,7 +376,7 @@ img {
   color: var(--text-soft);
   font-size: 0.85rem;
   font-weight: 600;
-  text-align: left;
+  text-align: start;
 }
 
 .lang-option:hover {
@@ -802,7 +804,7 @@ img {
 .plan-card li::before {
   content: '•';
   color: var(--accent-strong);
-  margin-right: 0.45rem;
+  margin-inline-end: 0.45rem;
 }
 
 /* Six plans: 3 across on desktop (two clean rows), 2 at <=980px, 1 at <=720px.
@@ -895,12 +897,16 @@ img {
 /* Confirmation toast after a plan is applied */
 .plan-toast {
   position: fixed;
-  left: 50%;
+  /* Centred with inset + auto margins rather than left/translateX: it stays
+     centred under RTL, and fadeInUp's transform cannot override it. */
+  inset-inline: 0;
   bottom: 1.5rem;
   z-index: 60;
+  width: fit-content;
   max-width: min(92vw, 30rem);
+  margin-inline: auto;
   padding: 0.85rem 1.15rem;
-  transform: translateX(-50%);
+  text-align: center;
   border-radius: 999px;
   background: linear-gradient(120deg, #48b58f, #7adab1);
   color: var(--button-text);
@@ -969,7 +975,7 @@ img {
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  padding-right: 0.35rem;
+  padding-inline-end: 0.35rem;
   animation: authPanelSlide 320ms cubic-bezier(.22,1,.36,1);
   transition: opacity 220ms ease, transform 220ms ease;
 }
@@ -1240,7 +1246,7 @@ img {
 .thin-list li::before {
   content: '▹';
   color: var(--accent-strong);
-  margin-right: 0.45rem;
+  margin-inline-end: 0.45rem;
 }
 
 .profile-grid {
@@ -1429,8 +1435,10 @@ img {
   }
 
   .profile-popover {
-    right: 50%;
-    transform: translateX(50%);
+    /* Centred on mobile with auto margins instead of a transform, so the
+       fadeInUp animation cannot override the centring. */
+    inset-inline: 0;
+    margin-inline: auto;
   }
 
   .nav-links {
@@ -1575,9 +1583,9 @@ img {
 }
 
 @keyframes callReactionFloat {
-  0% { opacity: 0; transform: translate(-50%, 0.5rem) scale(0.8); }
-  20% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
-  100% { opacity: 0; transform: translate(-50%, -3.2rem) scale(1); }
+  0% { opacity: 0; transform: translateY(0.5rem) scale(0.8); }
+  20% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-3.2rem) scale(1); }
 }
 
 .call-reaction {
@@ -1626,6 +1634,12 @@ img {
 
 .call-participants {
   box-shadow: -20px 0 40px rgba(6, 26, 22, 0.35);
+}
+
+/* The slide-over arrives from the inline end; the shadow has no logical form,
+   so it is mirrored explicitly with it. */
+[dir='rtl'] .call-participants {
+  box-shadow: 20px 0 40px rgba(6, 26, 22, 0.35);
 }
 
 @media (max-width: 720px) {
@@ -1739,9 +1753,9 @@ img {
 }
 
 @keyframes callReactionFloat {
-  0% { opacity: 0; transform: translate(-50%, 0.75rem) scale(0.85); }
-  15% { opacity: 1; transform: translate(-50%, 0) scale(1.05); }
-  100% { opacity: 0; transform: translate(-50%, -4rem) scale(1); }
+  0% { opacity: 0; transform: translateY(0.75rem) scale(0.85); }
+  15% { opacity: 1; transform: translateY(0) scale(1.05); }
+  100% { opacity: 0; transform: translateY(-4rem) scale(1); }
 }
 
 .call-reaction {
@@ -1753,6 +1767,8 @@ img {
    with an ellipsis, with the full code carried by the title attribute. */
 .call-code-chip {
   display: inline-block;
+  /* Latin machine token: never let RTL reorder or mirror it. */
+  unicode-bidi: isolate;
   max-width: min(48vw, 14rem);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.875rem;
@@ -1762,6 +1778,12 @@ img {
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
+}
+
+/* Latin content islands — codes, links, emails — inside RTL copy. */
+.ltr-isolate {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
 
 .call-panel-close {
@@ -1807,8 +1829,10 @@ img {
 .call-overflow {
   position: absolute;
   inset-block-end: 3.6rem;
-  inset-inline-start: 50%;
-  transform: translateX(-50%);
+  /* Centred with inset + auto margins rather than inset-inline-start:50% +
+     translateX(-50%), which drifts off-centre under RTL. */
+  inset-inline: 0;
+  margin-inline: auto;
   width: min(22rem, 92vw);
   max-height: min(70vh, 34rem);
   overflow-y: auto;

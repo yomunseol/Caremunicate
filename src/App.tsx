@@ -169,7 +169,7 @@ const passwordPattern =
 
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
   const [callCode, setCallCode] = useState<string | null>(getInitialCallCode);
@@ -612,7 +612,7 @@ function App() {
       }
 
       setProfileRefreshKey((key) => key + 1);
-      setToast({ message: t('auth.toast.planActivated', { name: option.name }), type: 'success' });
+      setToast({ message: tString('auth.toast.planActivated', { name: option.name }), type: 'success' });
     } catch (error) {
       console.error('Plan update failed:', error);
       setToast({
@@ -689,7 +689,7 @@ function App() {
                       <div>
                         <span className="profile-kicker">{t('header.account')}</span>
                         <h3>{profileDisplayName}</h3>
-                        <p>{currentUser.email}</p>
+                        <p><bdi dir="ltr">{currentUser.email}</bdi></p>
                       </div>
                       <span className="plan-status">{currentPlanOption.name}</span>
                     </div>

@@ -258,7 +258,7 @@ export default function CallHub() {
           <div className="eyebrow">{t('call.joinWithCode')}</div>
           <form style={styles.joinForm} onSubmit={(event) => void submitJoin(event)}>
             <input
-              className="input"
+              className="input ltr-isolate"
               dir="ltr"
               autoComplete="off"
               placeholder="mint-fox-river-halo"

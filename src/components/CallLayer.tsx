@@ -89,7 +89,7 @@ function Tile({
   sinkId?: string | null;
   onDoubleClick?: () => void;
 }) {
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const initials = (name || '?').trim().charAt(0).toUpperCase();
 
   return (
@@ -193,7 +193,7 @@ function useElapsed(connectedAt: number | null): string {
 }
 
 export default function CallLayer() {
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const {
     status,
     kind,
@@ -442,10 +442,10 @@ export default function CallLayer() {
     // announcing twice would double-speak every event.
     if (joined) {
       if (sounds) playJoinChime();
-      setLiveToast({ id: Date.now(), text: t('call.personJoined', { name: joined[1].name }) });
+      setLiveToast({ id: Date.now(), text: tString('call.personJoined', { name: joined[1].name }) });
     } else if (left) {
       if (sounds) playLeaveChime();
-      setLiveToast({ id: Date.now(), text: t('call.personLeft', { name: left[1].name }) });
+      setLiveToast({ id: Date.now(), text: tString('call.personLeft', { name: left[1].name }) });
     } else if (raised) {
       if (sounds) playHandChime();
       setLiveToast({ id: Date.now(), text: t('call.raiseHand') });
@@ -1208,7 +1208,15 @@ const styles: Record<string, CSSProperties> = {
     height: 0,
     pointerEvents: 'none',
   },
-  reaction: { position: 'absolute', insetBlockEnd: 0, insetInlineStart: '50%', fontSize: '1.7rem' },
+  reaction: {
+    position: 'absolute',
+    insetBlockEnd: 0,
+    // Centred with auto margins, so the float stays over the tile in RTL too.
+    insetInline: 0,
+    marginInline: 'auto',
+    width: 'fit-content',
+    fontSize: '1.7rem',
+  },
 
   reconnectToast: {
     margin: 0,
@@ -1314,8 +1322,9 @@ const styles: Record<string, CSSProperties> = {
   emojiRow: {
     position: 'absolute',
     insetBlockEnd: '3.4rem',
-    insetInlineStart: '50%',
-    transform: 'translateX(-50%)',
+    insetInline: 0,
+    marginInline: 'auto',
+    width: 'fit-content',
     display: 'inline-flex',
     gap: '0.3rem',
     padding: '0.35rem 0.5rem',
@@ -1347,8 +1356,10 @@ const styles: Record<string, CSSProperties> = {
   notice: {
     position: 'absolute',
     insetBlockEnd: '5.5rem',
-    insetInline: '50%',
-    transform: 'translateX(50%)',
+    insetInline: 0,
+    marginInline: 'auto',
+    width: 'fit-content',
+    textAlign: 'center',
     pointerEvents: 'auto',
     maxWidth: 'min(92vw, 30rem)',
     paddingBlock: '0.8rem',

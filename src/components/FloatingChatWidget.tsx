@@ -53,7 +53,7 @@ function ThreadView({
   onBack: () => void;
 }) {
   const { messages, loading, error, sendMessage } = useRealtimeChat(thread.conversationId);
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -151,7 +151,7 @@ function ThreadView({
 
 export default function FloatingChatWidget() {
   const { user } = useAuth();
-  const { t } = useLang();
+  const { t, tString } = useLang();
   const myUserId = user?.id ?? '';
 
   const [isOpen, setIsOpen] = useState(false);
@@ -324,7 +324,7 @@ export default function FloatingChatWidget() {
       <button type="button" onClick={toggleOpen} style={styles.fab} aria-label={isOpen ? t('chat.closeChat') : t('chat.openChat')}>
         {isOpen ? <X size={22} /> : <MessageCircle size={22} />}
         {!isOpen && unreadCount > 0 ? (
-          <span style={styles.unreadDot} aria-label={t('chat.unread', { count: unreadCount })}>
+          <span style={styles.unreadDot} aria-label={tString('chat.unread', { count: unreadCount })}>
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         ) : null}
@@ -336,7 +336,8 @@ export default function FloatingChatWidget() {
 const styles: Record<string, CSSProperties> = {
   root: {
     position: 'fixed',
-    right: 16,
+    // Bottom-end corner of the viewport, so it stays the same corner under RTL.
+    insetInlineEnd: 16,
     bottom: 16,
     zIndex: 50,
     display: 'flex',
@@ -361,7 +362,7 @@ const styles: Record<string, CSSProperties> = {
   unreadDot: {
     position: 'absolute',
     top: -2,
-    right: -2,
+    insetInlineEnd: -2,
     minWidth: 18,
     height: 18,
     padding: '0 4px',
