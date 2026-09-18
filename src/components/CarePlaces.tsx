@@ -111,9 +111,28 @@ const buildOverpassQuery = (lat: number, lon: number, amenities: readonly string
 out center;`;
 };
 
+/** The mirror the relay fallback targets when the same-origin route is absent. */
+const OVERPASS_FALLBACK_MIRROR = 'https://overpass-api.de/api/interpreter';
+/** Keyless CORS relay used ONLY as the last resort (route missing). */
+const ALLORIGINS_RAW = 'https://api.allorigins.win/raw?url=';
+
+type CodedError = Error & { code?: string };
+
+const overpassError = (code: string, message: string): CodedError => {
+  const error = new Error(message) as CodedError;
+  error.code = code;
+  return error;
+};
+
 /**
- * Same-origin request to the Overpass proxy. Mirror rotation, the per-mirror
- * 15s ceiling and the edge cache all live server-side, so this is a single GET.
+ * Overpass, in order:
+ *
+ *   1. Same-origin `/api/overpass` — mirror rotation, the per-mirror 15s ceiling
+ *      and the edge cache all live server-side.
+ *   2. Only if that route is missing (404), relay one mirror through
+ *      allorigins, so the map still works on a host without the function.
+ *
+ * Failures carry a `code` so the caller can append the raw reason.
  */
 const fetchOverpass = async (
   query: string,
@@ -124,11 +143,31 @@ const fetchOverpass = async (
     signal,
   });
 
-  if (!response.ok) {
-    throw new Error(`${OVERPASS_PROXY} responded ${response.status}`);
+  if (response.ok) {
+    return (await response.json()) as { elements?: OverpassElement[] };
   }
 
-  return (await response.json()) as { elements?: OverpassElement[] };
+  if (response.status === 404) {
+    const upstream = `${OVERPASS_FALLBACK_MIRROR}?data=${encodeURIComponent(query)}`;
+    const relayed = await fetch(`${ALLORIGINS_RAW}${encodeURIComponent(upstream)}`, {
+      headers: { Accept: 'application/json' },
+      signal,
+    });
+
+    if (!relayed.ok) {
+      throw overpassError(
+        '404',
+        `${OVERPASS_PROXY} responded 404 (route missing) and the mirror relay responded ${relayed.status}`,
+      );
+    }
+
+    return (await relayed.json()) as { elements?: OverpassElement[] };
+  }
+
+  throw overpassError(
+    response.status === 502 ? '502' : String(response.status),
+    `${OVERPASS_PROXY} responded ${response.status}`,
+  );
 };
 
 /** Cache key: `cp:{lat2},{lon2},{filters}` — centre rounded to 2 decimals. */
@@ -330,18 +369,30 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         setSelectedId(null);
         setSearched(true);
       } catch (caught) {
+        const code = (caught as { code?: string })?.code;
+
         if ((caught as Error)?.name === 'AbortError') {
           // Only a timeout is worth surfacing; a superseded request or an
           // unmount must stay silent.
           if (timedOut) {
             console.error('OVERPASS_ERROR:', caught);
-            setError(t('places.searchTimeout'));
+            setError(`${t('places.searchTimeout')} (timeout)`);
           }
           return;
         }
 
         console.error('OVERPASS_ERROR:', caught);
-        setError(t('places.searchFailed'));
+        // Always name the raw cause: route missing, every mirror down, or the
+        // upstream status.
+        const reason =
+          code === '404'
+            ? '404 route missing'
+            : code === '502'
+              ? '502 mirrors'
+              : code
+                ? `${code}`
+                : '';
+        setError(`${t('places.searchFailed')}${reason ? ` (${reason})` : ''}`);
         setResults([]);
       } finally {
         window.clearTimeout(timeoutId);

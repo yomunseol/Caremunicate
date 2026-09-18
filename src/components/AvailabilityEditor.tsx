@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import {
   loadAvailability,
   saveAvailability,
@@ -41,53 +41,77 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
   const [rows, setRows] = useState<Record<number, Row>>(initialRows);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [rangeErrorDay, setRangeErrorDay] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!providerId) return;
-      const rules = await loadAvailability(providerId);
-      if (cancelled || rules.length === 0) return;
+  // Reads the stored rows verbatim: the values are plain wall-clock strings, so
+  // 09:00 loaded here is 09:00 in the input and 09:00 in the DB — no conversion.
+  const load = useCallback(async () => {
+    if (!providerId) return;
+    const rules = await loadAvailability(providerId);
 
-      const next = initialRows();
-      for (let day = 0; day < 7; day += 1) next[day] = { ...DEFAULT_ROW, enabled: false };
-      for (const rule of rules) {
-        next[Number(rule.weekday)] = {
-          enabled: true,
-          start: toInputTime(rule.start_time),
-          end: toInputTime(rule.end_time),
-          slot: Number(rule.slot_minutes) || 30,
-          buffer: Number(rule.buffer_minutes) || 0,
-        };
-      }
-      setRows(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    const next = initialRows();
+    for (let day = 0; day < 7; day += 1) next[day] = { ...DEFAULT_ROW, enabled: false };
+    for (const rule of rules) {
+      next[Number(rule.weekday)] = {
+        enabled: true,
+        start: toInputTime(rule.start_time),
+        end: toInputTime(rule.end_time),
+        slot: Number(rule.slot_minutes) || 30,
+        buffer: Number(rule.buffer_minutes) || 0,
+      };
+    }
+    setRows(next);
   }, [providerId]);
 
-  const update = (day: number, patch: Partial<Row>) =>
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const update = (day: number, patch: Partial<Row>) => {
+    setRangeErrorDay(null);
+    setSaveError('');
     setRows((previous) => ({ ...previous, [day]: { ...previous[day], ...patch } }));
+  };
 
   const save = async () => {
-    setBusy(true);
+    setSaveError('');
     setSaved(false);
 
-    const rules: Availability[] = Object.entries(rows)
-      .filter(([, row]) => row.enabled)
-      .map(([day, row]) => ({
-        id: '',
-        provider_id: providerId,
-        weekday: Number(day),
-        start_time: `${row.start}:00`,
-        end_time: `${row.end}:00`,
-        slot_minutes: row.slot,
-        buffer_minutes: row.buffer,
-      }));
+    const enabled = Object.entries(rows).filter(([, row]) => row.enabled);
 
-    const ok = await saveAvailability(providerId, rules);
-    setSaved(ok);
+    // Every checked day must have end > start. '<input type="time">' yields a
+    // zero-padded 'HH:MM', so a plain string compare is a correct time compare.
+    const invalid = enabled.find(([, row]) => !row.start || !row.end || row.end <= row.start);
+    if (invalid) {
+      setRangeErrorDay(Number(invalid[0]));
+      return;
+    }
+    setRangeErrorDay(null);
+
+    setBusy(true);
+
+    const rules: Availability[] = enabled.map(([day, row]) => ({
+      id: '',
+      provider_id: providerId,
+      weekday: Number(day),
+      start_time: `${row.start}:00`,
+      end_time: `${row.end}:00`,
+      slot_minutes: row.slot,
+      buffer_minutes: row.buffer,
+    }));
+
+    const result = await saveAvailability(providerId, rules);
+
+    if (!result.ok) {
+      // Self-reporting: the raw code, never a softened reason.
+      setSaveError(result.code);
+    } else {
+      await load();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    }
+
     setBusy(false);
   };
 
@@ -143,6 +167,10 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
                 onChange={(event) => update(day, { end: event.target.value })}
                 style={styles.time}
               />
+
+              {rangeErrorDay === day ? (
+                <span className="field-error" role="alert">{t('cal.invalidTimeRange')}</span>
+              ) : null}
             </li>
           );
         })}
@@ -196,9 +224,21 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
         </label>
       </div>
 
+      {saveError ? (
+        <span className="field-error" role="alert">
+          <span className="error-detail">{saveError}</span>
+        </span>
+      ) : null}
+
       <button type="button" className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void save()}>
-        {saved ? t('call.copied') : 'Save'}
+        Save
       </button>
+
+      {saved ? (
+        <div className="plan-toast" role="status" aria-live="polite">
+          {t('cal.availabilitySaved')}
+        </div>
+      ) : null}
     </div>
   );
 }

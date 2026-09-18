@@ -272,31 +272,48 @@ export const loadAppointments = async (
   return (data ?? []) as Appointment[];
 };
 
+export type SaveAvailabilityResult = { ok: true } | { ok: false; code: string };
+
+/**
+ * Writes the weekly availability.
+ *
+ *  - Checked weekdays: upsert, updating end / slot / buffer on the existing row.
+ *  - Unchecked weekdays: delete any row that exists for them.
+ *
+ * `start_time` / `end_time` are raw 'HH:MM:SS' wall-clock strings — the column
+ * is `time`, so nothing is converted through a Date or a zone.
+ *
+ * The conflict target is the table's unique key (provider_id, weekday), so a
+ * save replaces that day rather than adding a second row for it.
+ */
 export const saveAvailability = async (
   providerId: string,
   rules: Availability[],
-): Promise<boolean> => {
-  if (!providerId) return false;
+): Promise<SaveAvailabilityResult> => {
+  if (!providerId) return { ok: false, code: 'no-provider' };
 
-  const rows = rules.map((rule) => ({
-    provider_id: providerId,
-    weekday: rule.weekday,
-    start_time: rule.start_time,
-    end_time: rule.end_time,
-    slot_minutes: rule.slot_minutes,
-    buffer_minutes: rule.buffer_minutes,
-  }));
+  if (rules.length > 0) {
+    const rows = rules.map((rule) => ({
+      provider_id: providerId,
+      weekday: rule.weekday,
+      start_time: rule.start_time,
+      end_time: rule.end_time,
+      slot_minutes: rule.slot_minutes,
+      buffer_minutes: rule.buffer_minutes,
+    }));
 
-  const { error } = await supabase
-    .from('availability')
-    .upsert(rows, { onConflict: 'provider_id,weekday' });
+    const { error } = await supabase
+      .from('availability')
+      .upsert(rows, { onConflict: 'provider_id,weekday' });
 
-  if (error) {
-    console.error('CALENDAR ERROR:', error.message);
-    return false;
+    if (error) {
+      console.error('CALENDAR ERROR:', error.message);
+      return { ok: false, code: error.code ?? error.message };
+    }
   }
 
-  // Drop weekdays the provider switched off.
+  // Drop weekdays the provider switched off. Deleting a weekday with no row is
+  // a no-op, so this needs no existence check.
   const keep = rules.map((rule) => rule.weekday);
   const remove = [0, 1, 2, 3, 4, 5, 6].filter((weekday) => !keep.includes(weekday));
   if (remove.length > 0) {
@@ -305,10 +322,13 @@ export const saveAvailability = async (
       .delete()
       .eq('provider_id', providerId)
       .in('weekday', remove);
-    if (deleteError) console.error('CALENDAR ERROR:', deleteError.message);
+    if (deleteError) {
+      console.error('CALENDAR ERROR:', deleteError.message);
+      return { ok: false, code: deleteError.code ?? deleteError.message };
+    }
   }
 
-  return true;
+  return { ok: true };
 };
 
 /**

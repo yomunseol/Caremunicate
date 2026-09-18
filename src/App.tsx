@@ -13,8 +13,17 @@ import CallPage from './components/CallPage';
 import CallHub from './components/CallHub';
 import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
+import VerificationCenter from './components/VerificationCenter';
 import LanguageSwitcher from './components/LanguageSwitcher';
-import PricingSection, { getPlans, isPlanId, type PlanId } from './components/PricingSection';
+import PricingSection, {
+  defaultPlanForFamily,
+  getPlans,
+  isPlanId,
+  normalizePlanId,
+  planFamilyOf,
+  type PlanFamily,
+  type PlanId,
+} from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
 import { isProvider } from './lib/roles';
 import { useLang } from './i18n';
@@ -27,7 +36,8 @@ type RouteKey =
   | 'pricing'
   | 'chat'
   | 'call'
-  | 'calendar';
+  | 'calendar'
+  | 'verify';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -76,7 +86,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'verify'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -285,7 +295,8 @@ function App() {
       (nextRoute === 'profile' ||
         nextRoute === 'chat' ||
         nextRoute === 'call' ||
-        nextRoute === 'calendar') &&
+        nextRoute === 'calendar' ||
+        nextRoute === 'verify') &&
       (!currentUser || pending2FA)
     ) {
       nextRoute = 'login';
@@ -547,15 +558,40 @@ function App() {
 
   const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? '');
 
-  const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
-  const currentPlanId: PlanId = isPlanId(storedPlan) ? storedPlan : 'basic';
-  const planOptions = getPlans(t);
-  const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
-  const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
-
   // Dashboard role. Prefer the persisted profiles.role, falling back to the
   // sign-up metadata.
   const profileRole = String(profileData?.role ?? userProfile?.role ?? '').toLowerCase();
+
+  // Which plan family this role may display. Provider roles (doctor/department/
+  // hospital) are the provider family; everyone else is the patient family.
+  const roleFamily: PlanFamily = isProvider(profileRole) ? 'provider' : 'patient';
+
+  // profiles.plan, read LIVE from the DB row — never cached in the session and
+  // never inferred from the role. An unknown or wrong-family value falls back
+  // to this family's default, and the disagreement is reported with both values.
+  const storedPlan = typeof profileData?.plan === 'string' ? profileData.plan : null;
+  const dbPlanId = normalizePlanId(storedPlan);
+  const dbPlanFamily = dbPlanId ? planFamilyOf(dbPlanId) : null;
+  const planMatchesRole = dbPlanId !== null && dbPlanFamily === roleFamily;
+
+  if (storedPlan !== null && !planMatchesRole) {
+    console.error(
+      'PLAN MISMATCH: profiles.plan =',
+      storedPlan,
+      '| badge family =',
+      dbPlanFamily ?? 'unknown',
+      '| role family =',
+      roleFamily,
+      '| rendering =',
+      defaultPlanForFamily(roleFamily),
+    );
+  }
+
+  const currentPlanId: PlanId =
+    dbPlanId !== null && dbPlanFamily === roleFamily ? dbPlanId : defaultPlanForFamily(roleFamily);
+  const planOptions = getPlans(t);
+  const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
+  const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
 
   // Pricing CTAs. Logged-out visitors are sent to sign-up with the plan
   // preselected; logged-in users get the plan written to profiles.plan
@@ -1092,7 +1128,7 @@ function App() {
         {route === 'profile' && (
           <ProtectedRoute>
             <section className="section profile-grid">
-            <DashboardOverview role={profileRole} />
+            <DashboardOverview role={profileRole} planName={currentPlanOption?.name ?? ''} />
 
             <div className="profile-sidebar">
               <TwoFactorSetup />
@@ -1131,6 +1167,12 @@ function App() {
         {route === 'calendar' && (
           <ProtectedRoute>
             <CalendarPage />
+          </ProtectedRoute>
+        )}
+
+        {route === 'verify' && (
+          <ProtectedRoute>
+            <VerificationCenter />
           </ProtectedRoute>
         )}
 

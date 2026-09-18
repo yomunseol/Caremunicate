@@ -56,9 +56,11 @@ const startOfToday = (): string => {
 type DashboardOverviewProps = {
   /** Persisted profiles.role (falls back to sign-up metadata). */
   role?: string;
+  /** Localized plan name, read live from profiles.plan by the caller. */
+  planName?: string;
 };
 
-export default function DashboardOverview({ role = '' }: DashboardOverviewProps) {
+export default function DashboardOverview({ role = '', planName = '' }: DashboardOverviewProps) {
   const { user } = useAuth();
   const { t } = useLang();
 
@@ -270,6 +272,11 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
         <div className="eyebrow">{t('profile.eyebrow')}</div>
         <h2>{t('profile.welcome', { name: displayName })}</h2>
         <p className="hero-copy">{t('profile.copy', { role: t(roleLabelKey(effectiveRole)) })}</p>
+        {/* Plan badge: the localized name straight from profiles.plan, in this
+            role's family only. Kept away from the certification card. */}
+        {planName ? (
+          <span className="plan-status">{planName} {t('common.plan')}</span>
+        ) : null}
       </div>
 
       {/* ------------------------------- PATIENT ------------------------------ */}
@@ -378,10 +385,24 @@ export default function DashboardOverview({ role = '' }: DashboardOverviewProps)
           <div className="panel">
             <div className="eyebrow">{t('dash.certificationTitle')}</div>
             {/* Driven solely by profiles.verification_status — never by email
-                confirmation or profile completeness. */}
+                confirmation or profile completeness. Plan and certification are
+                separate concepts: this card never mentions a plan. */}
             <div style={styles.badgeRow}>
               <VerificationBadge status={overview.verificationStatus} ownerView />
             </div>
+            {overview.verificationStatus === 'unverified' ||
+            overview.verificationStatus === 'rejected' ? (
+              <button
+                type="button"
+                className="ghost-button"
+                style={styles.certCta}
+                onClick={() => {
+                  window.location.hash = '#verify';
+                }}
+              >
+                <ShieldCheck size={15} aria-hidden="true" /> {t('verify.getCertified')}
+              </button>
+            ) : null}
             {overview.isAdmin ? (
               <p style={styles.hint}>{t('verify.reviewQueue')}</p>
             ) : null}
@@ -488,4 +509,5 @@ const styles: Record<string, CSSProperties> = {
   statValue: { fontSize: '1.35rem', color: '#216e5d' },
   statLabel: { color: '#557b76', fontSize: '0.68rem', fontWeight: 700, lineHeight: 1.3 },
   badgeRow: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
+  certCta: { justifySelf: 'start', marginBlockStart: '0.6rem' },
 };
