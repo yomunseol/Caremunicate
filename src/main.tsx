@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { CallProvider } from './context/CallContext';
+import { ToastProvider } from './context/ToastContext';
 import { LangProvider } from './i18n';
 import './styles/globals.css';
 
@@ -12,7 +13,9 @@ root.render(
     <LangProvider>
       <AuthProvider>
         <CallProvider>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </CallProvider>
       </AuthProvider>
     </LangProvider>

@@ -28,6 +28,7 @@ import PricingSection, {
   type PlanId,
 } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
+import { useToast } from './context/ToastContext';
 import { isProvider, roleLabelKey } from './lib/roles';
 import { describeError } from './lib/errors';
 import { useLang } from './i18n';
@@ -194,6 +195,7 @@ const passwordPattern =
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
   const { t, tString } = useLang();
+  const { notify } = useToast();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
   const [callCode, setCallCode] = useState<string | null>(getInitialCallCode);
@@ -240,7 +242,6 @@ function App() {
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(null);
   // A plan change that also changes the ROLE, awaiting confirmation.
   const [conversion, setConversion] = useState<{ plan: PlanId; option: Plan } | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   // Bumped after a successful plan write to re-read profiles without a reload.
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
@@ -305,13 +306,6 @@ function App() {
       cancelled = true;
     };
   }, [currentUser, profileRefreshKey]);
-
-  // Auto-dismiss the plan toast so it never lingers over the page.
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const navigate = (nextRoute: RouteKey) => {
     if (
@@ -629,17 +623,9 @@ function App() {
   const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
   const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
 
-  /** Toasts carry a STRING only — never an object. Dev builds assert it. */
-  const showToast = (message: unknown, type: 'success' | 'error') => {
-    if (typeof message !== 'string') {
-      if (import.meta.env?.DEV) {
-        console.error('TOAST ASSERTION: toast message must be a string; received', message);
-      }
-      setToast({ message: describeError(message), type });
-      return;
-    }
-    setToast({ message, type });
-  };
+  /** Every notification goes through the one fixed container. */
+  const showToast = (message: unknown, kind: 'success' | 'error' | 'info' = 'info') =>
+    notify(message, kind);
 
   // Pricing CTAs. NOTHING is disabled: all six cards are clickable for every
   // role.
@@ -1281,12 +1267,6 @@ function App() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
-
-      {toast ? (
-        <div className={`plan-toast ${toast.type === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">
-          {toast.message}
         </div>
       ) : null}
 

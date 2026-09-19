@@ -47,6 +47,39 @@ const FOCUS_ZOOM = 15;
 const AMENITIES = ['hospital', 'clinic', 'pharmacy'] as const;
 type Amenity = (typeof AMENITIES)[number];
 
+/** Overpass amenity values behind each chip: a clinic also matches `doctors`. */
+const AMENITY_FILTERS: Record<Amenity, string> = {
+  hospital: 'hospital',
+  clinic: 'clinic|doctors',
+  pharmacy: 'pharmacy',
+};
+
+/** Folds any Overpass amenity value onto a chip, so no stray type can render. */
+const normalizeAmenity = (value: string): Amenity | '' => {
+  if (value === 'doctors') return 'clinic';
+  return (AMENITIES as readonly string[]).includes(value) ? (value as Amenity) : '';
+};
+
+/** The active set survives a reload; default is all three. */
+const AMENITIES_STORAGE_KEY = 'caremunicate:places:amenities';
+
+/** Restores the persisted active set, falling back to all three. */
+const readStoredAmenities = (): Amenity[] => {
+  if (typeof window === 'undefined') return [...AMENITIES];
+  try {
+    const raw = window.localStorage.getItem(AMENITIES_STORAGE_KEY);
+    if (!raw) return [...AMENITIES];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [...AMENITIES];
+    const valid = parsed.filter((item): item is Amenity =>
+      (AMENITIES as readonly string[]).includes(String(item)),
+    );
+    return valid.length > 0 ? valid : [...AMENITIES];
+  } catch {
+    return [...AMENITIES];
+  }
+};
+
 // Leaflet resolves its default marker images by URL at runtime, which bundlers
 // rewrite out from under it. Point the icon at the files Vite gives us instead.
 delete (L.Icon.Default.prototype as unknown as { _getIconUrl?: unknown })._getIconUrl;
@@ -101,9 +134,13 @@ const AMENITY_KEYS: Record<string, string> = {
   clinic: 'places.clinic',
 };
 
-/** Exact Overpass QL: every medical facility within 5 km, globally. */
+/** Exact Overpass QL: the ACTIVE types only, within 5 km of the centre. */
 const buildOverpassQuery = (lat: number, lon: number, amenities: readonly string[]): string => {
-  const filter = amenities.length > 0 ? amenities.join('|') : AMENITIES.join('|');
+  const active = amenities.length > 0 ? amenities : AMENITIES;
+  // Combined with | when more than one chip is on; clinic also matches doctors.
+  const filter = active
+    .map((amenity) => AMENITY_FILTERS[amenity as Amenity] ?? amenity)
+    .join('|');
   return `[out:json][timeout:25];
 (
   node['amenity'~'${filter}'](around:${NEAR_RADIUS_M},${lat},${lon});
@@ -247,7 +284,8 @@ const elementToPlace = (element: OverpassElement): PlaceView | null => {
     placeId: `${element.type}/${element.id}`,
     osmType: element.type,
     name: tags.name || tags['name:en'] || '',
-    amenity: tags.amenity ?? '',
+    // Folded onto a chip: a `doctors` node is a clinic. Unknown values are ''.
+    amenity: normalizeAmenity(tags.amenity ?? ''),
     address: street || tags['addr:city'] || tags['addr:suburb'] || '',
     lat,
     lon,
@@ -294,7 +332,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
   const [query, setQuery] = useState('');
-  const [amenities, setAmenities] = useState<Amenity[]>([...AMENITIES]);
+  const [amenities, setAmenities] = useState<Amenity[]>(readStoredAmenities);
+  // One-line, inline (never a toast) hint for a blocked last-chip deselect.
+  const [filterHint, setFilterHint] = useState('');
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -445,15 +485,34 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   const applyAmenities = (next: Amenity[]) => {
     setAmenities(next);
+    // Immediately re-run the CURRENT search — no search button needed. The
+    // markers follow because the results are replaced from the new query.
     if (center && next.length > 0) void runSearch(center, next);
   };
 
   const toggleAmenity = (amenity: Amenity) => {
-    const next = amenities.includes(amenity)
-      ? amenities.filter((item) => item !== amenity)
-      : [...amenities, amenity];
-    applyAmenities(next);
+    const active = amenities.includes(amenity);
+
+    // The last active chip cannot be switched off: block it and say so inline.
+    if (active && amenities.length === 1) {
+      setFilterHint(t('places.keepOneFilter'));
+      return;
+    }
+
+    setFilterHint('');
+    applyAmenities(
+      active ? amenities.filter((item) => item !== amenity) : [...amenities, amenity],
+    );
   };
+
+  // Persist the active set so it survives a reload (default = all three).
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(AMENITIES_STORAGE_KEY, JSON.stringify(amenities));
+    } catch {
+      // Best-effort; the in-memory set still applies.
+    }
+  }, [amenities]);
 
   const requestLocation = (onSuccess?: (at: LatLon) => void) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -744,6 +803,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           })}
         </div>
 
+        {filterHint ? (
+          <p role="status" style={styles.filterHint}>{filterHint}</p>
+        ) : null}
+
         <p style={styles.locationHint}>
           {center ? t('places.usingLocation') : t('places.needLocation')}
         </p>
@@ -934,11 +997,13 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '0.78rem',
     cursor: 'pointer',
   },
+  // Filled mint = included in the search; the base .chip is the outline.
   chipActive: {
-    background: 'rgba(62, 169, 133, 0.16)',
-    borderColor: 'rgba(62, 169, 133, 0.5)',
-    color: '#133b35',
+    background: 'var(--accent, #3ea985)',
+    borderColor: 'var(--accent, #3ea985)',
+    color: '#06231d',
   },
+  filterHint: { margin: 0, color: '#9c3636', fontSize: '0.76rem', fontWeight: 700 },
   locationHint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
   favoritesGrid: {
     listStyle: 'none',

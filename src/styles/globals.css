@@ -894,31 +894,50 @@ img {
   white-space: nowrap;
 }
 
-/* Confirmation toast after a plan is applied */
-.plan-toast {
+/* The single notification surface. Fixed at top-centre, below the header and
+   any safe area, portaled to <body>. It is never in the page flow, so a toast
+   cannot be centred over a card or overlap a button. */
+.toast-stack {
   position: fixed;
-  /* Centred with inset + auto margins rather than left/translateX: it stays
-     centred under RTL, and fadeInUp's transform cannot override it. */
+  top: calc(env(safe-area-inset-top, 0px) + 5.5rem);
   inset-inline: 0;
-  bottom: 1.5rem;
-  z-index: 60;
-  width: fit-content;
-  max-width: min(92vw, 30rem);
-  margin-inline: auto;
-  padding: 0.85rem 1.15rem;
-  text-align: center;
-  border-radius: 999px;
-  background: linear-gradient(120deg, #48b58f, #7adab1);
-  color: var(--button-text);
-  font-size: 0.9rem;
-  font-weight: 700;
-  box-shadow: 0 18px 40px rgba(17, 55, 47, 0.22);
-  animation: fadeInUp 240ms cubic-bezier(.22,1,.36,1) both;
+  z-index: 3500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding-inline: 12px;
+  pointer-events: none;
 }
 
-.plan-toast.is-error {
+.toast {
+  width: fit-content;
+  max-width: min(92vw, 30rem);
+  padding-block: 0.7rem;
+  padding-inline: 1.05rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+  background: linear-gradient(120deg, #48b58f, #7adab1);
+  color: var(--button-text);
+  box-shadow: 0 18px 40px rgba(17, 55, 47, 0.22);
+  animation: toastIn 150ms ease-out both;
+}
+
+.toast--error {
   background: linear-gradient(120deg, #d9736a, #f0a99f);
   color: #4a1610;
+}
+
+.toast--info {
+  background: rgba(9, 32, 27, 0.97);
+  color: #f2fffa;
+}
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .form-grid {

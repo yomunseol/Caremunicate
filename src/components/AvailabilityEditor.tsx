@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { loadAvailability, weekStartsOn, weekdayName } from '../lib/appointments';
 import { describeError } from '../lib/errors';
 import { supabase } from '../lib/supabase';
+import { useToast } from '../context/ToastContext';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -41,11 +42,10 @@ const toInputTime = (value: string): string => String(value ?? '').slice(0, 5);
 
 export default function AvailabilityEditor({ providerId }: AvailabilityEditorProps) {
   const { t, locale } = useLang();
+  const { notify } = useToast();
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [rangeErrorWeekday, setRangeErrorWeekday] = useState<number | null>(null);
-  const [error, setError] = useState('');
 
   // Read the stored rows back into the same raw strings they were saved as.
   const load = useCallback(async () => {
@@ -72,16 +72,12 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
 
   const patch = (weekday: number, changes: Partial<Row>) => {
     setRangeErrorWeekday(null);
-    setError('');
     setRows((previous) =>
       previous.map((row) => (row.weekday === weekday ? { ...row, ...changes } : row)),
     );
   };
 
   const save = async () => {
-    setError('');
-    setSaved(false);
-
     const enabled = rows.filter((row) => row.enabled);
 
     // Every enabled weekday needs two well-formed HH:MM values with end > start.
@@ -127,12 +123,11 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
 
       // Refetch: the slot picker recomputes from what was just stored.
       await load();
-      setSaved(true);
-      window.setTimeout(() => setSaved(false), 3000);
+      notify(t('cal.availabilitySaved'), 'success');
     } catch (caught) {
       // Self-reporting: the raw code, never a softened reason and never an object.
       console.error('CALENDAR ERROR:', caught);
-      setError(describeError(caught));
+      notify(describeError(caught), 'error');
     } finally {
       setBusy(false);
     }
@@ -198,21 +193,9 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
         })}
       </ul>
 
-      {error ? (
-        <span className="field-error" role="alert">
-          <span className="error-detail">{error}</span>
-        </span>
-      ) : null}
-
       <button type="button" className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void save()}>
         Save
       </button>
-
-      {saved ? (
-        <div className="plan-toast" role="status" aria-live="polite">
-          {t('cal.availabilitySaved')}
-        </div>
-      ) : null}
     </div>
   );
 }
