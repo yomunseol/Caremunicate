@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 import { useCallContext } from '../context/CallContext';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // ---------------------------------------------------------------------------
 // Emergency line — patient side.
@@ -28,6 +30,26 @@ export default function EmergencyCard() {
 
   const [uiState, setUiState] = useState<UiState>('idle');
   const [alertId, setAlertId] = useState<string | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(uiState === 'confirming');
+
+  const confirming = uiState === 'confirming';
+
+  // Escape = Cancel, and the page beneath must not scroll while the dialog is up.
+  useEffect(() => {
+    if (!confirming) return;
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setUiState('idle');
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKey);
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [confirming]);
 
   const mounted = useRef(true);
   useEffect(() => {
@@ -147,22 +169,47 @@ export default function EmergencyCard() {
         </>
       )}
 
-      {uiState === 'confirming' ? (
-        <div style={styles.backdrop} role="dialog" aria-modal="true" aria-label={t('emergency.confirmTitle')}>
-          <div style={styles.modal}>
-            <strong>{t('emergency.confirmTitle')}</strong>
+      {confirming && typeof document !== 'undefined'
+        ? createPortal(
+            // Portaled to <body>: `.panel` carries an animation transform, which
+            // would otherwise make it the containing block for this fixed dialog
+            // and trap it inside the card.
+            <div style={styles.backdrop} role="presentation" onClick={() => setUiState('idle')}>
+              {/* One self-contained card: everything lives inside these bounds. */}
+              <div
+                ref={trapRef}
+                className="emergency-dialog"
+                style={styles.dialogCard}
+                role="dialog"
+                aria-modal="true"
+                aria-label={t('emergency.confirmTitle')}
+                onClick={(event) => event.stopPropagation()}
+              >
+            <strong style={styles.dialogTitle}>{t('emergency.confirmTitle')}</strong>
             <p style={styles.muted}>{t('emergency.confirmBody')}</p>
-            <div style={styles.modalActions}>
-              <button type="button" className="ghost-button" onClick={() => setUiState('idle')}>
+
+            <div style={styles.dialogActions}>
+              <button
+                type="button"
+                className="ghost-button"
+                style={styles.dialogAction}
+                onClick={() => setUiState('idle')}
+              >
                 {t('common.cancel')}
               </button>
-              <button type="button" style={styles.connectButton} onClick={() => void startLine()}>
+              <button
+                type="button"
+                style={{ ...styles.connectButton, ...styles.dialogAction }}
+                onClick={() => void startLine()}
+              >
                 {t('emergency.connect')}
               </button>
             </div>
-          </div>
-        </div>
-      ) : null}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -187,21 +234,31 @@ const styles: Record<string, CSSProperties> = {
   backdrop: {
     position: 'fixed',
     inset: 0,
-    zIndex: 95,
+    zIndex: 1900,
     display: 'grid',
     placeItems: 'center',
     padding: '1rem',
     background: 'rgba(6, 26, 22, 0.55)',
   },
-  modal: {
-    display: 'grid',
-    gap: '0.6rem',
-    width: 'min(30rem, 100%)',
-    padding: '1.15rem',
-    borderRadius: '1.15rem',
-    background: '#f7fdf9',
+  // Fully opaque, bounded card — nothing may render outside it.
+  dialogCard: {
+    position: 'relative',
+    zIndex: 2000,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    width: 'min(480px, 100%)',
+    maxWidth: '480px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    padding: '24px',
+    borderRadius: '1rem',
+    background: '#ffffff',
     border: '1px solid rgba(224, 101, 90, 0.35)',
     boxShadow: '0 28px 64px rgba(6, 26, 22, 0.35)',
   },
-  modalActions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
+  dialogTitle: { fontSize: '1.05rem', fontWeight: 800, color: '#133b35' },
+  dialogActions: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' },
+  // Both buttons share the row and stay full-width-safe down to 320px.
+  dialogAction: { flex: '1 1 8rem', minWidth: 0, minHeight: 44, marginTop: 0 },
 };

@@ -44,41 +44,8 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_CENTER: [number, number] = [30, 0];
 const DEFAULT_ZOOM = 2;
 const FOCUS_ZOOM = 15;
-const AMENITIES = ['hospital', 'clinic', 'pharmacy'] as const;
-type Amenity = (typeof AMENITIES)[number];
-
-/** Overpass amenity values behind each chip: a clinic also matches `doctors`. */
-const AMENITY_FILTERS: Record<Amenity, string> = {
-  hospital: 'hospital',
-  clinic: 'clinic|doctors',
-  pharmacy: 'pharmacy',
-};
-
-/** Folds any Overpass amenity value onto a chip, so no stray type can render. */
-const normalizeAmenity = (value: string): Amenity | '' => {
-  if (value === 'doctors') return 'clinic';
-  return (AMENITIES as readonly string[]).includes(value) ? (value as Amenity) : '';
-};
-
-/** The active set survives a reload; default is all three. */
-const AMENITIES_STORAGE_KEY = 'caremunicate:places:amenities';
-
-/** Restores the persisted active set, falling back to all three. */
-const readStoredAmenities = (): Amenity[] => {
-  if (typeof window === 'undefined') return [...AMENITIES];
-  try {
-    const raw = window.localStorage.getItem(AMENITIES_STORAGE_KEY);
-    if (!raw) return [...AMENITIES];
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [...AMENITIES];
-    const valid = parsed.filter((item): item is Amenity =>
-      (AMENITIES as readonly string[]).includes(String(item)),
-    );
-    return valid.length > 0 ? valid : [...AMENITIES];
-  } catch {
-    return [...AMENITIES];
-  }
-};
+/** ONE combined amenity regex — no type toggling, no per-type differentiation. */
+const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
 
 // Leaflet resolves its default marker images by URL at runtime, which bundlers
 // rewrite out from under it. Point the icon at the files Vite gives us instead.
@@ -128,26 +95,13 @@ type CarePlacesProps = {
   role?: string;
 };
 
-const AMENITY_KEYS: Record<string, string> = {
-  hospital: 'places.hospital',
-  pharmacy: 'places.pharmacy',
-  clinic: 'places.clinic',
-};
-
-/** Exact Overpass QL: the ACTIVE types only, within 5 km of the centre. */
-const buildOverpassQuery = (lat: number, lon: number, amenities: readonly string[]): string => {
-  const active = amenities.length > 0 ? amenities : AMENITIES;
-  // Combined with | when more than one chip is on; clinic also matches doctors.
-  const filter = active
-    .map((amenity) => AMENITY_FILTERS[amenity as Amenity] ?? amenity)
-    .join('|');
-  return `[out:json][timeout:25];
+/** Exact Overpass QL: every medical amenity within 5 km of the centre. */
+const buildOverpassQuery = (lat: number, lon: number): string => `[out:json][timeout:25];
 (
-  node['amenity'~'${filter}'](around:${NEAR_RADIUS_M},${lat},${lon});
-  way['amenity'~'${filter}'](around:${NEAR_RADIUS_M},${lat},${lon});
+  node['amenity'~'${AMENITY_REGEX}'](around:${NEAR_RADIUS_M},${lat},${lon});
+  way['amenity'~'${AMENITY_REGEX}'](around:${NEAR_RADIUS_M},${lat},${lon});
 );
 out center;`;
-};
 
 /** The mirror the relay fallback targets when the same-origin route is absent. */
 const OVERPASS_FALLBACK_MIRROR = 'https://overpass-api.de/api/interpreter';
@@ -239,9 +193,9 @@ const fetchOverpass = async (
   throw overpassError(String(response.status), `${OVERPASS_PROXY} responded ${response.status}`);
 };
 
-/** Cache key: `cp:{lat2},{lon2},{filters}` — centre rounded to 2 decimals. */
-const cacheKey = (lat: number, lon: number, amenities: readonly string[]): string =>
-  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)},${[...amenities].sort().join('|')}`;
+/** Cache key: `cp:{lat2},{lon2}` — centre rounded to 2 decimals. */
+const cacheKey = (lat: number, lon: number): string =>
+  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}`;
 
 /** Reads a cached element list, dropping entries older than the TTL. */
 const readCache = (key: string): OverpassElement[] | null => {
@@ -284,8 +238,8 @@ const elementToPlace = (element: OverpassElement): PlaceView | null => {
     placeId: `${element.type}/${element.id}`,
     osmType: element.type,
     name: tags.name || tags['name:en'] || '',
-    // Folded onto a chip: a `doctors` node is a clinic. Unknown values are ''.
-    amenity: normalizeAmenity(tags.amenity ?? ''),
+    // Kept only for the client-side text filter; nothing renders it as a type.
+    amenity: tags.amenity ?? '',
     address: street || tags['addr:city'] || tags['addr:suburb'] || '',
     lat,
     lon,
@@ -332,9 +286,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
   const [query, setQuery] = useState('');
-  const [amenities, setAmenities] = useState<Amenity[]>(readStoredAmenities);
-  // One-line, inline (never a toast) hint for a blocked last-chip deselect.
-  const [filterHint, setFilterHint] = useState('');
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -352,7 +303,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const abortRef = useRef<AbortController | null>(null);
 
   const placeName = useCallback(
-    (place: PlaceView) => place.name || t(AMENITY_KEYS[place.amenity] ?? 'places.eyebrow'),
+    (place: PlaceView) => place.name || t('places.eyebrow'),
     [t],
   );
 
@@ -390,7 +341,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   // ---- Overpass search ----------------------------------------------------
   const runSearch = useCallback(
-    async (at: LatLon, amenityFilter: readonly string[]) => {
+    async (at: LatLon) => {
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -407,7 +358,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
-      const key = cacheKey(at.lat, at.lon, amenityFilter);
+      const key = cacheKey(at.lat, at.lon);
       const cached = readCache(key);
       if (cached !== null) {
         // A cache hit is still a finished search: settle immediately, no network.
@@ -426,7 +377,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
       try {
         const payload = await fetchOverpass(
-          buildOverpassQuery(at.lat, at.lon, amenityFilter),
+          buildOverpassQuery(at.lat, at.lon),
           controller.signal,
         );
 
@@ -483,37 +434,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // Abort any in-flight Overpass request on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const applyAmenities = (next: Amenity[]) => {
-    setAmenities(next);
-    // Immediately re-run the CURRENT search — no search button needed. The
-    // markers follow because the results are replaced from the new query.
-    if (center && next.length > 0) void runSearch(center, next);
-  };
-
-  const toggleAmenity = (amenity: Amenity) => {
-    const active = amenities.includes(amenity);
-
-    // The last active chip cannot be switched off: block it and say so inline.
-    if (active && amenities.length === 1) {
-      setFilterHint(t('places.keepOneFilter'));
-      return;
-    }
-
-    setFilterHint('');
-    applyAmenities(
-      active ? amenities.filter((item) => item !== amenity) : [...amenities, amenity],
-    );
-  };
-
-  // Persist the active set so it survives a reload (default = all three).
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(AMENITIES_STORAGE_KEY, JSON.stringify(amenities));
-    } catch {
-      // Best-effort; the in-memory set still applies.
-    }
-  }, [amenities]);
-
   const requestLocation = (onSuccess?: (at: LatLon) => void) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setLocationError(t('places.locationUnavailable'));
@@ -543,9 +463,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     event.preventDefault();
     // Overpass is proximity-based: make sure we have a centre, then query.
     if (center) {
-      void runSearch(center, amenities);
+      void runSearch(center);
     } else {
-      requestLocation((at) => void runSearch(at, amenities));
+      requestLocation((at) => void runSearch(at));
     }
   };
 
@@ -667,11 +587,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           </span>
           {place.address ? <span style={styles.cardAddress}>{place.address}</span> : null}
           <span style={styles.cardFooter}>
-            {place.amenity ? (
-              <span style={styles.typeBadge}>
-                {t(AMENITY_KEYS[place.amenity] ?? 'places.eyebrow')}
-              </span>
-            ) : null}
             <a
               href={directionsUrl(place)}
               target="_blank"
@@ -777,7 +692,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           </button>
           <button
             type="button"
-            onClick={() => requestLocation((at) => void runSearch(at, amenities))}
+            onClick={() => requestLocation((at) => void runSearch(at))}
             disabled={locating}
             aria-pressed={center !== null}
             style={{ ...styles.nearMeButton, ...(center ? styles.nearMeButtonOn : null) }}
@@ -785,27 +700,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             {t('places.nearMe')}
           </button>
         </form>
-
-        <div style={styles.filterRow}>
-          {AMENITIES.map((amenity) => {
-            const active = amenities.includes(amenity);
-            return (
-              <button
-                key={amenity}
-                type="button"
-                onClick={() => toggleAmenity(amenity)}
-                aria-pressed={active}
-                style={{ ...styles.chip, ...(active ? styles.chipActive : null) }}
-              >
-                {t(AMENITY_KEYS[amenity])}
-              </button>
-            );
-          })}
-        </div>
-
-        {filterHint ? (
-          <p role="status" style={styles.filterHint}>{filterHint}</p>
-        ) : null}
 
         <p style={styles.locationHint}>
           {center ? t('places.usingLocation') : t('places.needLocation')}
@@ -985,25 +879,6 @@ const styles: Record<string, CSSProperties> = {
     borderColor: 'rgba(62, 169, 133, 0.5)',
     color: '#072c2a',
   },
-  filterRow: { display: 'flex', flexWrap: 'wrap', gap: '0.4rem' },
-  chip: {
-    border: '1px solid rgba(62, 169, 133, 0.28)',
-    borderRadius: '999px',
-    paddingBlock: '0.35rem',
-    paddingInline: '0.8rem',
-    background: 'transparent',
-    color: '#216e5d',
-    fontWeight: 700,
-    fontSize: '0.78rem',
-    cursor: 'pointer',
-  },
-  // Filled mint = included in the search; the base .chip is the outline.
-  chipActive: {
-    background: 'var(--accent, #3ea985)',
-    borderColor: 'var(--accent, #3ea985)',
-    color: '#06231d',
-  },
-  filterHint: { margin: 0, color: '#9c3636', fontSize: '0.76rem', fontWeight: 700 },
   locationHint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
   favoritesGrid: {
     listStyle: 'none',
@@ -1040,20 +915,9 @@ const styles: Record<string, CSSProperties> = {
   cardFooter: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     gap: '0.5rem',
     flexWrap: 'wrap',
-  },
-  typeBadge: {
-    paddingBlock: '0.15rem',
-    paddingInline: '0.5rem',
-    borderRadius: '999px',
-    background: 'rgba(62, 169, 133, 0.14)',
-    color: '#216e5d',
-    fontSize: '0.68rem',
-    fontWeight: 800,
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
   },
   directionsLink: { color: '#216e5d', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none' },
   starButton: {
