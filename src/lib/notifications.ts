@@ -84,26 +84,40 @@ export type NotificationAppointment = {
   id: string;
   patient_id: string | null;
   provider_id: string | null;
+  host_id: string | null;
   start_at: string | null;
 };
 
-/** The appointment a notification points at, via payload.ref_id. */
+/**
+ * The appointment a notification points at, via payload.ref_id.
+ *
+ * Tries the newer `host_id` column first and falls back to `provider_id`: a
+ * missing column (42703) must not silently produce "no appointment", because
+ * that is exactly what hides the triage buttons.
+ */
 export const loadNotificationAppointment = async (
   refId: string,
 ): Promise<NotificationAppointment | null> => {
   if (!refId) return null;
 
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('id, patient_id, provider_id, start_at')
-    .eq('id', refId)
-    .maybeSingle();
+  const attempts = [
+    'id, patient_id, host_id, start_at',
+    'id, patient_id, provider_id, start_at',
+  ];
 
-  if (error) {
+  for (const columns of attempts) {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select(columns)
+      .eq('id', refId)
+      .maybeSingle();
+
+    if (!error) return firstRow<NotificationAppointment>(data);
+
     console.error('NOTIF ERROR:', error.message);
-    return null;
+    if (error.code !== '42703') return null;
   }
-  return firstRow<NotificationAppointment>(data);
+  return null;
 };
 
 /**

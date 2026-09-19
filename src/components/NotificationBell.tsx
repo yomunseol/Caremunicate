@@ -173,7 +173,10 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
               appointmentId: appointment?.id ?? refId,
               // 'Patient' ONLY because the lookup could not tell us a name.
               name: name ?? 'Patient',
-              isHost: Boolean(appointment?.provider_id) && appointment?.provider_id === userId,
+              // The host is the appointment owner, under EITHER column name.
+              isHost:
+                Boolean(appointment?.host_id ?? appointment?.provider_id) &&
+                (appointment?.host_id ?? appointment?.provider_id) === userId,
             },
           ] as const;
         }),
@@ -261,6 +264,11 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
   // ---- actions -------------------------------------------------------------
   const titleFor = (row: NotificationRow): ReactNode => {
     const payload = row.payload ?? {};
+
+    // An unknown type warns in dev and still renders a neutral row — never blank.
+    if (import.meta.env?.DEV && !TYPE_ICON[row.type]) {
+      console.warn('[notifications] unknown notification type:', row.type);
+    }
 
     if (row.type === 'appointment_requested') {
       return t('notif.notifRequested', {

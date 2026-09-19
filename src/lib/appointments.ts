@@ -40,6 +40,8 @@ export type Appointment = {
   id: string;
   patient_id: string;
   provider_id: string;
+  /** The same owner, under the newer column name; either may be present. */
+  host_id?: string | null;
   room_id: string | null;
   room_code: string | null;
   start_at: string;
@@ -361,17 +363,26 @@ export const loadAppointments = async (
   side: 'patient' | 'provider',
 ): Promise<Appointment[]> => {
   if (!userId) return [];
-  const { data, error } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq(side === 'patient' ? 'patient_id' : 'provider_id', userId)
-    .order('start_at', { ascending: true });
 
-  if (error) {
+  // NO status filter: every status — requested, scheduled, confirmed,
+  // completed, cancelled — loads for the visible range and renders through the
+  // colour map. The provider side tolerates BOTH the host_id and provider_id
+  // column names, so a host_id table cannot silently return zero rows.
+  const ownerColumns = side === 'patient' ? ['patient_id'] : ['host_id', 'provider_id'];
+
+  for (const column of ownerColumns) {
+    const { data, error } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq(column, userId)
+      .order('start_at', { ascending: true });
+
+    if (!error) return asRows<Appointment>(data);
+
     console.error('CALENDAR ERROR:', error.message);
-    return [];
+    if (!schemaMismatch(error.code)) return [];
   }
-  return asRows<Appointment>(data);
+  return [];
 };
 
 /**
