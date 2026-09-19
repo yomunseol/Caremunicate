@@ -5,7 +5,7 @@ import { roleLabelKey } from '../lib/roles';
 import {
   canJoin,
   effectiveStatus,
-  formatRange,
+  formatAppointmentRange,
   statusChipClass,
   type Appointment,
 } from '../lib/appointments';
@@ -125,7 +125,7 @@ export default function CalendarEventPopover({
         {STATUS_LABEL[status] ?? status}
       </span>
       <p className="cal-popover-when">
-        {formatRange(appointment.start_at, appointment.end_at, locale)}
+        {formatAppointmentRange(appointment, locale)}
       </p>
       {role ? <p className="cal-popover-role">{t(roleLabelKey(role))}</p> : null}
       {appointment.note ? <p className="cal-popover-note">{appointment.note}</p> : null}

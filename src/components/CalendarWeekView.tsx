@@ -8,7 +8,14 @@ import {
   spansDay,
   startOfDay,
 } from '../lib/calendarLayout';
-import { formatRange, formatTime, localDayKey, type Appointment, type AppointmentStatus } from '../lib/appointments';
+import {
+  formatAppointmentRange,
+  formatTime,
+  localDayKey,
+  type Appointment,
+  type AppointmentStatus,
+} from '../lib/appointments';
+import { endAt, parseDate } from '../lib/time';
 import type { Anchor } from './CalendarEventPopover';
 
 // ---------------------------------------------------------------------------
@@ -21,6 +28,13 @@ import type { Anchor } from './CalendarEventPopover';
 // ---------------------------------------------------------------------------
 
 const HOUR_HEIGHT = 48;
+
+/** span(start, computed end) for layout — never reads an end_at column. */
+const spanOf = (appointment: Appointment): { start: Date; end: Date } => {
+  const start = parseDate(appointment.start_at, 'CalendarWeekView') ?? new Date();
+  const end = parseDate(endAt(appointment), 'CalendarWeekView') ?? start;
+  return { start, end };
+};
 
 type CalendarWeekViewProps = {
   days: Date[];
@@ -59,16 +73,9 @@ export default function CalendarWeekView({
   const byColumn = useMemo(
     () =>
       days.map((day) => {
-        const todays = appointments.filter((appointment) => spansDay(
-          { start: new Date(appointment.start_at), end: new Date(appointment.end_at) },
-          day,
-        ));
+        const todays = appointments.filter((appointment) => spansDay(spanOf(appointment), day));
         return layoutDay(
-          todays.map((appointment) => ({
-            ...appointment,
-            start: new Date(appointment.start_at),
-            end: new Date(appointment.end_at),
-          })),
+          todays.map((appointment) => ({ ...appointment, ...spanOf(appointment) })),
           day,
         );
       }),
@@ -161,7 +168,7 @@ export default function CalendarWeekView({
                         insetInlineStart: `${positioned.leftPct}%`,
                         width: `calc(${positioned.widthPct}% - 3px)`,
                       }}
-                      title={`${titleFor(appointment)} · ${formatRange(appointment.start_at, appointment.end_at, locale)}`}
+                      title={`${titleFor(appointment)} · ${formatAppointmentRange(appointment, locale)}`}
                       onClick={(event) => {
                         event.stopPropagation();
                         onEventClick(appointment, { x: event.clientX, y: event.clientY });
@@ -170,7 +177,9 @@ export default function CalendarWeekView({
                       <span className="cal-ev-title">{titleFor(appointment)}</span>
                       <span className="cal-ev-time">
                         {formatTime(appointment.start_at, locale)}
-                        {positioned.heightPct > 3 ? ` – ${formatTime(appointment.end_at, locale)}` : ''}
+                        {positioned.heightPct > 3
+                          ? ` – ${formatTime(endAt(appointment) ?? '', locale)}`
+                          : ''}
                       </span>
                     </button>
                   );

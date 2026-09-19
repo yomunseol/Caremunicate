@@ -108,8 +108,44 @@ export const fmtDateTime = (
 };
 
 /** A new Date offset by whole minutes — the only place we call new Date(n). */
-export const addMinutes = (date: Date, minutes: number): Date =>
+export const addMinutesToDate = (date: Date, minutes: number): Date =>
   new Date(date.getTime() + minutes * 60_000);
+
+/**
+ * The same offset, but as an ISO string, for callers that only have a raw
+ * start value: returns null (and warns once) when the input cannot be parsed.
+ */
+export const addMinutes = (value: unknown, minutes: number): string | null => {
+  const date = parseDate(
+    typeof value === 'string' || typeof value === 'number' || value instanceof Date ? value : null,
+    'addMinutes',
+  );
+  if (!date) return null;
+  return new Date(date.getTime() + minutes * 60_000).toISOString();
+};
+
+/** Minutes on the appointment, defaulting to 30 (and warning once). */
+export const durationMinutes = (value: unknown): number => {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    if (!warned.has('durationMinutes')) {
+      warned.add('durationMinutes');
+      console.warn('[time] durationMinutes: missing/zero duration_min, defaulting to 30', value);
+    }
+    return 30;
+  }
+  return minutes;
+};
+
+/**
+ * The COMPUTED end of an appointment: start_at + duration_min (default 30).
+ * There is no end_at column to read — a range always comes from these two.
+ */
+export const endAt = (appointment: {
+  start_at?: unknown;
+  duration_min?: number | null;
+} | null | undefined): string | null =>
+  addMinutes(appointment?.start_at ?? null, durationMinutes(appointment?.duration_min));
 
 /** A new Date offset by whole days. */
 export const addDays = (date: Date, days: number): Date =>

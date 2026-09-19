@@ -1222,6 +1222,29 @@ img {
   overflow-wrap: anywhere;
 }
 
+/* Schedule row icon buttons: 40px circles (48px on small screens), mint glyph,
+   mint-50 hover, glyph optically centred by the flex parent. */
+.appt-icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: #216e5d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.appt-icon-btn:hover {
+  background: rgba(62, 169, 133, 0.08);
+}
+
+@media (max-width: 640px) {
+  .appt-icon-btn {
+    width: 48px;
+    height: 48px;
+  }
+}
+
 /* Unknown status: a neutral chip, so a new value can never crash rendering. */
 .appt-status.chip-neutral,
 .cal-status.chip-neutral {

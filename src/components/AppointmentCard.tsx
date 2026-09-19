@@ -3,8 +3,8 @@ import { CalendarPlus, MoreVertical, Phone } from 'lucide-react';
 import {
   canJoin,
   effectiveStatus,
+  formatAppointmentRange,
   formatDayLong,
-  formatRange,
   isLive,
   statusChipClass,
   type Appointment,
@@ -90,7 +90,7 @@ export default function AppointmentCard({
       <div style={styles.head}>
         <strong style={cancelled ? styles.strike : undefined}>
           {formatDayLong(appointment.start_at, locale)} ·{' '}
-          {formatRange(appointment.start_at, appointment.end_at, locale)}
+          {formatAppointmentRange(appointment, locale)}
         </strong>
 
         <span className={`appt-status ${statusChipClass(status)}`} style={styles.statusChip}>
@@ -151,13 +151,14 @@ export default function AppointmentCard({
 
         <button
           type="button"
-          className="ghost-button"
+          className="ghost-button appt-icon-btn"
           style={styles.iconButton}
           aria-label={t('cal.appointments')}
           title={t('cal.appointments')}
           onClick={() => onAddToCalendar(appointment)}
         >
-          <CalendarPlus size={15} aria-hidden="true" />
+          {/* 20px, never a speck. */}
+          <CalendarPlus size={20} aria-hidden="true" />
         </button>
 
         <div ref={menuRef} style={styles.menuWrap}>
@@ -171,7 +172,8 @@ export default function AppointmentCard({
             title="More"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <MoreVertical size={15} aria-hidden="true" />
+            {/* Three DISTINCT dots at 20px — r=2, 5px apart in the 24px grid. */}
+            <MoreVertical size={20} strokeWidth={2} aria-hidden="true" />
           </button>
 
           {menuOpen ? (

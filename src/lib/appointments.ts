@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import { generateWordCode } from './wordcode';
 import { asRows, firstRow } from './rows';
-import { addMinutes, dayKey, fmtTime, parseDate, slotDate } from './time';
+import { addMinutesToDate, dayKey, endAt, fmtTime, parseDate, slotDate } from './time';
 
 // ---------------------------------------------------------------------------
 // Appointments + availability.
@@ -45,7 +45,10 @@ export type Appointment = {
   room_id: string | null;
   room_code: string | null;
   start_at: string;
-  end_at: string;
+  /** The appointment length; the end is COMPUTED from it (default 30). */
+  duration_min?: number | null;
+  /** Legacy column — still read for overlap math, never rendered. */
+  end_at?: string | null;
   status: AppointmentStatus;
   note: string | null;
 };
@@ -87,6 +90,21 @@ export const formatTime = (iso: string | Date, locale: string): string =>
 export const formatRange = (startIso: string, endIso: string, locale: string): string =>
   `${formatTime(startIso, locale)} – ${formatTime(endIso, locale)}`;
 
+/**
+ * A rendered appointment range: 'HH:MM – HH:MM', 24-hour, with the end COMPUTED
+ * from start_at + duration_min. Never reads an end_at column, and never emits a
+ * placeholder dash — a range with no computable end shows the start alone.
+ */
+export const formatAppointmentRange = (
+  appointment: Pick<Appointment, 'start_at' | 'duration_min'>,
+  locale: string,
+): string => {
+  const computed = endAt(appointment);
+  const start = formatTime(appointment.start_at, locale);
+  if (!computed) return start;
+  return `${start} – ${formatTime(computed, locale)}`;
+};
+
 /** Shared shell: parse first (never throws), then format, else '—'. */
 const formatWith = (
   value: string | number | Date | null | undefined,
@@ -127,7 +145,7 @@ export const effectiveStatus = (appointment: Appointment, now = Date.now()): App
   if (appointment.status === 'cancelled' || appointment.status === 'completed') {
     return appointment.status;
   }
-  const end = parseDate(appointment.end_at, 'effectiveStatus');
+  const end = parseDate(endAt(appointment), 'effectiveStatus');
   // An unparseable end time is NOT evidence that the appointment is over.
   if (!end) return appointment.status;
   return end.getTime() <= now ? 'completed' : appointment.status;
@@ -184,7 +202,7 @@ export const isLive = (appointment: Appointment, now = Date.now()): boolean => {
   const status = effectiveStatus(appointment, now);
   if (status === 'cancelled' || status === 'completed') return false;
   const start = parseDate(appointment.start_at, 'isLive');
-  const end = parseDate(appointment.end_at, 'isLive');
+  const end = parseDate(endAt(appointment), 'isLive');
   if (!start || !end) return false;
   return now >= start.getTime() - JOIN_WINDOW_MS && now <= end.getTime();
 };
@@ -248,7 +266,7 @@ export const slotsForDate = (
   for (let cursor = startMinutes; cursor + slotMinutes <= endMinutes; cursor += slotMinutes) {
     const start = slotDate(dateStr, toHhmm(cursor));
     if (!start) break;
-    const end = addMinutes(start, slotMinutes);
+    const end = addMinutesToDate(start, slotMinutes);
 
     const blocked = busy.some(
       (item) => start.getTime() - buffer < item.end && end.getTime() + buffer > item.start,
@@ -547,9 +565,12 @@ const escapeIcs = (value: string): string =>
     .replace(/,/g, '\\,')
     .replace(/\r?\n/g, '\\n');
 
-/** UTC timestamp in the form the format expects: 20260913T101500Z. */
-const icsStamp = (iso: string): string =>
-  new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+/** UTC timestamp in the form the format expects: 20260913T101500Z, or ''. */
+const icsStamp = (iso: string | null | undefined): string => {
+  const date = parseDate(iso, 'icsStamp');
+  if (!date) return '';
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+};
 
 export const buildIcs = (appointment: Appointment, title: string, description: string): string =>
   [
@@ -561,7 +582,7 @@ export const buildIcs = (appointment: Appointment, title: string, description: s
     `UID:${appointment.id}@caremunicate`,
     `DTSTAMP:${icsStamp(new Date().toISOString())}`,
     `DTSTART:${icsStamp(appointment.start_at)}`,
-    `DTEND:${icsStamp(appointment.end_at)}`,
+    `DTEND:${icsStamp(endAt(appointment))}`,
     `SUMMARY:${escapeIcs(title)}`,
     `DESCRIPTION:${escapeIcs(description)}`,
     'END:VEVENT',

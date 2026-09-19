@@ -1,5 +1,5 @@
 import type { Appointment } from './appointments';
-import { formatDayLong, formatRange } from './appointments';
+import { formatAppointmentRange, formatDayLong } from './appointments';
 
 // ---------------------------------------------------------------------------
 // Appointment reminder emails (Brevo / Sendinblue transactional API).
@@ -77,9 +77,8 @@ export const sendAppointmentEmails = (
 
   const vars = {
     who: params.counterpartName,
-    when: `${formatDayLong(params.appointment.start_at, params.locale)} · ${formatRange(
-      params.appointment.start_at,
-      params.appointment.end_at,
+    when: `${formatDayLong(params.appointment.start_at, params.locale)} · ${formatAppointmentRange(
+      params.appointment,
       params.locale,
     )}`,
     link: params.joinUrl,
