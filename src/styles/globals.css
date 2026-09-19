@@ -1083,12 +1083,37 @@ img {
   padding: 0 10px 10px;
 }
 
+.notif-triage {
+  align-items: center;
+}
+
+/* Always visible (never hover-revealed); >=32px tap targets, 8px apart. */
 .notif-triage button {
   flex: 1 1 auto;
-  min-height: 36px;
+  min-height: 32px;
   border-radius: 0.6rem;
   font-weight: 700;
   font-size: 0.78rem;
+}
+
+.notif-confirm-title {
+  flex: 1 1 100%;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text, #133b35);
+}
+
+.notif-confirm-warn {
+  flex: 1 1 100%;
+  font-size: 0.72rem;
+  color: var(--text-muted, #557b76);
+}
+
+.notif-ghost {
+  border: 1px solid rgba(15, 58, 50, 0.16);
+  background: transparent;
+  color: var(--text-muted, #557b76);
+  cursor: pointer;
 }
 
 .notif-approve {

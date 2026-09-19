@@ -478,15 +478,15 @@ export const requestAppointment = async (payload: {
   return { ok: true, appointment: firstRow<Appointment>(data) };
 };
 
-/** Host: accept or decline a pending request. */
+/** Host: accept or decline a pending request. Arg key is p_approve. */
 export const respondToAppointment = async (
   appointmentId: string,
-  accept: boolean,
+  approve: boolean,
   code?: string,
 ): Promise<RpcResult> => {
   const { error } = await supabase.rpc('respond_appointment', {
     p_appointment_id: appointmentId,
-    p_accept: accept,
+    p_approve: approve,
     ...(code ? { p_code: code } : {}),
   });
 
@@ -510,7 +510,7 @@ export const approveAppointment = async (
     const code = generateWordCode();
     const { error } = await supabase.rpc('respond_appointment', {
       p_appointment_id: appointmentId,
-      p_accept: true,
+      p_approve: true,
       p_code: code,
     });
 

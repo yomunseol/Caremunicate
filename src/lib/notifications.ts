@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { asRows } from './rows';
+import { asRows, firstRow } from './rows';
 
 // ---------------------------------------------------------------------------
 // Notifications — the bell's data layer.
@@ -78,6 +78,56 @@ export const markAllNotificationsRead = async (userId: string): Promise<void> =>
     .eq('user_id', userId)
     .eq('read', false);
   if (error) console.error('NOTIF ERROR:', error.message);
+};
+
+export type NotificationAppointment = {
+  id: string;
+  patient_id: string | null;
+  provider_id: string | null;
+  start_at: string | null;
+};
+
+/** The appointment a notification points at, via payload.ref_id. */
+export const loadNotificationAppointment = async (
+  refId: string,
+): Promise<NotificationAppointment | null> => {
+  if (!refId) return null;
+
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('id, patient_id, provider_id, start_at')
+    .eq('id', refId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('NOTIF ERROR:', error.message);
+    return null;
+  }
+  return firstRow<NotificationAppointment>(data);
+};
+
+/**
+ * The requester's display name — username, else the email prefix, the same
+ * field the messenger resolves names from. null means "we could not find out",
+ * which is the only case a caller should fall back on a generic label.
+ */
+export const loadPatientName = async (patientId: string | null): Promise<string | null> => {
+  if (!patientId) return null;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('username, email')
+    .eq('user_id', patientId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('NOTIF ERROR:', error.message);
+    return null;
+  }
+
+  const row = firstRow<{ username?: string | null; email?: string | null }>(data);
+  if (!row) return null;
+  return row.username?.trim() || row.email?.split('@')[0] || null;
 };
 
 /** Display names for the user ids a payload references. */

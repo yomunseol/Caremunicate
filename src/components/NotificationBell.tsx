@@ -25,11 +25,12 @@ import { parseDate } from '../lib/time';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { approveAppointment, respondToAppointment } from '../lib/appointments';
 import {
+  loadNotificationAppointment,
   loadNotifications,
+  loadPatientName,
   loadUnreadCount,
   markAllNotificationsRead,
   markNotificationRead,
-  resolveNotificationNames,
   subscribeNotifications,
   type NotificationRow,
 } from '../lib/notifications';
@@ -58,6 +59,13 @@ const TYPE_ICON: Record<string, typeof Bell> = {
   appointment_cancelled: MinusCircle,
   call_missed: PhoneMissed,
   system: Info,
+};
+
+/** The appointment a notification points at: payload.ref_id (else the legacy key). */
+const refIdOf = (row: NotificationRow): string => {
+  const payload = row.payload ?? {};
+  const value = payload.ref_id ?? payload.appointment_id;
+  return typeof value === 'string' ? value : '';
 };
 
 const relativeTime = (iso: string, locale: string): string => {
@@ -115,7 +123,11 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationRow[]>([]);
   const [unread, setUnread] = useState(0);
-  const [names, setNames] = useState<Map<string, string>>(new Map());
+  // Per pending request: the appointment id, the requester's REAL name, and
+  // whether this user is the host — only the host may triage.
+  const [requestInfo, setRequestInfo] = useState<
+    Record<string, { appointmentId: string; name: string; isHost: boolean }>
+  >({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [anchorEnd, setAnchorEnd] = useState(GUTTER);
@@ -140,16 +152,39 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
     ]);
     setItems(next);
     setUnread(count);
-
-    const ids = next
-      .map((row) => {
-        const payload = row.payload ?? {};
-        const id = payload.patient_id ?? payload.provider_id;
-        return typeof id === 'string' ? id : '';
-      })
-      .filter(Boolean);
-    setNames(await resolveNotificationNames(ids));
   }, [userId]);
+
+  // Resolve each pending request: the appointment (for the host check) and the
+  // requester's real display name. The payload alone cannot be trusted for it.
+  useEffect(() => {
+    const requested = items.filter((row) => row.type === 'appointment_requested');
+    if (requested.length === 0 || !userId) return;
+    let cancelled = false;
+
+    void (async () => {
+      const entries = await Promise.all(
+        requested.map(async (row) => {
+          const refId = refIdOf(row);
+          const appointment = await loadNotificationAppointment(refId);
+          const name = await loadPatientName(appointment?.patient_id ?? null);
+          return [
+            row.id,
+            {
+              appointmentId: appointment?.id ?? refId,
+              // 'Patient' ONLY because the lookup could not tell us a name.
+              name: name ?? 'Patient',
+              isHost: Boolean(appointment?.provider_id) && appointment?.provider_id === userId,
+            },
+          ] as const;
+        }),
+      );
+      if (!cancelled) setRequestInfo(Object.fromEntries(entries));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, userId]);
 
   useEffect(() => {
     void load();
@@ -226,12 +261,12 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
   // ---- actions -------------------------------------------------------------
   const titleFor = (row: NotificationRow): ReactNode => {
     const payload = row.payload ?? {};
-    const nameId = payload.patient_id ?? payload.provider_id;
-    const name = (typeof nameId === 'string' ? names.get(nameId) : '') || '';
 
     if (row.type === 'appointment_requested') {
       return t('notif.notifRequested', {
-        name: name || t('chat.participant'),
+        // The real name from the appointment → profile lookup. Never the word
+        // 'Participant'; 'Patient' only when the lookup could not tell us.
+        name: requestInfo[row.id]?.name ?? 'Patient',
         time: absoluteTime(payload.start_at, locale),
       });
     }
@@ -244,10 +279,8 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
     return custom || t('notif.notifications');
   };
 
-  const appointmentIdOf = (row: NotificationRow): string => {
-    const value = (row.payload ?? {}).appointment_id;
-    return typeof value === 'string' ? value : '';
-  };
+  const appointmentIdOf = (row: NotificationRow): string =>
+    requestInfo[row.id]?.appointmentId ?? refIdOf(row);
 
   const openRow = (row: NotificationRow) => {
     void markNotificationRead(row.id);
@@ -347,7 +380,13 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
                 {items.map((row) => {
                   const Icon = TYPE_ICON[row.type] ?? Info;
                   const appointmentId = appointmentIdOf(row);
-                  const canTriage = provider && row.type === 'appointment_requested' && Boolean(appointmentId);
+                  // Only the HOST sees triage: resolved from the appointment, so
+                  // a patient can never get Approve/Decline on their own row.
+                  const canTriage =
+                    provider &&
+                    row.type === 'appointment_requested' &&
+                    requestInfo[row.id]?.isHost === true &&
+                    Boolean(appointmentId);
 
                   return (
                     <li key={row.id}>
@@ -365,19 +404,30 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
                         {canTriage ? (
                           <div className="notif-triage">
                             {confirmingId === row.id ? (
+                              /* Micro confirm: title + one-line warning. */
                               <>
+                                <span className="notif-confirm-title">
+                                  {t('notif.declineRequest')}
+                                </span>
+                                <span className="notif-confirm-warn">{t('notif.notifDeclined')}</span>
                                 <button
                                   type="button"
-                                  className="primary-button notif-decline"
+                                  className="notif-decline"
                                   disabled={busyId === row.id}
-                                  onClick={() => void decline(row)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void decline(row);
+                                  }}
                                 >
                                   {t('notif.declineRequest')}
                                 </button>
                                 <button
                                   type="button"
-                                  className="ghost-button"
-                                  onClick={() => setConfirmingId(null)}
+                                  className="notif-ghost"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setConfirmingId(null);
+                                  }}
                                 >
                                   {t('common.cancel')}
                                 </button>
@@ -386,17 +436,23 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
                               <>
                                 <button
                                   type="button"
-                                  className="primary-button notif-approve"
+                                  className="notif-approve"
                                   disabled={busyId === row.id}
-                                  onClick={() => void approve(row)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void approve(row);
+                                  }}
                                 >
                                   {t('notif.approveRequest')}
                                 </button>
                                 <button
                                   type="button"
-                                  className="ghost-button"
+                                  className="notif-decline"
                                   disabled={busyId === row.id}
-                                  onClick={() => setConfirmingId(row.id)}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setConfirmingId(row.id);
+                                  }}
                                 >
                                   {t('notif.declineRequest')}
                                 </button>
