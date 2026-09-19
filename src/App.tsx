@@ -19,13 +19,16 @@ import PricingSection, {
   defaultPlanForFamily,
   getPlans,
   isPlanId,
+  isProviderPlan,
   normalizePlanId,
   planFamilyOf,
+  planForRole,
+  type Plan,
   type PlanFamily,
   type PlanId,
 } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
-import { isProvider } from './lib/roles';
+import { isProvider, roleLabelKey } from './lib/roles';
 import { useLang } from './i18n';
 
 type RouteKey =
@@ -56,7 +59,15 @@ type ParsedRoute = {
   conversationId: string | null;
   callCode: string | null;
   plan: string | null;
+  /** Role the sign-up form should preselect (#signup?role=doctor|department|hospital). */
+  role: string | null;
 };
+
+const AUTH_ROLES: AuthRole[] = ['patient', 'doctor', 'department', 'hospital'];
+
+/** A role from the URL, or null when it is missing/unknown. */
+const asAuthRole = (value: string | null): AuthRole | null =>
+  value && (AUTH_ROLES as string[]).includes(value) ? (value as AuthRole) : null;
 
 // Hash formats supported:
 //   #home, #signup, #login, #profile, #pricing   (existing routes)
@@ -72,8 +83,8 @@ const parseHash = (hash: string): ParsedRoute => {
   if (name === 'chat') {
     const id = rest.join('/');
     return id
-      ? { route: 'chat', conversationId: id, callCode: null, plan: null }
-      : { route: 'home', conversationId: null, callCode: null, plan: null };
+      ? { route: 'chat', conversationId: id, callCode: null, plan: null, role: null }
+      : { route: 'home', conversationId: null, callCode: null, plan: null, role: null };
   }
 
   if (name === 'call') {
@@ -83,6 +94,7 @@ const parseHash = (hash: string): ParsedRoute => {
       conversationId: null,
       callCode: rest.join('/') || null,
       plan: null,
+      role: null,
     };
   }
 
@@ -92,6 +104,7 @@ const parseHash = (hash: string): ParsedRoute => {
     conversationId: null,
     callCode: null,
     plan: params.get('plan'),
+    role: params.get('role'),
   };
 };
 
@@ -224,6 +237,8 @@ function App() {
   const [selectedPlan, setSelectedPlan] = useState<PlanId | null>(getInitialPlan);
   // The plan currently being written to the DB (drives the button's loading state).
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(null);
+  // A plan change that also changes the ROLE, awaiting confirmation.
+  const [conversion, setConversion] = useState<{ plan: PlanId; option: Plan } | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   // Bumped after a successful plan write to re-read profiles without a reload.
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
@@ -241,8 +256,15 @@ function App() {
       if (isPlanId(parsed.plan)) {
         setSelectedPlan(parsed.plan);
       }
+      // #signup?role=doctor|department|hospital preselects the role tile.
+      const role = asAuthRole(parsed.role);
+      if (role) {
+        setAuthRole(role);
+        setSignupValues((previous) => ({ ...previous, role }));
+      }
     };
 
+    syncRoute();
     window.addEventListener('hashchange', syncRoute);
     return () => window.removeEventListener('hashchange', syncRoute);
   }, []);
@@ -456,6 +478,14 @@ function App() {
     setIsAuthLoading(true);
     setAuthMessage('');
 
+    // Plan mirrors the role for providers; patients land on basic (or the
+    // patient tier they picked on the pricing page).
+    const signupPlan: PlanId = isProvider(authRole)
+      ? planForRole(authRole)
+      : selectedPlan && !isProviderPlan(selectedPlan)
+        ? selectedPlan
+        : 'basic';
+
     try {
       const { data, error } = await supabase.auth.signUp({
         email: signupValues.email.trim(),
@@ -476,7 +506,7 @@ function App() {
               hospitalName: signupValues.hospitalName.trim(),
               addressRegion: signupValues.addressRegion.trim(),
             } : {}),
-            ...(selectedPlan ? { plan: selectedPlan } : {}),
+            plan: signupPlan,
           },
         },
       });
@@ -496,7 +526,12 @@ function App() {
         const { error: profileError } = await supabase
           .from('profiles')
           .upsert(
-            { user_id: data.user.id, role: authRole, username: signupValues.fullName.trim() },
+            {
+              user_id: data.user.id,
+              role: authRole,
+              plan: signupPlan,
+              username: signupValues.fullName.trim(),
+            },
             { onConflict: 'user_id' },
           );
 
@@ -593,60 +628,21 @@ function App() {
   const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
   const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
 
-  // Pricing CTAs. Logged-out visitors are sent to sign-up with the plan
-  // preselected; logged-in users get the plan written to profiles.plan
-  // (Doctor/Clinic also promote the account to the doctor role).
-  const selectPlan = async (plan: PlanId) => {
-    console.log('Plan selected:', plan);
-
-    const option = planOptions.find((item) => item.id === plan);
-    if (!option) return;
-
-    if (!currentUser) {
-      setSelectedPlan(plan);
-      setAuthRole(option.signupRole);
-      setSignupValues((previous) => ({ ...previous, role: option.signupRole }));
-      setAuthMode('signup');
-      setRoute('signup');
-      setConversationId(null);
-      setSignupErrors({});
-      setTouchedFields({});
-      setAuthMessage('');
-      setProfileMenuOpen(false);
-      window.history.pushState({}, '', `${window.location.pathname}#signup?plan=${plan}`);
-      return;
-    }
-
+  // Pricing CTAs.
+  //  - Logged out: go to sign-up with the role tile (and the plan) preselected.
+  //  - Logged in:  write ONLY through the set_own_plan RPC, then re-read the
+  //                profile so the badge updates with no reload.
+  //  - A plan whose role differs from the account's is an account conversion:
+  //                role and plan change together, so confirm first.
+  const applyPlan = async (plan: PlanId, option: Plan) => {
     setPendingPlan(plan);
     try {
-      const payload = option.grantsDoctorRole ? { plan, role: 'doctor' } : { plan };
+      const { error } = await supabase.rpc('set_own_plan', { plan });
 
-      // Check for an existing row rather than a bare UPDATE, which would
-      // silently affect zero rows for a user who has no profile yet.
-      const { data: existing, error: findError } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('user_id', currentUser.id)
-        .maybeSingle();
+      console.log('set_own_plan result:', { plan, error });
+      if (error) throw error;
 
-      console.log('Profile lookup before plan update:', { existing, error: findError });
-      if (findError) throw findError;
-
-      if (existing) {
-        const { error: updateError } = await supabase
-          .from('profiles')
-          .update(payload)
-          .eq('user_id', currentUser.id);
-        console.log('Plan update result:', { plan, payload, error: updateError });
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({ user_id: currentUser.id, ...payload });
-        console.log('Plan insert result:', { plan, payload, error: insertError });
-        if (insertError) throw insertError;
-      }
-
+      // Re-read profiles.plan — the badge is driven by that row.
       setProfileRefreshKey((key) => key + 1);
       setToast({ message: tString('auth.toast.planActivated', { name: option.name }), type: 'success' });
     } catch (error) {
@@ -658,6 +654,41 @@ function App() {
     } finally {
       setPendingPlan(null);
     }
+  };
+
+  const selectPlan = (plan: PlanId) => {
+    console.log('Plan selected:', plan);
+
+    const option = planOptions.find((item) => item.id === plan);
+    if (!option) return;
+
+    if (!currentUser) {
+      // Preselect both pieces: the plan and the role tile it belongs to.
+      setSelectedPlan(plan);
+      setAuthRole(option.signupRole);
+      setSignupValues((previous) => ({ ...previous, role: option.signupRole }));
+      setAuthMode('signup');
+      setRoute('signup');
+      setConversationId(null);
+      setSignupErrors({});
+      setTouchedFields({});
+      setAuthMessage('');
+      setProfileMenuOpen(false);
+      window.history.pushState(
+        {},
+        '',
+        `${window.location.pathname}#signup?plan=${plan}&role=${option.signupRole}`,
+      );
+      return;
+    }
+
+    const currentRoleKey = isProvider(profileRole) ? profileRole : 'patient';
+    if (option.signupRole !== currentRoleKey) {
+      setConversion({ plan, option });
+      return;
+    }
+
+    void applyPlan(plan, option);
   };
 
   // Feature cards, translated for the active locale.
@@ -1193,6 +1224,45 @@ function App() {
           />
         )}
       </main>
+
+      {/* Account conversion: role and plan change together, so confirm first. */}
+      {conversion ? (
+        <div className="cal-modal-backdrop" role="presentation" onClick={() => setConversion(null)}>
+          <div
+            className="cal-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('plans.convertTitle')}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h3 className="cal-modal-title">{t('plans.convertTitle')}</h3>
+            <p className="cal-muted">
+              {tString('plans.convertBody', {
+                role: t(roleLabelKey(conversion.option.signupRole)),
+                plan: conversion.option.name,
+              })}
+            </p>
+            <div className="cal-modal-footer">
+              <button type="button" className="ghost-button" onClick={() => setConversion(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={pendingPlan !== null}
+                aria-busy={pendingPlan === conversion.plan}
+                onClick={() => {
+                  const target = conversion;
+                  setConversion(null);
+                  void applyPlan(target.plan, target.option);
+                }}
+              >
+                {t('plans.confirmCta')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {toast ? (
         <div className={`plan-toast ${toast.type === 'error' ? 'is-error' : ''}`} role="status" aria-live="polite">

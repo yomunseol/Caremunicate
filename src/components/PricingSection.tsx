@@ -1,10 +1,13 @@
 import type { CSSProperties } from 'react';
 import { useLang } from '../i18n';
 
-export type PlanId = 'basic' | 'plus' | 'pro' | 'starter' | 'practice' | 'organization';
+export type PlanId = 'basic' | 'plus' | 'pro' | 'doctor' | 'department' | 'hospital';
 
 /** Two families. A role never displays the other family's tiers. */
 export type PlanFamily = 'patient' | 'provider';
+
+/** The role a plan belongs to. Provider plans mirror their role exactly. */
+export type PlanSignupRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
 export type Plan = {
   id: PlanId;
@@ -18,36 +21,51 @@ export type Plan = {
   cta: string;
   // Role the sign-up form should preselect when a logged-out visitor picks
   // this plan (provider plans are professional).
-  signupRole: 'patient' | 'doctor';
-  // Whether choosing this plan promotes a logged-in account to a provider role.
-  grantsDoctorRole: boolean;
+  signupRole: PlanSignupRole;
 };
 
 export const PLAN_FAMILY: Record<PlanId, PlanFamily> = {
   basic: 'patient',
   plus: 'patient',
   pro: 'patient',
-  starter: 'provider',
-  practice: 'provider',
-  organization: 'provider',
+  doctor: 'provider',
+  department: 'provider',
+  hospital: 'provider',
 };
 
 export const planFamilyOf = (plan: PlanId): PlanFamily => PLAN_FAMILY[plan];
 
+export const PATIENT_PLANS: PlanId[] = ['basic', 'plus', 'pro'];
+export const PROVIDER_PLANS: PlanId[] = ['doctor', 'department', 'hospital'];
+
+export const isProviderPlan = (plan: PlanId): boolean => PLAN_FAMILY[plan] === 'provider';
+
 /**
- * Legacy ids that may still be sitting in profiles.plan from before the two
- * families were named. They map onto the provider family so an old provider
- * account reads as a provider tier instead of a patient one.
+ * Legacy ids that may still be sitting in profiles.plan. They all map onto the
+ * provider family, so an old provider account reads as a provider tier rather
+ * than a patient one.
  */
 export const LEGACY_PLAN_ALIASES: Record<string, PlanId> = {
-  'independent-doctor': 'starter',
-  department: 'practice',
-  hospital: 'organization',
+  starter: 'doctor',
+  'independent-doctor': 'doctor',
+  practice: 'department',
+  organization: 'hospital',
+};
+
+/**
+ * The plan a role lands on. Provider plans mirror the role ("plan = role"), so
+ * a doctor account is on the doctor plan, a department on department, and so
+ * on; every patient lands on basic.
+ */
+export const planForRole = (role: string | null | undefined): PlanId => {
+  const value = String(role ?? '').toLowerCase();
+  if (value === 'doctor' || value === 'department' || value === 'hospital') return value;
+  return 'basic';
 };
 
 /** The default tier for a family — also the badge a mismatched row falls back to. */
 export const defaultPlanForFamily = (family: PlanFamily): PlanId =>
-  family === 'provider' ? 'starter' : 'basic';
+  family === 'provider' ? 'doctor' : 'basic';
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
@@ -62,8 +80,7 @@ type PlanMeta = {
   cadence: string;
   bulletKeys: string[];
   popular?: boolean;
-  signupRole: 'patient' | 'doctor';
-  grantsDoctorRole: boolean;
+  signupRole: PlanSignupRole;
 };
 
 // Language-neutral plan metadata. Every visible string resolves through i18n,
@@ -78,7 +95,6 @@ const PLAN_META: PlanMeta[] = [
     cadence: '/mo',
     bulletKeys: ['pricing.basic.b1', 'pricing.basic.b2'],
     signupRole: 'patient',
-    grantsDoctorRole: false,
   },
   {
     id: 'plus',
@@ -95,7 +111,6 @@ const PLAN_META: PlanMeta[] = [
     ],
     popular: true,
     signupRole: 'patient',
-    grantsDoctorRole: false,
   },
   {
     id: 'pro',
@@ -111,12 +126,11 @@ const PLAN_META: PlanMeta[] = [
       'pricing.pro.b4',
     ],
     signupRole: 'patient',
-    grantsDoctorRole: false,
   },
   {
-    id: 'starter',
+    id: 'doctor',
     family: 'provider',
-    nameKey: 'plans.planStarter',
+    nameKey: 'plans.planDoctor',
     // Provider copy: reuses the solo-practice tier's subtitle/bullets/CTA.
     base: 'pricing.independentDoctor',
     price: '$79',
@@ -129,12 +143,11 @@ const PLAN_META: PlanMeta[] = [
       'pricing.independentDoctor.b5',
     ],
     signupRole: 'doctor',
-    grantsDoctorRole: true,
   },
   {
-    id: 'practice',
+    id: 'department',
     family: 'provider',
-    nameKey: 'plans.planPractice',
+    nameKey: 'plans.planDepartment',
     base: 'pricing.department',
     price: '$149',
     cadence: '/mo',
@@ -144,13 +157,12 @@ const PLAN_META: PlanMeta[] = [
       'pricing.department.b3',
       'pricing.department.b4',
     ],
-    signupRole: 'doctor',
-    grantsDoctorRole: true,
+    signupRole: 'department',
   },
   {
-    id: 'organization',
+    id: 'hospital',
     family: 'provider',
-    nameKey: 'plans.planOrganization',
+    nameKey: 'plans.planHospital',
     base: 'pricing.hospital',
     price: '$399',
     cadence: '/mo',
@@ -160,8 +172,7 @@ const PLAN_META: PlanMeta[] = [
       'pricing.hospital.b3',
       'pricing.hospital.b4',
     ],
-    signupRole: 'doctor',
-    grantsDoctorRole: true,
+    signupRole: 'hospital',
   },
 ];
 
@@ -177,7 +188,6 @@ export const getPlans = (t: Translate): Plan[] =>
     badge: meta.popular ? t('pricing.mostPopular') : undefined,
     cta: t(`${meta.base}.cta`),
     signupRole: meta.signupRole,
-    grantsDoctorRole: meta.grantsDoctorRole,
   }));
 
 export const isPlanId = (value: string | null | undefined): value is PlanId =>

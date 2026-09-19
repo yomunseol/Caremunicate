@@ -2,6 +2,11 @@
 
 Caremunicate is a React application built with TypeScript, designed to provide a platform for emergency doctor listings, service fees, and customer registrations. The project emphasizes a postmodern aesthetic and is optimized for mobile devices.
 
+> **Before changing anything, read [`CONTEXT.md`](./CONTEXT.md).** It is the live
+> source of truth for the stack, roles, the two plan families, the call
+> invariants, the i18n/RTL rules and the never-do list — and it must be updated
+> whenever the architecture moves.
+
 ## Project Structure
 
 The project is organized as follows:
