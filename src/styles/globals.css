@@ -1162,6 +1162,24 @@ img {
   overflow-wrap: anywhere;
 }
 
+/* Dev-only component stack under the boundary message. */
+.error-stack {
+  margin: 0;
+  width: 100%;
+  max-height: 30vh;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 0.5rem;
+  background: rgba(15, 58, 50, 0.05);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: var(--text-muted, #557b76);
+  text-align: start;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* Unknown status: a neutral chip, so a new value can never crash rendering. */
 .appt-status.chip-neutral,
 .cal-status.chip-neutral {

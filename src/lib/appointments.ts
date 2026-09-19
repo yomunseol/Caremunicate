@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { generateWordCode } from './wordcode';
 import { asRows, firstRow } from './rows';
+import { addMinutes, dayKey, fmtTime, parseDate, slotDate } from './time';
 
 // ---------------------------------------------------------------------------
 // Appointments + availability.
@@ -77,36 +78,43 @@ export const weekStartsOn = (locale: string): number => {
   return /^en\b|^he\b|^ar\b/.test(locale) ? 0 : 1;
 };
 
-/** Always 24-hour: hourCycle 'h23' forces 00–23 with no AM/PM in any locale. */
+/** 24-hour formatting, delegated to the one safe time library. */
 export const formatTime = (iso: string | Date, locale: string): string =>
-  new Intl.DateTimeFormat(locale, {
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(new Date(iso));
+  fmtTime(iso, locale, 'formatTime');
 
 export const formatRange = (startIso: string, endIso: string, locale: string): string =>
   `${formatTime(startIso, locale)} – ${formatTime(endIso, locale)}`;
 
+/** Shared shell: parse first (never throws), then format, else '—'. */
+const formatWith = (
+  value: string | number | Date | null | undefined,
+  locale: string,
+  options: Intl.DateTimeFormatOptions,
+  tag: string,
+): string => {
+  const date = parseDate(value, tag);
+  if (!date) return '—';
+  try {
+    return new Intl.DateTimeFormat(locale, options).format(date);
+  } catch {
+    return '—';
+  }
+};
+
 export const formatDayLong = (date: Date | string, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long' }).format(
-    new Date(date),
-  );
+  formatWith(date, locale, { weekday: 'long', day: 'numeric', month: 'long' }, 'formatDayLong');
 
 export const formatDayShort = (date: Date | string, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(date));
+  formatWith(date, locale, { day: 'numeric', month: 'short' }, 'formatDayShort');
 
 export const formatMonth = (date: Date, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric' }).format(date);
+  formatWith(date, locale, { month: 'long', year: 'numeric' }, 'formatMonth');
 
 export const formatWeekdayNarrow = (date: Date, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { weekday: 'narrow' }).format(date);
+  formatWith(date, locale, { weekday: 'narrow' }, 'formatWeekdayNarrow');
 
 /** Local (not UTC) YYYY-MM-DD, so grouping follows the user's clock. */
-export const localDayKey = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-    date.getDate(),
-  ).padStart(2, '0')}`;
+export const localDayKey = (date: string | number | Date): string => dayKey(date, 'localDayKey');
 
 // ---------------------------------------------------------------------------
 // Status rules
@@ -117,7 +125,10 @@ export const effectiveStatus = (appointment: Appointment, now = Date.now()): App
   if (appointment.status === 'cancelled' || appointment.status === 'completed') {
     return appointment.status;
   }
-  return new Date(appointment.end_at).getTime() <= now ? 'completed' : appointment.status;
+  const end = parseDate(appointment.end_at, 'effectiveStatus');
+  // An unparseable end time is NOT evidence that the appointment is over.
+  if (!end) return appointment.status;
+  return end.getTime() <= now ? 'completed' : appointment.status;
 };
 
 /** The statuses a row may carry; anything else falls back to a neutral chip. */
@@ -145,7 +156,9 @@ export const canJoin = (appointment: Appointment, now = Date.now()): boolean => 
   const status = effectiveStatus(appointment, now);
   if (status !== 'scheduled' && status !== 'confirmed') return false;
   if (!hasRoom(appointment)) return false;
-  return now >= new Date(appointment.start_at).getTime() - JOIN_WINDOW_MS;
+  const start = parseDate(appointment.start_at, 'canJoin');
+  if (!start) return false;
+  return now >= start.getTime() - JOIN_WINDOW_MS;
 };
 
 // ---------------------------------------------------------------------------
@@ -168,10 +181,10 @@ export const takeStashedAppointment = (): Appointment | null => {
 export const isLive = (appointment: Appointment, now = Date.now()): boolean => {
   const status = effectiveStatus(appointment, now);
   if (status === 'cancelled' || status === 'completed') return false;
-  return (
-    now >= new Date(appointment.start_at).getTime() - JOIN_WINDOW_MS &&
-    now <= new Date(appointment.end_at).getTime()
-  );
+  const start = parseDate(appointment.start_at, 'isLive');
+  const end = parseDate(appointment.end_at, 'isLive');
+  if (!start || !end) return false;
+  return now >= start.getTime() - JOIN_WINDOW_MS && now <= end.getTime();
 };
 
 // ---------------------------------------------------------------------------
@@ -203,37 +216,43 @@ export const slotsForDate = (
   const [endHour, endMinute] = rule.end_time.split(':').map(Number);
   if ([startHour, startMinute, endHour, endMinute].some((n) => Number.isNaN(n))) return [];
 
-  const length = Number(rule.slot_minutes) * 60_000;
-  if (length <= 0) return [];
+  const slotMinutes = Number(rule.slot_minutes);
+  if (!(slotMinutes > 0)) return [];
 
+  // Slots are built from the EXPLICIT day string + 'HH:MM' via slotDate() —
+  // never `new Date('09:00')`, which is an invalid date.
+  const dateStr = dayKey(day, 'slotsForDate');
+  if (!dateStr) return [];
+
+  const startMinutes = startHour * 60 + startMinute;
+  const endMinutes = endHour * 60 + endMinute;
   // The buffer applies to the candidate, so a booking that merely touches the
   // slot edge still leaves a gap.
   const buffer = SLOT_BUFFER_MINUTES * 60_000;
 
-  const dayEnd = new Date(day);
-  dayEnd.setHours(endHour, endMinute, 0, 0);
-
   const busy = booked
     .filter((appointment) => appointment.status !== 'cancelled')
     .map((appointment) => ({
-      start: new Date(appointment.start_at).getTime(),
-      end: new Date(appointment.end_at).getTime(),
-    }));
+      start: parseDate(appointment.start_at, 'slotsForDate'),
+      end: parseDate(appointment.end_at, 'slotsForDate'),
+    }))
+    .filter((item): item is { start: Date; end: Date } => Boolean(item.start && item.end))
+    .map((item) => ({ start: item.start.getTime(), end: item.end.getTime() }));
+
+  const toHhmm = (minutes: number): string =>
+    `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
   const slots: Slot[] = [];
-  const cursor = new Date(day);
-  cursor.setHours(startHour, startMinute, 0, 0);
-
-  while (cursor.getTime() + length <= dayEnd.getTime()) {
-    const start = new Date(cursor);
-    const end = new Date(cursor.getTime() + length);
+  for (let cursor = startMinutes; cursor + slotMinutes <= endMinutes; cursor += slotMinutes) {
+    const start = slotDate(dateStr, toHhmm(cursor));
+    if (!start) break;
+    const end = addMinutes(start, slotMinutes);
 
     const blocked = busy.some(
       (item) => start.getTime() - buffer < item.end && end.getTime() + buffer > item.start,
     );
 
     if (!blocked && start.getTime() > now) slots.push({ start, end });
-    cursor.setTime(cursor.getTime() + length);
   }
 
   return slots;

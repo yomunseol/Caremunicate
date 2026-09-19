@@ -21,6 +21,7 @@ import { useLang } from '../i18n';
 import { useToast } from '../context/ToastContext';
 import { describeError } from '../lib/errors';
 import { isProvider } from '../lib/roles';
+import { parseDate } from '../lib/time';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { approveAppointment, respondToAppointment } from '../lib/appointments';
 import {
@@ -60,8 +61,9 @@ const TYPE_ICON: Record<string, typeof Bell> = {
 };
 
 const relativeTime = (iso: string, locale: string): string => {
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return '';
+  const parsed = parseDate(iso, 'NotificationBell.relativeTime');
+  if (!parsed) return '';
+  const then = parsed.getTime();
 
   const diffSeconds = Math.round((then - Date.now()) / 1000);
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' });
@@ -83,19 +85,25 @@ const relativeTime = (iso: string, locale: string): string => {
   return '';
 };
 
-/** The {{time}} of a request: locale date + 24-hour clock (never AM/PM). */
+/**
+ * The {{time}} of a request: locale date + 24-hour clock (never AM/PM), or '—'
+ * when the payload carries no usable time — the bell must never crash on it.
+ */
 const absoluteTime = (value: unknown, locale: string): string => {
-  if (typeof value !== 'string') return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return new Intl.DateTimeFormat(locale, {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-    hourCycle: 'h23',
-  }).format(date);
+  const date = parseDate(typeof value === 'string' ? value : null, 'NotificationBell');
+  if (!date) return '—';
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(date);
+  } catch {
+    return '—';
+  }
 };
 
 export default function NotificationBell({ role, onNavigate }: NotificationBellProps) {

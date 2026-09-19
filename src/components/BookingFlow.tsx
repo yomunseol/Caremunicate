@@ -12,6 +12,7 @@ import {
   type Availability,
   type Slot,
 } from '../lib/appointments';
+import { fmtDateTime } from '../lib/time';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
@@ -168,16 +169,7 @@ export default function BookingFlow({
             <h3 className="cal-booked-title">{t('cal.requestSent')}</h3>
             <p className="cal-muted">
               {provider?.name}
-              {chosen
-                ? ` · ${new Intl.DateTimeFormat(locale, {
-                    weekday: 'long',
-                    day: 'numeric',
-                    month: 'long',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hourCycle: 'h23',
-                  }).format(chosen.start)}`
-                : ''}
+              {chosen ? ` · ${fmtDateTime(chosen.start, locale, 'BookingFlow.success')}` : ''}
             </p>
 
             <div className="cal-modal-footer">
