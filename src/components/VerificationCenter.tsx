@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
+import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 import VerificationBadge from './VerificationBadge';
 
@@ -75,10 +76,9 @@ export default function VerificationCenter() {
 
       await load();
     } catch (caught) {
-      // Self-reporting: the raw code, never a softened reason.
+      // Self-reporting: the raw code, never a softened reason and never an object.
       console.error('VERIFY ERROR:', caught);
-      const failure = caught as { code?: string; message?: string } | null;
-      setError(failure?.code ?? failure?.message ?? String(caught));
+      setError(describeError(caught));
     } finally {
       setBusy(false);
     }

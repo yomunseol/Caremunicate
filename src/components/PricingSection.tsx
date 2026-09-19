@@ -206,12 +206,6 @@ type PricingSectionProps = {
   subheading: string;
   currentPlan?: PlanId | null;
   busyPlan?: PlanId | null;
-  /**
-   * The viewer's plan family, or null when logged out. A provider cannot buy a
-   * patient tier, so those cards render disabled with a tooltip; a patient
-   * choosing a provider card goes through the conversion dialog instead.
-   */
-  viewerFamily?: PlanFamily | null;
 };
 
 export default function PricingSection({
@@ -220,7 +214,6 @@ export default function PricingSection({
   subheading,
   currentPlan = null,
   busyPlan = null,
-  viewerFamily = null,
 }: PricingSectionProps) {
   const { t } = useLang();
   const plans = getPlans(t);
@@ -238,16 +231,9 @@ export default function PricingSection({
         {plans.map((plan) => {
           const isCurrent = currentPlan === plan.id;
           const isBusy = busyPlan === plan.id;
-          // A provider account may only hold a provider plan.
-          const lockedForViewer = viewerFamily === 'provider' && plan.family === 'patient';
-          const lockTitle = lockedForViewer ? t('plans.patientPlansOnly') : undefined;
 
           return (
-            <article
-              className={`plan-card ${plan.badge ? 'featured' : ''}${lockedForViewer ? ' is-locked' : ''}`}
-              key={plan.id}
-              title={lockTitle}
-            >
+            <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.id}>
               {plan.badge || isCurrent ? (
                 <div className="plan-badges">
                   {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
@@ -272,10 +258,7 @@ export default function PricingSection({
                 className="primary-button cta-button"
                 type="button"
                 onClick={() => onSelectPlan(plan.id)}
-                disabled={busy || lockedForViewer}
                 aria-busy={isBusy}
-                aria-disabled={lockedForViewer}
-                title={lockTitle}
                 aria-label={`${plan.cta} — ${plan.name} ${t('common.plan')}`}
               >
                 {isBusy ? t('pricing.saving') : plan.cta}

@@ -201,8 +201,9 @@ export default function BookingFlow({
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',
-                hour: 'numeric',
+                hour: '2-digit',
                 minute: '2-digit',
+                hourCycle: 'h23',
               }).format(new Date(done.appointment.start_at))}
             </p>
 

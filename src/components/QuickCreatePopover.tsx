@@ -24,6 +24,9 @@ const MARGIN = 12;
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
+/** 24-hour HH:MM — the only shape this field accepts. */
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 type QuickCreatePopoverProps = {
   anchor: Anchor;
   day: Date;
@@ -74,7 +77,7 @@ export default function QuickCreatePopover({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!patientId || saving) return;
+    if (!patientId || saving || !TIME_RE.test(time)) return;
 
     const [hours, mins] = time.split(':').map(Number);
     const start = new Date(day);
@@ -139,9 +142,13 @@ export default function QuickCreatePopover({
         <label className="cal-field">
           <span>Time</span>
           <input
-            className="input"
-            type="time"
+            className="input ltr-isolate"
+            type="text"
+            inputMode="numeric"
             dir="ltr"
+            maxLength={5}
+            placeholder="HH:MM"
+            aria-label="Time"
             value={time}
             onChange={(event) => setTime(event.target.value)}
           />

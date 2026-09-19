@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { loadAvailability, weekStartsOn, weekdayName } from '../lib/appointments';
+import { describeError } from '../lib/errors';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Weekly availability editor (provider).
 //
-// Times are RAW 'HH:MM' STRINGS straight from <input type="time">. They are
-// written to a `time` column and read back verbatim, so the displayed value is
-// the stored value: 17:00 renders as 17:00, never 05:00. There are no Date
-// objects and no timezone conversion in this component.
+// Times are RAW 'HH:MM' STRINGS in controlled text inputs — no native time
+// picker. They are written to a `time` column and read back verbatim, so the
+// displayed value is the stored value: 17:00 renders as 17:00, never 05:00.
+// There are no Date objects and no timezone conversion in this component.
 //
 // Save is plain table writes — NO RPC:
 //   • enabled weekdays  -> upsert on (host_id, weekday, start_time)
@@ -19,6 +20,9 @@ import { useLang } from '../i18n';
 /** Fixed for now: the editor's state carries only on/off and the two times. */
 const SLOT_MIN = 30;
 const BUFFER_MIN = 0;
+
+/** The only accepted time shape: 24-hour HH:MM. */
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 type Row = { weekday: number; enabled: boolean; start: string; end: string };
 
@@ -80,9 +84,10 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
 
     const enabled = rows.filter((row) => row.enabled);
 
-    // end must be after start on every enabled weekday. 'HH:MM' strings compare
-    // correctly because <input type="time"> zero-pads.
-    const invalid = enabled.find((row) => row.end <= row.start);
+    // Every enabled weekday needs two well-formed HH:MM values with end > start.
+    const invalid = enabled.find(
+      (row) => !TIME_RE.test(row.start) || !TIME_RE.test(row.end) || row.end <= row.start,
+    );
     if (invalid) {
       setRangeErrorWeekday(invalid.weekday);
       return;
@@ -125,10 +130,9 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
       setSaved(true);
       window.setTimeout(() => setSaved(false), 3000);
     } catch (caught) {
-      // Self-reporting: the raw code, never a softened reason.
+      // Self-reporting: the raw code, never a softened reason and never an object.
       console.error('CALENDAR ERROR:', caught);
-      const failure = caught as { code?: string; message?: string } | null;
-      setError(failure?.code ?? failure?.message ?? String(caught));
+      setError(describeError(caught));
     } finally {
       setBusy(false);
     }
@@ -159,9 +163,12 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
               </label>
 
               <input
-                className="input"
-                type="time"
+                className="input ltr-isolate"
+                type="text"
+                inputMode="numeric"
                 dir="ltr"
+                maxLength={5}
+                placeholder="HH:MM"
                 aria-label={`${name} start`}
                 disabled={!row.enabled}
                 value={row.start}
@@ -170,9 +177,12 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
               />
               <span aria-hidden="true">–</span>
               <input
-                className="input"
-                type="time"
+                className="input ltr-isolate"
+                type="text"
+                inputMode="numeric"
                 dir="ltr"
+                maxLength={5}
+                placeholder="HH:MM"
                 aria-label={`${name} end`}
                 disabled={!row.enabled}
                 value={row.end}

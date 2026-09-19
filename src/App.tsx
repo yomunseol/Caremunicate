@@ -29,6 +29,7 @@ import PricingSection, {
 } from './components/PricingSection';
 import { useAuth } from './context/AuthContext';
 import { isProvider, roleLabelKey } from './lib/roles';
+import { describeError } from './lib/errors';
 import { useLang } from './i18n';
 
 type RouteKey =
@@ -628,24 +629,32 @@ function App() {
   const currentPlanOption = planOptions.find((item) => item.id === currentPlanId) ?? planOptions[0];
   const selectedPlanOption = selectedPlan ? planOptions.find((item) => item.id === selectedPlan) ?? null : null;
 
-  // Pricing CTAs.
-  //  - Logged out: go to sign-up with the role tile (and the plan) preselected.
-  //  - Logged in:  patient tiers write profiles.plan directly; provider tiers
-  //                go through the set_own_plan RPC (arg key p_plan). Either way
-  //                the profile is re-read so the badge updates with no reload.
-  //  - A plan whose role differs from the account's is an account conversion:
-  //                role and plan change together, so confirm first.
-  const applyPlan = async (plan: PlanId, option: Plan) => {
+  /** Toasts carry a STRING only — never an object. Dev builds assert it. */
+  const showToast = (message: unknown, type: 'success' | 'error') => {
+    if (typeof message !== 'string') {
+      if (import.meta.env?.DEV) {
+        console.error('TOAST ASSERTION: toast message must be a string; received', message);
+      }
+      setToast({ message: describeError(message), type });
+      return;
+    }
+    setToast({ message, type });
+  };
+
+  // Pricing CTAs. NOTHING is disabled: all six cards are clickable for every
+  // role.
+  //  - Logged out: sign-up with the role tile (and the plan) preselected.
+  //  - Logged in, same family + a patient tier: write profiles.plan directly.
+  //  - Anything else (cross-family, or any provider tier): the role changes
+  //    too, so confirm, then set_own_plan (arg key p_plan).
+  const writePlan = async (plan: PlanId, option: Plan, viaRpc: boolean) => {
     if (!currentUser) return;
     setPendingPlan(plan);
     try {
-      if (isProviderPlan(plan)) {
-        // Provider tier/role switch — the RPC's argument key is p_plan, never
-        // `plan`.
+      if (viaRpc) {
         const { error } = await supabase.rpc('set_own_plan', { p_plan: plan });
         if (error) throw error;
       } else {
-        // Patient tier — a plain profiles update, no RPC.
         const { error } = await supabase
           .from('profiles')
           .update({ plan: plan })
@@ -656,14 +665,10 @@ function App() {
       // Re-read profiles.plan: drives the header badge AND the pricing
       // CURRENT PLAN chip.
       setProfileRefreshKey((key) => key + 1);
-      setToast({ message: tString('auth.toast.planActivated', { name: option.name }), type: 'success' });
+      showToast(tString('auth.toast.planActivated', { name: option.name }), 'success');
     } catch (error) {
       console.error('Plan update failed:', error);
-      // The raw reason, always: the PostgREST code when there is one, else the
-      // message. Never a bare "something went wrong".
-      const failure = error as { code?: string; message?: string } | null;
-      const reason = failure?.code ?? failure?.message ?? String(error);
-      setToast({ message: `${t('auth.toast.planError')} (${reason})`, type: 'error' });
+      showToast(`${t('auth.toast.planError')} (${describeError(error)})`, 'error');
     } finally {
       setPendingPlan(null);
     }
@@ -695,13 +700,15 @@ function App() {
       return;
     }
 
-    const currentRoleKey = isProvider(profileRole) ? profileRole : 'patient';
-    if (option.signupRole !== currentRoleKey) {
-      setConversion({ plan, option });
+    // Same family as the account, and a patient tier: the role does not change,
+    // so write it straight away.
+    if (roleFamily === 'patient' && !isProviderPlan(plan)) {
+      void writePlan(plan, option, false);
       return;
     }
 
-    void applyPlan(plan, option);
+    // Every other click changes the role too — confirm first.
+    setConversion({ plan, option });
   };
 
   // Feature cards, translated for the active locale.
@@ -916,7 +923,6 @@ function App() {
               onSelectPlan={(plan) => void selectPlan(plan)}
               currentPlan={currentUser ? currentPlanId : null}
               busyPlan={pendingPlan}
-              viewerFamily={currentUser ? roleFamily : null}
             />
 
             <section className="section">
@@ -1235,7 +1241,6 @@ function App() {
             onSelectPlan={(plan) => void selectPlan(plan)}
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
-            viewerFamily={currentUser ? roleFamily : null}
           />
         )}
       </main>
@@ -1269,7 +1274,7 @@ function App() {
                 onClick={() => {
                   const target = conversion;
                   setConversion(null);
-                  void applyPlan(target.plan, target.option);
+                  void writePlan(target.plan, target.option, true);
                 }}
               >
                 {t('plans.confirmCta')}

@@ -17,6 +17,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
+import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -125,21 +126,21 @@ const overpassError = (code: string, detail: string, message?: string): CodedErr
   return error;
 };
 
-/** 502 body: the per-mirror failure reasons. */
+/** 502 body: the per-mirror failure reasons, each reduced to a string. */
 const readReasons = async (response: Response): Promise<string[]> => {
   try {
     const body = (await response.json()) as { reasons?: unknown };
-    return Array.isArray(body?.reasons) ? body.reasons.map(String) : [];
+    return Array.isArray(body?.reasons) ? body.reasons.map(describeError) : [];
   } catch {
     return [];
   }
 };
 
-/** 500 body: the crash detail. */
+/** 500 body: the crash detail, reduced to a string. */
 const readDetail = async (response: Response): Promise<string> => {
   try {
     const body = (await response.json()) as { detail?: unknown; error?: unknown };
-    return String(body?.detail ?? body?.error ?? '');
+    return describeError(body?.detail ?? body?.error ?? '');
   } catch {
     return '';
   }

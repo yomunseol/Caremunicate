@@ -807,15 +807,6 @@ img {
   margin-inline-end: 0.45rem;
 }
 
-/* A provider cannot hold a patient tier: the card stays visible but locked. */
-.plan-card.is-locked {
-  opacity: 0.6;
-}
-
-.plan-card.is-locked .cta-button {
-  cursor: not-allowed;
-}
-
 /* Six plans: 3 across on desktop (two clean rows), 2 at <=980px, 1 at <=720px.
    The grid wraps automatically, so no card is ever clipped. */
 .pricing-grid {

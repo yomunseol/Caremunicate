@@ -1,21 +1,30 @@
 // ---------------------------------------------------------------------------
 // /api/overpass — Vercel serverless function (Node runtime).
 //
-// The hardened route, expressed in the Vercel `(req, res)` shape this repo uses
-// (the app is Vite — there is no `next/server` here). Behaviour is identical:
+// FULLY SELF-CONTAINED: zero relative imports, so an extensionless-import
+// error (TS2835) cannot occur here. The mirror array and the whole loop are
+// inlined in this one file.
 //
 //   GET /api/overpass?data=<encoded Overpass QL>
 //   -> 200 JSON (Overpass payload), Cache-Control: public, s-maxage=600
 //   -> 400 { error: 'missing data' }
 //   -> 405 { error: 'method not allowed' }
-//   -> 502 { error: 'all mirrors failed', reasons: [...] }
+//   -> 502 { error: 'all mirrors failed', reasons: [host:status, ...] }
 //   -> 500 { error: 'route crash', detail }
-//
-// The mirror loop, per-mirror 15s abort and the `reasons` list live in
-// server/overpass.ts, shared with the dev middleware in vite.config.ts.
 // ---------------------------------------------------------------------------
 
-import { OVERPASS_CACHE_CONTROL, proxyOverpass } from '../server/overpass';
+export const config = { runtime: 'nodejs' };
+
+const MIRRORS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
+  'https://overpass.osm.ch/api/interpreter',
+];
+
+const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
+const MIRROR_TIMEOUT_MS = 15_000;
+const CACHE_CONTROL = 'public, s-maxage=600';
 
 type ProxyRequest = {
   method?: string;
@@ -57,6 +66,15 @@ const readQuery = (req: ProxyRequest): string => {
   return '';
 };
 
+/** `${host}:${status}` or `${host}:${ErrorName}` — one entry per failed mirror. */
+const mirrorReason = (mirror: string, reason: string | number): string => {
+  try {
+    return `${new URL(mirror).host}:${reason}`;
+  } catch {
+    return `${mirror}:${reason}`;
+  }
+};
+
 export default async function handler(req: ProxyRequest, res: ProxyResponse): Promise<void> {
   try {
     if (req.method && req.method !== 'GET' && req.method !== 'POST') {
@@ -70,19 +88,47 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
       return;
     }
 
-    const result = await proxyOverpass(data);
+    // Mirrors are tried SEQUENTIALLY, 15s each, collecting every reason.
+    const reasons: string[] = [];
 
-    if ('error' in result) {
-      // "all mirrors failed" + the per-mirror reasons, so the client can show
-      // `Search failed (mirrors: …)` instead of a bare status.
-      res.status(result.status).json({ error: result.error, reasons: result.reasons });
-      return;
+    for (const mirror of MIRRORS) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
+
+        try {
+          const upstream = await fetch(mirror, {
+            method: 'POST',
+            body: new URLSearchParams({ data }),
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': USER_AGENT,
+            },
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+
+          if (upstream.ok) {
+            const payload = await upstream.json();
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.setHeader('Cache-Control', CACHE_CONTROL);
+            res.status(200).json(payload);
+            return;
+          }
+
+          reasons.push(mirrorReason(mirror, upstream.status));
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (error) {
+        const name = error instanceof Error && error.name ? error.name : 'err';
+        reasons.push(mirrorReason(mirror, name));
+      }
     }
 
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', OVERPASS_CACHE_CONTROL);
-    res.status(200).json(result.body);
+    res.status(502).json({ error: 'all mirrors failed', reasons });
   } catch (caught) {
+    // Never throw out of the route: answer 500 with the detail.
     const detail = String((caught as { message?: unknown })?.message ?? caught);
     res.status(500).json({ error: 'route crash', detail });
   }

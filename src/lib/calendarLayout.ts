@@ -147,8 +147,10 @@ export const spansDay = (event: TimeSpan, day: Date): boolean => {
   return event.start.getTime() < to && event.end.getTime() > from;
 };
 
-/** The 24 hour-gutter labels: "12 AM", "1 AM", … in the active locale. */
+/** The 24 hour-gutter labels: "00", "01", … in the active locale, 24-hour. */
 export const hourLabels = (locale: string): string[] =>
   Array.from({ length: 24 }, (_, hour) =>
-    new Intl.DateTimeFormat(locale, { hour: 'numeric' }).format(new Date(2024, 0, 1, hour)),
+    new Intl.DateTimeFormat(locale, { hour: '2-digit', hourCycle: 'h23' }).format(
+      new Date(2024, 0, 1, hour),
+    ),
   );

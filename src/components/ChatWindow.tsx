@@ -14,7 +14,8 @@ interface ParticipantMeta {
 
 const formatMessageTime = (iso: string): string => {
   const date = new Date(iso);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  // 24-hour only: no AM/PM in any locale.
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 };
 
 type ChatWindowProps = {

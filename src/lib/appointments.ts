@@ -69,8 +69,13 @@ export const weekStartsOn = (locale: string): number => {
   return /^en\b|^he\b|^ar\b/.test(locale) ? 0 : 1;
 };
 
+/** Always 24-hour: hourCycle 'h23' forces 00–23 with no AM/PM in any locale. */
 export const formatTime = (iso: string | Date, locale: string): string =>
-  new Intl.DateTimeFormat(locale, { hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
+  new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(new Date(iso));
 
 export const formatRange = (startIso: string, endIso: string, locale: string): string =>
   `${formatTime(startIso, locale)} – ${formatTime(endIso, locale)}`;
