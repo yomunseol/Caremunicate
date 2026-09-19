@@ -32,6 +32,9 @@ type AppointmentCardProps = {
   onConfirm: (appointment: Appointment) => void;
   onReschedule: (appointment: Appointment) => void;
   onAddToCalendar: (appointment: Appointment) => void;
+  /** Provider-only triage for a 'requested' row. */
+  onApprove: (appointment: Appointment) => void;
+  onDecline: (appointment: Appointment) => void;
 };
 
 export default function AppointmentCard({
@@ -43,6 +46,8 @@ export default function AppointmentCard({
   onConfirm,
   onReschedule,
   onAddToCalendar,
+  onApprove,
+  onDecline,
 }: AppointmentCardProps) {
   const { t, locale } = useLang();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -72,6 +77,7 @@ export default function AppointmentCard({
   const cancelled = status === 'cancelled';
 
   const statusLabel: Record<string, string> = {
+    requested: 'Requested',
     scheduled: 'Scheduled',
     confirmed: 'Confirmed',
     completed: 'Completed',
@@ -115,6 +121,27 @@ export default function AppointmentCard({
         >
           <Phone size={15} aria-hidden="true" /> {t('cal.joinCall')}
         </button>
+
+        {side === 'provider' && status === 'requested' ? (
+          <>
+            <button
+              type="button"
+              className="primary-button"
+              style={styles.triageButton}
+              onClick={() => onApprove(appointment)}
+            >
+              {t('notif.approveRequest')}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              style={styles.triageButton}
+              onClick={() => onDecline(appointment)}
+            >
+              {t('notif.declineRequest')}
+            </button>
+          </>
+        ) : null}
 
         <button
           type="button"
@@ -244,6 +271,14 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 900,
   },
   actions: { display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' },
+  triageButton: {
+    paddingBlock: '0.5rem',
+    paddingInline: '0.9rem',
+    borderRadius: '999px',
+    fontWeight: 800,
+    fontSize: '0.8rem',
+    minHeight: 44,
+  },
   join: {
     display: 'inline-flex',
     alignItems: 'center',

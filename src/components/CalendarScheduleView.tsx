@@ -19,6 +19,8 @@ type CalendarScheduleViewProps = {
   onConfirm: (appointment: Appointment) => void;
   onReschedule: (appointment: Appointment) => void;
   onAddToCalendar: (appointment: Appointment) => void;
+  onApprove: (appointment: Appointment) => void;
+  onDecline: (appointment: Appointment) => void;
 };
 
 export default function CalendarScheduleView({
@@ -30,6 +32,8 @@ export default function CalendarScheduleView({
   onConfirm,
   onReschedule,
   onAddToCalendar,
+  onApprove,
+  onDecline,
 }: CalendarScheduleViewProps) {
   const { t, locale } = useLang();
 
@@ -66,6 +70,8 @@ export default function CalendarScheduleView({
         onConfirm={onConfirm}
         onReschedule={onReschedule}
         onAddToCalendar={onAddToCalendar}
+        onApprove={onApprove}
+        onDecline={onDecline}
       />
     </li>
   );

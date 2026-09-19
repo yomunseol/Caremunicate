@@ -18,6 +18,7 @@ const MARGIN = 12;
 
 /** Same labels the appointment card uses, so chip copy reads identically. */
 const STATUS_LABEL: Record<string, string> = {
+  requested: 'Requested',
   scheduled: 'Scheduled',
   confirmed: 'Confirmed',
   completed: 'Completed',
@@ -37,6 +38,9 @@ type CalendarEventPopoverProps = {
   onConfirm: (appointment: Appointment) => void;
   onReschedule: (appointment: Appointment) => void;
   onAddToCalendar: (appointment: Appointment) => void;
+  /** Provider-only triage for a 'requested' appointment. */
+  onApprove: (appointment: Appointment) => void;
+  onDecline: (appointment: Appointment) => void;
 };
 
 export default function CalendarEventPopover({
@@ -52,6 +56,8 @@ export default function CalendarEventPopover({
   onConfirm,
   onReschedule,
   onAddToCalendar,
+  onApprove,
+  onDecline,
 }: CalendarEventPopoverProps) {
   const { t, locale } = useLang();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
@@ -126,7 +132,18 @@ export default function CalendarEventPopover({
           <Phone size={14} aria-hidden="true" /> {t('cal.joinCall')}
         </button>
 
-        {status !== 'cancelled' && status !== 'completed' ? (
+        {side === 'provider' && status === 'requested' ? (
+          <>
+            <button type="button" className="primary-button" onClick={() => onApprove(appointment)}>
+              {t('notif.approveRequest')}
+            </button>
+            <button type="button" className="ghost-button" onClick={() => onDecline(appointment)}>
+              {t('notif.declineRequest')}
+            </button>
+          </>
+        ) : null}
+
+        {status !== 'cancelled' && status !== 'completed' && status !== 'requested' ? (
           <>
             {side === 'provider' && status === 'scheduled' ? (
               <button type="button" className="ghost-button" onClick={() => onConfirm(appointment)}>

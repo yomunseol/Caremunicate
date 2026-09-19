@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { generateWordCode } from './wordcode';
 
 // ---------------------------------------------------------------------------
 // Appointments + availability.
@@ -13,7 +14,13 @@ import { supabase } from './supabase';
 // every read here degrades to empty rather than throwing.
 // ---------------------------------------------------------------------------
 
-export type AppointmentStatus = 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+/** 'requested' = a patient's ask awaiting the host's decision. */
+export type AppointmentStatus =
+  | 'requested'
+  | 'scheduled'
+  | 'confirmed'
+  | 'completed'
+  | 'cancelled';
 
 export type Availability = {
   id: string;
@@ -379,6 +386,79 @@ export const setAppointmentStatus = async (
     return false;
   }
   return true;
+};
+
+// ---------------------------------------------------------------------------
+// Request flow — the server owns these writes (SECURITY DEFINER RPCs).
+// ---------------------------------------------------------------------------
+
+export type RpcResult = { ok: true } | { ok: false; code: string };
+
+/** Patient: ask the host for a slot. No room exists until it is approved. */
+export const requestAppointment = async (payload: {
+  hostId: string;
+  start: Date;
+  durationMin: number;
+  note?: string;
+}): Promise<RpcResult> => {
+  const { error } = await supabase.rpc('request_appointment', {
+    p_host_id: payload.hostId,
+    p_start_at: payload.start.toISOString(),
+    p_duration_min: payload.durationMin,
+    p_note: payload.note ?? null,
+  });
+
+  if (error) {
+    console.error('CALENDAR ERROR:', error.message);
+    return { ok: false, code: error.code ?? error.message };
+  }
+  return { ok: true };
+};
+
+/** Host: accept or decline a pending request. */
+export const respondToAppointment = async (
+  appointmentId: string,
+  accept: boolean,
+  code?: string,
+): Promise<RpcResult> => {
+  const { error } = await supabase.rpc('respond_appointment', {
+    p_appointment_id: appointmentId,
+    p_accept: accept,
+    ...(code ? { p_code: code } : {}),
+  });
+
+  if (error) {
+    console.error('CALENDAR ERROR:', error.message);
+    return { ok: false, code: error.code ?? error.message };
+  }
+  return { ok: true };
+};
+
+/**
+ * Host: accept a request. The room code is minted here and must be unique, so a
+ * 23505 (unique violation) retries with a FRESH code, up to 10 times.
+ */
+export const approveAppointment = async (
+  appointmentId: string,
+): Promise<{ ok: true; code: string } | { ok: false; code: string }> => {
+  let lastCode = '23505';
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const code = generateWordCode();
+    const { error } = await supabase.rpc('respond_appointment', {
+      p_appointment_id: appointmentId,
+      p_accept: true,
+      p_code: code,
+    });
+
+    if (!error) return { ok: true, code };
+
+    console.error('CALENDAR ERROR:', error.message);
+    lastCode = error.code ?? error.message;
+    if (error.code !== '23505') break;
+  }
+
+  return { ok: false, code: lastCode };
 };
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
 import VerificationCenter from './components/VerificationCenter';
 import LanguageSwitcher from './components/LanguageSwitcher';
+import NotificationBell from './components/NotificationBell';
 import PricingSection, {
   defaultPlanForFamily,
   getPlans,
@@ -734,6 +735,9 @@ function App() {
 
           {currentUser ? (
             <>
+              {/* Between the language pill and the Calls pill, at every width. */}
+              <NotificationBell role={profileRole} onNavigate={(route) => navigate(route)} />
+
               <button className="ghost-button" type="button" onClick={() => navigate('call')}>
                 {t('call.callHub')}
               </button>

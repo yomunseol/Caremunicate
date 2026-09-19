@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarOff, CalendarPlus, Check, Copy, X } from 'lucide-react';
-import { createRoom } from '../lib/callRooms';
+import { CalendarOff, Check, X } from 'lucide-react';
 import {
-  buildIcs,
-  createAppointment,
-  downloadIcs,
   formatTime,
   loadAvailability,
   loadBusySlots,
+  requestAppointment,
   slotsForDate,
   BOOKING_WINDOW_DAYS,
   type Appointment,
@@ -71,8 +68,8 @@ export default function BookingFlow({
   const [chosen, setChosen] = useState<Slot | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState<{ code: string; appointment: Appointment } | null>(null);
-  const [copied, setCopied] = useState(false);
+  // A request was sent — no room exists yet, so there is no code to show.
+  const [sent, setSent] = useState(false);
 
   // The next 14 days, today first.
   const days = useMemo(() => {
@@ -114,37 +111,27 @@ export default function BookingFlow({
     if (!provider || !chosen || saving) return;
     setSaving(true);
     setError(null);
-    try {
-      // The room is created with the lobby on: the patient waits until the
-      // provider admits them.
-      const room = await createRoom({
-        password: '',
-        lobbyEnabled: true,
-        autoMute: true,
-        allowShare: true,
-      });
+    // A REQUEST, not a booking: the host decides. The server creates the row
+    // (status 'requested') and, on approval, mints the room code — so nothing
+    // room-related happens here.
+    const minutes = Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000);
+    const result = await requestAppointment({
+      hostId: provider.id,
+      start: chosen.start,
+      durationMin: minutes,
+    });
 
-      const appointment = await createAppointment({
-        patientId,
-        providerId: provider.id,
-        roomId: room.id,
-        roomCode: room.code,
-        start: chosen.start,
-        end: chosen.end,
-      });
-
-      if (!appointment) throw new Error('appointment insert returned null');
-
-      setDone({ code: room.code, appointment });
-      onBooked();
-    } catch (caught) {
-      // Self-reporting: the raw code first, then the message. Never masked.
-      console.error('CALENDAR ERROR:', caught);
-      const failure = caught as { code?: string; message?: string } | null;
-      setError(failure?.code ?? failure?.message ?? String(caught));
-    } finally {
+    if (!result.ok) {
+      // Self-reporting: the raw code, never a softened reason.
+      console.error('CALENDAR ERROR:', result.code);
+      setError(result.code);
       setSaving(false);
+      return;
     }
+
+    setSent(true);
+    setSaving(false);
+    onBooked();
   };
 
   const timezone = useMemo(() => {
@@ -157,27 +144,6 @@ export default function BookingFlow({
 
   const duration = chosen ? Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000) : 0;
 
-  const copyCode = async () => {
-    if (!done) return;
-    try {
-      await navigator.clipboard.writeText(done.code);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      /* clipboard blocked — the code is visible anyway */
-    }
-  };
-
-  const downloadBooking = () => {
-    if (!done || !provider) return;
-    const ics = buildIcs(
-      done.appointment,
-      `${t('cal.appointments')} — ${provider.name}`,
-      `${window.location.origin}/call/${done.code}`,
-    );
-    downloadIcs(`caremunicate-${done.appointment.id.slice(0, 8)}`, ics);
-  };
-
   return (
     <div className="cal-modal-backdrop" role="presentation" onClick={onClose}>
       <div
@@ -188,54 +154,38 @@ export default function BookingFlow({
         aria-label={t('cal.bookAppointment')}
         onClick={(event) => event.stopPropagation()}
       >
-        {/* ---- Booked: the success panel ---- */}
-        {done ? (
+        {/* ---- Request sent: NO room code exists yet ---- */}
+        {sent ? (
           <div className="cal-booked">
             <span className="cal-booked-icon" aria-hidden="true">
               <Check size={22} />
             </span>
-            <h3 className="cal-booked-title">{t('cal.booked')}</h3>
+            <h3 className="cal-booked-title">{t('cal.requestSent')}</h3>
             <p className="cal-muted">
-              {provider?.name} ·{' '}
-              {new Intl.DateTimeFormat(locale, {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                hour: '2-digit',
-                minute: '2-digit',
-                hourCycle: 'h23',
-              }).format(new Date(done.appointment.start_at))}
+              {provider?.name}
+              {chosen
+                ? ` · ${new Intl.DateTimeFormat(locale, {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hourCycle: 'h23',
+                  }).format(chosen.start)}`
+                : ''}
             </p>
 
-            <div className="cal-booked-code">
-              <span className="call-code-chip" dir="ltr" title={done.code}>
-                {done.code}
-              </span>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => void copyCode()}
-                aria-label={t('call.copyCode')}
-                title={t('call.copyCode')}
-              >
-                <Copy size={14} aria-hidden="true" /> {copied ? t('call.copied') : t('call.copyCode')}
-              </button>
-            </div>
-
             <div className="cal-modal-footer">
-              <button type="button" className="ghost-button" onClick={downloadBooking}>
-                <CalendarPlus size={14} aria-hidden="true" /> .ics
-              </button>
               <button
                 type="button"
-                className="ghost-button"
+                className="primary-button"
                 onClick={() => {
                   window.location.hash = '#calendar';
                 }}
               >
                 {t('cal.calendar')}
               </button>
-              <button type="button" className="primary-button" onClick={onClose}>
+              <button type="button" className="ghost-button" onClick={onClose}>
                 {t('common.close')}
               </button>
             </div>

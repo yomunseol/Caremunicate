@@ -15,10 +15,13 @@ import {
   setAppointmentStatus,
   effectiveStatus,
   weekStartsOn,
+  approveAppointment,
+  respondToAppointment,
   type Appointment,
   type PersonInfo,
 } from '../lib/appointments';
 import { addDays, startOfDay } from '../lib/calendarLayout';
+import { useToast } from '../context/ToastContext';
 import { useLang } from '../i18n';
 import CalendarToolbar, { type CalendarView } from './CalendarToolbar';
 import CalendarSidebar from './CalendarSidebar';
@@ -45,7 +48,8 @@ import AvailabilityEditor from './AvailabilityEditor';
 type Side = 'patient' | 'provider';
 
 export default function CalendarPage() {
-  const { t, locale } = useLang();
+  const { t, tString, locale } = useLang();
+  const { notify } = useToast();
   const { user } = useAuth();
 
   const [role, setRole] = useState('');
@@ -161,6 +165,29 @@ export default function CalendarPage() {
     setDetail(null);
     refresh();
     setBookingOpen(true);
+  };
+
+  // Provider triage — the SAME RPC path the bell uses.
+  const approve = async (appointment: Appointment) => {
+    setDetail(null);
+    const result = await approveAppointment(appointment.id);
+    if (!result.ok) {
+      notify(`${t('auth.toast.planError')} (${result.code})`, 'error');
+      return;
+    }
+    notify(tString('notif.notifApproved', { code: result.code }), 'success');
+    refresh();
+  };
+
+  const decline = async (appointment: Appointment) => {
+    setDetail(null);
+    const result = await respondToAppointment(appointment.id, false);
+    if (!result.ok) {
+      notify(`${t('auth.toast.planError')} (${result.code})`, 'error');
+      return;
+    }
+    notify(t('notif.notifDeclined'), 'info');
+    refresh();
   };
 
   const addToCalendar = (appointment: Appointment) => {
@@ -301,6 +328,8 @@ export default function CalendarPage() {
               onConfirm={(a) => void confirm(a)}
               onReschedule={(a) => void reschedule(a)}
               onAddToCalendar={addToCalendar}
+              onApprove={(a) => void approve(a)}
+              onDecline={(a) => void decline(a)}
             />
           ) : null}
 
@@ -325,6 +354,8 @@ export default function CalendarPage() {
           onConfirm={(a) => void confirm(a)}
           onReschedule={(a) => void reschedule(a)}
           onAddToCalendar={addToCalendar}
+          onApprove={(a) => void approve(a)}
+          onDecline={(a) => void decline(a)}
         />
       ) : null}
 
