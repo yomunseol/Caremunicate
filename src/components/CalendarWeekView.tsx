@@ -35,7 +35,7 @@ type CalendarWeekViewProps = {
 const useNow = (): Date => {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    const id = window.setInterval(() => setNow(new Date()), 60_000);
     return () => window.clearInterval(id);
   }, []);
   return now;
@@ -75,12 +75,22 @@ export default function CalendarWeekView({
     [days, appointments],
   );
 
-  // Open on the working day rather than midnight.
+  // Open on business hours (or two hours before 'now'), inside the grid's own
+  // scroll container — the page itself never scrolls in Week view.
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
-    node.scrollTop = Math.max(0, 8 * HOUR_HEIGHT - 24);
-  }, []);
+
+    const hour = Math.max(8, new Date().getHours() - 2);
+    node.scrollTo({ top: hour * HOUR_HEIGHT, behavior: 'smooth' });
+
+    // Dev guard: an hour row must be exactly 48px, never stretched.
+    if (import.meta.env?.DEV) {
+      const column = node.querySelector('.cal-col') as HTMLElement | null;
+      const measured = column ? column.clientHeight / 24 : 0;
+      console.assert(measured === HOUR_HEIGHT, 'week row height', measured);
+    }
+  }, [days]);
 
   const slotFromClick = (event: React.MouseEvent<HTMLDivElement>, day: Date): number => {
     const rect = event.currentTarget.getBoundingClientRect();
