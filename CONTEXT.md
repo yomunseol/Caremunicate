@@ -36,9 +36,13 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
   role**: a doctor account is on the `doctor` plan, a department on
   `department`, a hospital on `hospital`.
 - A role NEVER displays the other family's tiers.
-- **Writes go through the `set_own_plan(plan)` RPC only** — never a direct
-  client write. After the call the client re-reads `profiles.plan`, so the badge
-  updates without a reload.
+- **Writes:** patient tiers use a plain
+  `from('profiles').update({ plan }).eq('user_id', id)`; provider tiers use
+  `rpc('set_own_plan', { p_plan })` — the argument key is **`p_plan`**, never
+  `plan`. Either way the client re-reads `profiles.plan`, so the badge updates
+  without a reload.
+- Legacy ids (`starter`, `independent-doctor`, `practice`, `organization`) alias
+  onto the provider family (`LEGACY_PLAN_ALIASES`).
 - Signup lands providers on their role's plan and patients on `basic`.
 - The badge is driven by `profiles.plan`, read live from the row. Plan and
   certification are separate concepts and never share a card or a sentence.
@@ -78,6 +82,61 @@ tiles. Meet skin + Zoom muscles for the call UI.
 max / personal)` — maintained in Supabase, not in this repo ·
 `appointments` · `availability` · `emergency_alerts` · bucket
 `verification-docs` (private).
+
+## Booking & appointments — the request flow
+
+- Booking is a **request**, never a room: `rpc('request_appointment', {
+  p_host_id, p_start_at, p_duration_min, p_note })`. No room exists until the
+  host approves, so the success panel shows no code.
+- Host approval: `generateWordCode()` then `rpc('respond_appointment', {
+  p_appointment_id, p_approve: true, p_code })`, retrying up to 10× on `23505`
+  with a FRESH code. Decline is the same call with `p_approve: false`.
+- **The owner column may be `host_id` or `provider_id`** — the client tolerates
+  both; a schema error (42703/42P10/PGRST204) is the only thing that retries.
+- `room_id`/`room_code` are optional. `hasRoom()` gates on both; `canJoin()`
+  requires status `scheduled|confirmed` + a real room + the T−10min window.
+- **There is no rendered `end_at`.** A range is computed:
+  `endAt(appt) = start_at + (duration_min ?? 30)`.
+- Calendar views are **Week / Month / Schedule only** (the Day view was
+  deleted). Week owns the viewport — body scroll locked, one internal scroller,
+  48px rows, sticky 40px header. Month cells are a fixed 112px.
+
+## Notifications
+
+- `notifications(id, user_id, type, payload jsonb, read, created_at)`; payload
+  carries `ref_id` (legacy `appointment_id`), `patient_id`, `start_at`, `code`.
+- Types are exactly `appointment_requested`, `appointment_approved`,
+  `appointment_declined`, `appointment_cancelled`, `call_missed`, `system`. An
+  unknown type warns in dev and renders a neutral row — never blank.
+- The bell sits in the header nav **between the language pill and the Calls
+  pill**. Approve/Decline show only when the current user is the **host**,
+  resolved from the appointment by `ref_id` — never from profile role or a
+  payload flag.
+- Requester names come from `appointment.patient_id → profiles` (username, else
+  email prefix). `Patient` is the fallback for a failed lookup; the word
+  `Participant` never renders.
+- Realtime: a `postgres_changes` INSERT subscription filtered to the user bumps
+  the badge; the unread count is a `count` query on mount.
+
+## Time
+
+- Everything goes through `src/lib/time.ts`. `parseDate(value, tag)` returns
+  null (never throws) and warns once per tag; `fmtTime`/`fmtDate`/`fmtDateTime`
+  return `'—'` **for display only** and always use `hourCycle: 'h23'`.
+- `slotDate(dateStr, 'HH:MM')` is the only way to build a slot — never
+  `new Date('09:00')`, which is an Invalid Date.
+- A missing `{{var}}` renders as an empty string. **Never interpolate `'—'`
+  into a sentence** — a visible dash in interpolated copy is a bug.
+
+## Overlays, toasts, errors
+
+- **One toast container**: fixed top-centre below the header, z-index 3500,
+  pointer-events-none, portaled to `<body>`. Nothing renders a toast inline.
+- **Any fixed overlay is portaled to `<body>`.** `.panel` carries an animation
+  transform, so it is a containing block for `position: fixed`; an un-portaled
+  dialog is trapped inside its card.
+- Every route is wrapped in the `ErrorBoundary` (mint card, raw message, dev
+  component stack, Reload).
 
 ## NEVER
 
