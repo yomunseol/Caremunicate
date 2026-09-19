@@ -5,7 +5,6 @@ import { isProvider } from '../lib/roles';
 import {
   buildIcs,
   downloadIcs,
-  formatDayLong,
   formatDayShort,
   formatMonth,
   loadAppointments,
@@ -48,6 +47,19 @@ import AvailabilityEditor from './AvailabilityEditor';
 
 type Side = 'patient' | 'provider';
 
+/** Last view per user, so the choice survives a reload. */
+const VIEW_STORAGE_PREFIX = 'caremunicate:calendar:view:';
+
+const readStoredView = (userId: string | undefined): CalendarView | null => {
+  if (!userId || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(`${VIEW_STORAGE_PREFIX}${userId}`);
+    return raw === 'week' || raw === 'month' || raw === 'schedule' ? raw : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function CalendarPage() {
   const { t, tString, locale } = useLang();
   const { notify } = useToast();
@@ -79,13 +91,24 @@ export default function CalendarPage() {
       if (cancelled) return;
       const next = String((data as { role?: string } | null)?.role ?? user.user_metadata?.role ?? '');
       setRole(next);
-      // Providers open on the week grid; patients on the schedule list.
-      setView(isProvider(next) ? 'week' : 'schedule');
+      // The stored choice wins; otherwise the role default — providers open on
+      // the week grid, patients on the schedule list.
+      setView(readStoredView(user.id) ?? (isProvider(next) ? 'week' : 'schedule'));
     })();
     return () => {
       cancelled = true;
     };
   }, [user?.id, user?.user_metadata?.role]);
+
+  // Persist the active view per user.
+  useEffect(() => {
+    if (!user?.id) return;
+    try {
+      window.localStorage.setItem(`${VIEW_STORAGE_PREFIX}${user.id}`, view);
+    } catch {
+      // Best-effort; the in-memory view still applies.
+    }
+  }, [view, user?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,10 +243,9 @@ export default function CalendarPage() {
   };
 
   const step = (direction: number) => {
-    if (view === 'month') setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1));
-    else if (view === 'week') setCursor(addDays(cursor, direction * 7));
-    else if (view === 'day') setCursor(addDays(cursor, direction));
-    else setCursor(addDays(cursor, direction * 7));
+    // week = ±7 days; month and schedule = ±1 month.
+    if (view === 'week') setCursor(addDays(cursor, direction * 7));
+    else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1));
   };
 
   const weekDays = useMemo(() => {
@@ -235,7 +257,6 @@ export default function CalendarPage() {
   }, [cursor, locale]);
 
   const rangeLabel = useMemo(() => {
-    if (view === 'day') return formatDayLong(cursor, locale);
     if (view === 'week') {
       const first = weekDays[0];
       const last = weekDays[6];
@@ -245,11 +266,6 @@ export default function CalendarPage() {
     }
     return formatMonth(cursor, locale);
   }, [view, cursor, weekDays, locale]);
-
-  const dayAppointments = useMemo(
-    () => appointments.filter((a) => localDayKey(new Date(a.start_at)) === localDayKey(cursor)),
-    [appointments, cursor],
-  );
 
   const counterpart = (appointment: Appointment) => {
     const person = counterpartFor(appointment);
@@ -263,7 +279,7 @@ export default function CalendarPage() {
           cursor={cursor}
           onPickDay={(day) => {
             setCursor(day);
-            setView(side === 'provider' ? 'day' : 'schedule');
+            setView(side === 'provider' ? 'week' : 'schedule');
           }}
           onMonth={(direction) =>
             setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1))
@@ -307,17 +323,6 @@ export default function CalendarPage() {
             />
           ) : null}
 
-          {view === 'day' ? (
-            <CalendarWeekView
-              days={[cursor]}
-              appointments={dayAppointments}
-              titleFor={titleFor}
-              statusOf={(appointment) => effectiveStatus(appointment)}
-              onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
-              onSlotClick={onSlotClick}
-            />
-          ) : null}
-
           {view === 'month' ? (
             <CalendarMonthView
               cursor={cursor}
@@ -325,7 +330,8 @@ export default function CalendarPage() {
               titleFor={titleFor}
               onPickDay={(day) => {
                 setCursor(day);
-                setView('day');
+                // A month cell opens that day inside the week grid.
+                setView('week');
               }}
               onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
             />

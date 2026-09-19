@@ -7,12 +7,12 @@ import { useLang } from '../i18n';
 // it reads "September 2026" in en and "2026년 9월" in ko with no lookup table.
 // ---------------------------------------------------------------------------
 
-export type CalendarView = 'day' | 'week' | 'month' | 'schedule';
+/** Three views only — the Day view is gone. */
+export type CalendarView = 'week' | 'month' | 'schedule';
 
-export const VIEWS: CalendarView[] = ['day', 'week', 'month', 'schedule'];
+export const VIEWS: CalendarView[] = ['week', 'month', 'schedule'];
 
 const VIEW_LABEL: Record<CalendarView, string> = {
-  day: 'cal.day',
   week: 'cal.week',
   month: 'cal.month',
   schedule: 'cal.schedule',
@@ -74,7 +74,7 @@ export default function CalendarToolbar({
         </button>
       ) : null}
 
-      {/* Segmented control: Day / Week / Month / Schedule — no duplicate tab. */}
+      {/* Segmented control: Week / Month / Schedule — no duplicate tab. */}
       <div className="cal-segmented" role="tablist" aria-label={t('cal.calendar')}>
         {VIEWS.map((option) => (
           <button
