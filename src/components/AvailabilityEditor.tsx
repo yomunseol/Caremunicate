@@ -1,64 +1,62 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import {
-  loadAvailability,
-  saveAvailability,
-  SLOT_CHOICES,
-  weekStartsOn,
-  type Availability,
-} from '../lib/appointments';
+import { loadAvailability, weekStartsOn, weekdayName } from '../lib/appointments';
+import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // Weekly availability editor (provider).
 //
-// One row per weekday: an on/off toggle, a start and end time, plus a shared
-// slot length and buffer. Saving upserts the enabled days and deletes the
-// disabled ones.
+// Times are RAW 'HH:MM' STRINGS straight from <input type="time">. They are
+// written to a `time` column and read back verbatim, so the displayed value is
+// the stored value: 17:00 renders as 17:00, never 05:00. There are no Date
+// objects and no timezone conversion in this component.
+//
+// Save is plain table writes — NO RPC:
+//   • enabled weekdays  -> upsert on (host_id, weekday, start_time)
+//   • disabled weekdays -> delete
 // ---------------------------------------------------------------------------
 
-type Row = { enabled: boolean; start: string; end: string; slot: number; buffer: number };
+/** Fixed for now: the editor's state carries only on/off and the two times. */
+const SLOT_MIN = 30;
+const BUFFER_MIN = 0;
 
-const DEFAULT_ROW: Row = { enabled: false, start: '09:00', end: '17:00', slot: 30, buffer: 0 };
+type Row = { weekday: number; enabled: boolean; start: string; end: string };
 
-const initialRows = (): Record<number, Row> => {
-  const rows: Record<number, Row> = {};
-  for (let day = 0; day < 7; day += 1) {
-    // Weekdays default on, weekend off — a sensible starting point, not a rule.
-    rows[day] = {
-      ...DEFAULT_ROW,
-      enabled: day >= 1 && day <= 5,
-      slot: 30,
-    };
-  }
-  return rows;
-};
+type AvailabilityEditorProps = { providerId: string };
 
-/** 'HH:MM:SS' from Postgres -> 'HH:MM' for <input type="time">. */
+const initialRows = (): Row[] =>
+  Array.from({ length: 7 }, (_, weekday) => ({
+    weekday,
+    enabled: false,
+    start: '09:00',
+    end: '17:00',
+  }));
+
+/** 'HH:MM:SS' from Postgres -> 'HH:MM'. A string slice, not a parse. */
 const toInputTime = (value: string): string => String(value ?? '').slice(0, 5);
 
-export default function AvailabilityEditor({ providerId }: { providerId: string }) {
+export default function AvailabilityEditor({ providerId }: AvailabilityEditorProps) {
   const { t, locale } = useLang();
-  const [rows, setRows] = useState<Record<number, Row>>(initialRows);
+  const [rows, setRows] = useState<Row[]>(initialRows);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [rangeErrorDay, setRangeErrorDay] = useState<number | null>(null);
-  const [saveError, setSaveError] = useState('');
+  const [rangeErrorWeekday, setRangeErrorWeekday] = useState<number | null>(null);
+  const [error, setError] = useState('');
 
-  // Reads the stored rows verbatim: the values are plain wall-clock strings, so
-  // 09:00 loaded here is 09:00 in the input and 09:00 in the DB — no conversion.
+  // Read the stored rows back into the same raw strings they were saved as.
   const load = useCallback(async () => {
     if (!providerId) return;
-    const rules = await loadAvailability(providerId);
+    const stored = await loadAvailability(providerId);
 
     const next = initialRows();
-    for (let day = 0; day < 7; day += 1) next[day] = { ...DEFAULT_ROW, enabled: false };
-    for (const rule of rules) {
-      next[Number(rule.weekday)] = {
+    for (const rule of stored) {
+      const index = next.findIndex((row) => row.weekday === Number(rule.weekday));
+      if (index < 0) continue;
+      next[index] = {
+        weekday: Number(rule.weekday),
         enabled: true,
         start: toInputTime(rule.start_time),
         end: toInputTime(rule.end_time),
-        slot: Number(rule.slot_minutes) || 30,
-        buffer: Number(rule.buffer_minutes) || 0,
       };
     }
     setRows(next);
@@ -68,92 +66,106 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
     void load();
   }, [load]);
 
-  const update = (day: number, patch: Partial<Row>) => {
-    setRangeErrorDay(null);
-    setSaveError('');
-    setRows((previous) => ({ ...previous, [day]: { ...previous[day], ...patch } }));
+  const patch = (weekday: number, changes: Partial<Row>) => {
+    setRangeErrorWeekday(null);
+    setError('');
+    setRows((previous) =>
+      previous.map((row) => (row.weekday === weekday ? { ...row, ...changes } : row)),
+    );
   };
 
   const save = async () => {
-    setSaveError('');
+    setError('');
     setSaved(false);
 
-    const enabled = Object.entries(rows).filter(([, row]) => row.enabled);
+    const enabled = rows.filter((row) => row.enabled);
 
-    // Every checked day must have end > start. '<input type="time">' yields a
-    // zero-padded 'HH:MM', so a plain string compare is a correct time compare.
-    const invalid = enabled.find(([, row]) => !row.start || !row.end || row.end <= row.start);
+    // end must be after start on every enabled weekday. 'HH:MM' strings compare
+    // correctly because <input type="time"> zero-pads.
+    const invalid = enabled.find((row) => row.end <= row.start);
     if (invalid) {
-      setRangeErrorDay(Number(invalid[0]));
+      setRangeErrorWeekday(invalid.weekday);
       return;
     }
-    setRangeErrorDay(null);
+    setRangeErrorWeekday(null);
 
     setBusy(true);
+    try {
+      if (!providerId) throw new Error('no provider');
 
-    const rules: Availability[] = enabled.map(([day, row]) => ({
-      id: '',
-      provider_id: providerId,
-      weekday: Number(day),
-      start_time: `${row.start}:00`,
-      end_time: `${row.end}:00`,
-      slot_minutes: row.slot,
-      buffer_minutes: row.buffer,
-    }));
+      const off = rows.filter((row) => !row.enabled).map((row) => row.weekday);
 
-    const result = await saveAvailability(providerId, rules);
+      if (enabled.length > 0) {
+        const payload = enabled.map((row) => ({
+          host_id: providerId,
+          weekday: row.weekday,
+          start_time: row.start,
+          end_time: row.end,
+          slot_min: SLOT_MIN,
+          buffer_min: BUFFER_MIN,
+        }));
 
-    if (!result.ok) {
-      // Self-reporting: the raw code, never a softened reason.
-      setSaveError(result.code);
-    } else {
+        const { error: upsertError } = await supabase
+          .from('availability')
+          .upsert(payload, { onConflict: 'host_id,weekday,start_time' });
+        if (upsertError) throw upsertError;
+      }
+
+      if (off.length > 0) {
+        const { error: deleteError } = await supabase
+          .from('availability')
+          .delete()
+          .eq('host_id', providerId)
+          .in('weekday', off);
+        if (deleteError) throw deleteError;
+      }
+
+      // Refetch: the slot picker recomputes from what was just stored.
       await load();
       setSaved(true);
       window.setTimeout(() => setSaved(false), 3000);
+    } catch (caught) {
+      // Self-reporting: the raw code, never a softened reason.
+      console.error('CALENDAR ERROR:', caught);
+      const failure = caught as { code?: string; message?: string } | null;
+      setError(failure?.code ?? failure?.message ?? String(caught));
+    } finally {
+      setBusy(false);
     }
-
-    setBusy(false);
   };
 
-  // Render the week from the locale's first day so the grid matches the calendar.
+  // Render the week from the locale's first day, matching the calendar.
   const first = weekStartsOn(locale);
   const ordered = Array.from({ length: 7 }, (_, index) => (first + index) % 7);
-
-  // A fixed week gives Intl stable weekday names, in the right order.
-  const weekdayName = (weekday: number): string => {
-    const sunday = new Date(2024, 0, 7); // a Sunday
-    const date = new Date(sunday);
-    date.setDate(sunday.getDate() + weekday);
-    return new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(date);
-  };
 
   return (
     <div className="panel" style={styles.panel}>
       <div className="eyebrow">{t('cal.availability')}</div>
 
       <ul style={styles.list}>
-        {ordered.map((day) => {
-          const row = rows[day];
+        {ordered.map((weekday) => {
+          const row = rows[weekday];
+          const name = weekdayName(weekday, locale);
           return (
-            <li key={day} style={styles.row}>
+            <li key={weekday} style={styles.row}>
               <label style={styles.toggle}>
                 <input
                   type="checkbox"
                   checked={row.enabled}
-                  aria-label={weekdayName(day)}
-                  onChange={(event) => update(day, { enabled: event.target.checked })}
+                  aria-label={name}
+                  onChange={(event) => patch(weekday, { enabled: event.target.checked })}
                 />
-                <span>{weekdayName(day)}</span>
+                <span>{name}</span>
               </label>
 
               <input
                 className="input"
                 type="time"
                 dir="ltr"
-                aria-label={`${weekdayName(day)} start`}
+                aria-label={`${name} start`}
                 disabled={!row.enabled}
                 value={row.start}
-                onChange={(event) => update(day, { start: event.target.value })}
+                onChange={(event) => patch(weekday, { start: event.target.value })}
                 style={styles.time}
               />
               <span aria-hidden="true">–</span>
@@ -161,14 +173,14 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
                 className="input"
                 type="time"
                 dir="ltr"
-                aria-label={`${weekdayName(day)} end`}
+                aria-label={`${name} end`}
                 disabled={!row.enabled}
                 value={row.end}
-                onChange={(event) => update(day, { end: event.target.value })}
+                onChange={(event) => patch(weekday, { end: event.target.value })}
                 style={styles.time}
               />
 
-              {rangeErrorDay === day ? (
+              {rangeErrorWeekday === weekday ? (
                 <span className="field-error" role="alert">{t('cal.invalidTimeRange')}</span>
               ) : null}
             </li>
@@ -176,57 +188,9 @@ export default function AvailabilityEditor({ providerId }: { providerId: string 
         })}
       </ul>
 
-      <div style={styles.options}>
-        <label style={styles.option}>
-          <span>{t('cal.availability')}</span>
-          <select
-            className="input"
-            aria-label="Slot length"
-            value={rows[first].slot}
-            onChange={(event) =>
-              setRows((previous) => {
-                const next = { ...previous };
-                for (const day of Object.keys(next)) {
-                  next[Number(day)] = { ...next[Number(day)], slot: Number(event.target.value) };
-                }
-                return next;
-              })
-            }
-          >
-            {SLOT_CHOICES.map((minutes) => (
-              <option key={minutes} value={minutes}>
-                {minutes} min
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label style={styles.option}>
-          <span>Buffer</span>
-          <input
-            className="input"
-            type="number"
-            min={0}
-            max={120}
-            aria-label="Buffer minutes"
-            value={rows[first].buffer}
-            onChange={(event) =>
-              setRows((previous) => {
-                const next = { ...previous };
-                for (const day of Object.keys(next)) {
-                  next[Number(day)] = { ...next[Number(day)], buffer: Number(event.target.value) };
-                }
-                return next;
-              })
-            }
-            style={styles.buffer}
-          />
-        </label>
-      </div>
-
-      {saveError ? (
+      {error ? (
         <span className="field-error" role="alert">
-          <span className="error-detail">{saveError}</span>
+          <span className="error-detail">{error}</span>
         </span>
       ) : null}
 
@@ -249,7 +213,4 @@ const styles: Record<string, CSSProperties> = {
   row: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
   toggle: { display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: '9rem', fontSize: '0.84rem' },
   time: { width: '7rem', minHeight: 40 },
-  options: { display: 'flex', gap: '0.8rem', flexWrap: 'wrap' },
-  option: { display: 'grid', gap: '0.3rem', fontSize: '0.78rem', color: 'var(--text-muted, #557b76)', fontWeight: 700 },
-  buffer: { width: '5.5rem', minHeight: 40 },
 };

@@ -630,19 +630,31 @@ function App() {
 
   // Pricing CTAs.
   //  - Logged out: go to sign-up with the role tile (and the plan) preselected.
-  //  - Logged in:  write ONLY through the set_own_plan RPC, then re-read the
-  //                profile so the badge updates with no reload.
+  //  - Logged in:  patient tiers write profiles.plan directly; provider tiers
+  //                go through the set_own_plan RPC (arg key p_plan). Either way
+  //                the profile is re-read so the badge updates with no reload.
   //  - A plan whose role differs from the account's is an account conversion:
   //                role and plan change together, so confirm first.
   const applyPlan = async (plan: PlanId, option: Plan) => {
+    if (!currentUser) return;
     setPendingPlan(plan);
     try {
-      const { error } = await supabase.rpc('set_own_plan', { plan });
+      if (isProviderPlan(plan)) {
+        // Provider tier/role switch — the RPC's argument key is p_plan, never
+        // `plan`.
+        const { error } = await supabase.rpc('set_own_plan', { p_plan: plan });
+        if (error) throw error;
+      } else {
+        // Patient tier — a plain profiles update, no RPC.
+        const { error } = await supabase
+          .from('profiles')
+          .update({ plan: plan })
+          .eq('user_id', currentUser.id);
+        if (error) throw error;
+      }
 
-      console.log('set_own_plan result:', { plan, error });
-      if (error) throw error;
-
-      // Re-read profiles.plan — the badge is driven by that row.
+      // Re-read profiles.plan: drives the header badge AND the pricing
+      // CURRENT PLAN chip.
       setProfileRefreshKey((key) => key + 1);
       setToast({ message: tString('auth.toast.planActivated', { name: option.name }), type: 'success' });
     } catch (error) {
