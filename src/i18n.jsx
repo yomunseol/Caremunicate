@@ -562,6 +562,13 @@ const translations = {
     'errors.somethingWrong': 'Something went wrong',
     'errors.reload': 'Reload',
     'cal.awaitingApproval': 'Awaiting approval',
+    'notif.notifFrom': 'From',
+    'notif.notifTo': 'To',
+    'notif.notifBodyRequest': '{{name}} would like to book a {{duration}}-minute consultation on {{datetime}}.',
+    'notif.notifBodyApproved': 'Your consultation on {{datetime}} is confirmed. Join code: {{code}}.',
+    'notif.notifBodyDeclined': 'The consultation on {{datetime}} was declined. Please choose another time.',
+    'notif.viewInCalendar': 'View in calendar',
+    'notif.threadTitle': 'History',
   },
 
   fr: {
@@ -1090,6 +1097,13 @@ const translations = {
     'errors.somethingWrong': 'Une erreur est survenue',
     'errors.reload': 'Recharger',
     'cal.awaitingApproval': 'En attente d\'approbation',
+    'notif.notifFrom': 'De',
+    'notif.notifTo': 'À',
+    'notif.notifBodyRequest': '{{name}} souhaite réserver une consultation de {{duration}} minutes le {{datetime}}.',
+    'notif.notifBodyApproved': 'Votre consultation du {{datetime}} est confirmée. Code : {{code}}.',
+    'notif.notifBodyDeclined': 'La consultation du {{datetime}} a été refusée. Veuillez choisir un autre créneau.',
+    'notif.viewInCalendar': 'Voir dans le calendrier',
+    'notif.threadTitle': 'Historique',
   },
 
   es: {
@@ -1613,6 +1627,13 @@ const translations = {
     'errors.somethingWrong': 'Algo salió mal',
     'errors.reload': 'Recargar',
     'cal.awaitingApproval': 'Pendiente de aprobación',
+    'notif.notifFrom': 'De',
+    'notif.notifTo': 'Para',
+    'notif.notifBodyRequest': '{{name}} desea reservar una consulta de {{duration}} minutos el {{datetime}}.',
+    'notif.notifBodyApproved': 'Tu consulta del {{datetime}} está confirmada. Código: {{code}}.',
+    'notif.notifBodyDeclined': 'La consulta del {{datetime}} fue rechazada. Elige otro horario.',
+    'notif.viewInCalendar': 'Ver en el calendario',
+    'notif.threadTitle': 'Historial',
   },
 
   ko: {
@@ -2121,6 +2142,13 @@ const translations = {
     'errors.somethingWrong': '문제가 발생했습니다',
     'errors.reload': '새로고침',
     'cal.awaitingApproval': '승인 대기 중',
+    'notif.notifFrom': '보낸 사람',
+    'notif.notifTo': '받는 사람',
+    'notif.notifBodyRequest': '{{name}}님이 {{datetime}}에 {{duration}}분 진료를 예약하길 원합니다.',
+    'notif.notifBodyApproved': '{{datetime}} 진료가 확정되었습니다. 참여 코드: {{code}}.',
+    'notif.notifBodyDeclined': '{{datetime}} 진료가 거절되었습니다. 다른 시간을 선택해 주세요.',
+    'notif.viewInCalendar': '캘린더에서 보기',
+    'notif.threadTitle': '기록',
   },
 
   zh: {
@@ -2622,6 +2650,13 @@ const translations = {
     'errors.somethingWrong': '出错了',
     'errors.reload': '重新加载',
     'cal.awaitingApproval': '等待批准',
+    'notif.notifFrom': '来自',
+    'notif.notifTo': '收件人',
+    'notif.notifBodyRequest': '{{name}} 希望在 {{datetime}} 预约 {{duration}} 分钟的问诊。',
+    'notif.notifBodyApproved': '您 {{datetime}} 的问诊已确认。加入代码：{{code}}.',
+    'notif.notifBodyDeclined': '{{datetime}} 的问诊已被拒绝，请另选时间。',
+    'notif.viewInCalendar': '在日历中查看',
+    'notif.threadTitle': '记录',
   },
 
   pt: {
@@ -3144,6 +3179,13 @@ const translations = {
     'errors.somethingWrong': 'Algo deu errado',
     'errors.reload': 'Recarregar',
     'cal.awaitingApproval': 'Aguardando aprovação',
+    'notif.notifFrom': 'De',
+    'notif.notifTo': 'Para',
+    'notif.notifBodyRequest': '{{name}} deseja agendar uma consulta de {{duration}} minutos em {{datetime}}.',
+    'notif.notifBodyApproved': 'Sua consulta em {{datetime}} está confirmada. Código: {{code}}.',
+    'notif.notifBodyDeclined': 'A consulta de {{datetime}} foi recusada. Escolha outro horário.',
+    'notif.viewInCalendar': 'Ver no calendário',
+    'notif.threadTitle': 'Histórico',
   },
 
   de: {
@@ -3670,6 +3712,13 @@ const translations = {
     'errors.somethingWrong': 'Etwas ist schiefgelaufen',
     'errors.reload': 'Neu laden',
     'cal.awaitingApproval': 'Wartet auf Genehmigung',
+    'notif.notifFrom': 'Von',
+    'notif.notifTo': 'An',
+    'notif.notifBodyRequest': '{{name}} möchte eine {{duration}}-minütige Beratung am {{datetime}} buchen.',
+    'notif.notifBodyApproved': 'Deine Beratung am {{datetime}} ist bestätigt. Code: {{code}}.',
+    'notif.notifBodyDeclined': 'Die Beratung am {{datetime}} wurde abgelehnt. Bitte wähle eine andere Zeit.',
+    'notif.viewInCalendar': 'Im Kalender ansehen',
+    'notif.threadTitle': 'Verlauf',
   },
 
   it: {
@@ -4192,6 +4241,13 @@ const translations = {
     'errors.somethingWrong': 'Qualcosa è andato storto',
     'errors.reload': 'Ricarica',
     'cal.awaitingApproval': 'In attesa di approvazione',
+    'notif.notifFrom': 'Da',
+    'notif.notifTo': 'A',
+    'notif.notifBodyRequest': '{{name}} desidera prenotare una consulenza di {{duration}} minuti il {{datetime}}.',
+    'notif.notifBodyApproved': 'La tua consulenza del {{datetime}} è confermata. Codice: {{code}}.',
+    'notif.notifBodyDeclined': 'La consulenza del {{datetime}} è stata rifiutata. Scegli un altro orario.',
+    'notif.viewInCalendar': 'Vedi nel calendario',
+    'notif.threadTitle': 'Cronologia',
   },
 
   ar: {
@@ -4706,6 +4762,13 @@ const translations = {
     'errors.somethingWrong': 'حدث خطأ ما',
     'errors.reload': 'إعادة التحميل',
     'cal.awaitingApproval': 'بانتظار الموافقة',
+    'notif.notifFrom': 'من',
+    'notif.notifTo': 'إلى',
+    'notif.notifBodyRequest': 'يود {{name}} حجز استشارة مدتها {{duration}} دقيقة في {{datetime}}.',
+    'notif.notifBodyApproved': 'تم تأكيد استشارتك في {{datetime}}. رمز الانضمام: {{code}}.',
+    'notif.notifBodyDeclined': 'تم رفض الاستشارة في {{datetime}}. يرجى اختيار وقت آخر.',
+    'notif.viewInCalendar': 'عرض في التقويم',
+    'notif.threadTitle': 'السجل',
   },
 
   he: {
@@ -5214,6 +5277,13 @@ const translations = {
     'errors.somethingWrong': 'משהו השתבש',
     'errors.reload': 'רענון',
     'cal.awaitingApproval': 'ממתין לאישור',
+    'notif.notifFrom': 'מאת',
+    'notif.notifTo': 'אל',
+    'notif.notifBodyRequest': '{{name}} מבקש לקבוע פגישה של {{duration}} דקות ב־{{datetime}}.',
+    'notif.notifBodyApproved': 'הפגישה ב־{{datetime}} אושרה. קוד: {{code}}.',
+    'notif.notifBodyDeclined': 'הפגישה ב־{{datetime}} נדחתה. נא לבחור מועד אחר.',
+    'notif.viewInCalendar': 'הצגה בלוח',
+    'notif.threadTitle': 'היסטוריה',
   },
 };
 

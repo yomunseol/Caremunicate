@@ -99,7 +99,9 @@ const relativeTime = (iso: string, locale: string): string => {
  */
 const absoluteTime = (value: unknown, locale: string): string => {
   const date = parseDate(typeof value === 'string' ? value : null, 'NotificationBell');
-  if (!date) return '—';
+  // Empty, NOT '—': these values are interpolated into a sentence, and a
+  // visible dash in production is a bug. A missing var must vanish.
+  if (!date) return '';
   try {
     return new Intl.DateTimeFormat(locale, {
       weekday: 'short',
@@ -126,7 +128,7 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
   // Per pending request: the appointment id, the requester's REAL name, and
   // whether this user is the host — only the host may triage.
   const [requestInfo, setRequestInfo] = useState<
-    Record<string, { appointmentId: string; name: string; isHost: boolean }>
+    Record<string, { appointmentId: string; name: string; isHost: boolean; startAt: string | null }>
   >({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
@@ -171,6 +173,8 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
             row.id,
             {
               appointmentId: appointment?.id ?? refId,
+              // The authoritative time, straight off the appointment row.
+              startAt: appointment?.start_at ?? null,
               // 'Patient' ONLY because the lookup could not tell us a name.
               name: name ?? 'Patient',
               // The host is the appointment owner, under EITHER column name.
@@ -275,7 +279,8 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
         // The real name from the appointment → profile lookup. Never the word
         // 'Participant'; 'Patient' only when the lookup could not tell us.
         name: requestInfo[row.id]?.name ?? 'Patient',
-        time: absoluteTime(payload.start_at, locale),
+        // Prefer the appointment's own start_at over the payload copy.
+        time: absoluteTime(requestInfo[row.id]?.startAt ?? payload.start_at, locale),
       });
     }
     if (row.type === 'appointment_approved') {
