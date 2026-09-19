@@ -116,12 +116,33 @@ const OVERPASS_FALLBACK_MIRROR = 'https://overpass-api.de/api/interpreter';
 /** Keyless CORS relay used ONLY as the last resort (route missing). */
 const ALLORIGINS_RAW = 'https://api.allorigins.win/raw?url=';
 
-type CodedError = Error & { code?: string };
+type CodedError = Error & { code?: string; detail?: string };
 
-const overpassError = (code: string, message: string): CodedError => {
-  const error = new Error(message) as CodedError;
+const overpassError = (code: string, detail: string, message?: string): CodedError => {
+  const error = new Error(message ?? detail) as CodedError;
   error.code = code;
+  error.detail = detail;
   return error;
+};
+
+/** 502 body: the per-mirror failure reasons. */
+const readReasons = async (response: Response): Promise<string[]> => {
+  try {
+    const body = (await response.json()) as { reasons?: unknown };
+    return Array.isArray(body?.reasons) ? body.reasons.map(String) : [];
+  } catch {
+    return [];
+  }
+};
+
+/** 500 body: the crash detail. */
+const readDetail = async (response: Response): Promise<string> => {
+  try {
+    const body = (await response.json()) as { detail?: unknown; error?: unknown };
+    return String(body?.detail ?? body?.error ?? '');
+  } catch {
+    return '';
+  }
 };
 
 /**
@@ -164,10 +185,20 @@ const fetchOverpass = async (
     return (await relayed.json()) as { elements?: OverpassElement[] };
   }
 
-  throw overpassError(
-    response.status === 502 ? '502' : String(response.status),
-    `${OVERPASS_PROXY} responded ${response.status}`,
-  );
+  if (response.status === 502) {
+    // "all mirrors failed" — surface WHICH mirrors failed and how, never a
+    // bare status.
+    const reasons = await readReasons(response);
+    throw overpassError('502', reasons.join(', ') || 'unknown');
+  }
+
+  if (response.status === 500) {
+    // A crash inside the route: surface its detail.
+    const detail = await readDetail(response);
+    throw overpassError('500', detail || 'route crash');
+  }
+
+  throw overpassError(String(response.status), `${OVERPASS_PROXY} responded ${response.status}`);
 };
 
 /** Cache key: `cp:{lat2},{lon2},{filters}` — centre rounded to 2 decimals. */
@@ -369,7 +400,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         setSelectedId(null);
         setSearched(true);
       } catch (caught) {
-        const code = (caught as { code?: string })?.code;
+        const code = (caught as CodedError)?.code;
+        const detail = (caught as CodedError)?.detail ?? '';
 
         if ((caught as Error)?.name === 'AbortError') {
           // Only a timeout is worth surfacing; a superseded request or an
@@ -382,16 +414,19 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         }
 
         console.error('OVERPASS_ERROR:', caught);
-        // Always name the raw cause: route missing, every mirror down, or the
-        // upstream status.
+        // Always name the raw cause: the missing route, the per-mirror reasons
+        // from a 502, or the route's crash detail from a 500 — never a bare
+        // status.
         const reason =
           code === '404'
             ? '404 route missing'
             : code === '502'
-              ? '502 mirrors'
-              : code
-                ? `${code}`
-                : '';
+              ? `mirrors: ${detail || 'unknown'}`
+              : code === '500'
+                ? detail || 'route crash'
+                : code
+                  ? code
+                  : '';
         setError(`${t('places.searchFailed')}${reason ? ` (${reason})` : ''}`);
         setResults([]);
       } finally {

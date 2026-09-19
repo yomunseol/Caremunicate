@@ -25,21 +25,21 @@ const overpassDevProxy = (): Plugin => ({
       };
 
       if (!query.trim()) {
-        send(400, { error: 'Missing "data" query parameter' });
+        send(400, { error: 'missing data' });
         return;
       }
 
       void proxyOverpass(query)
         .then((result) => {
           if ('error' in result) {
-            send(result.status, { error: result.error, detail: result.detail });
+            send(result.status, { error: result.error, reasons: result.reasons });
             return;
           }
           send(200, result.body, true);
         })
         .catch((error: unknown) => {
           console.error('OVERPASS_ERROR:', error);
-          send(502, { error: 'Overpass proxy failed', detail: String(error) });
+          send(500, { error: 'route crash', detail: String(error) });
         });
     });
   },

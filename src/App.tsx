@@ -647,10 +647,11 @@ function App() {
       setToast({ message: tString('auth.toast.planActivated', { name: option.name }), type: 'success' });
     } catch (error) {
       console.error('Plan update failed:', error);
-      setToast({
-        message: error instanceof Error ? error.message : t('auth.toast.planError'),
-        type: 'error',
-      });
+      // The raw reason, always: the PostgREST code when there is one, else the
+      // message. Never a bare "something went wrong".
+      const failure = error as { code?: string; message?: string } | null;
+      const reason = failure?.code ?? failure?.message ?? String(error);
+      setToast({ message: `${t('auth.toast.planError')} (${reason})`, type: 'error' });
     } finally {
       setPendingPlan(null);
     }
@@ -903,6 +904,7 @@ function App() {
               onSelectPlan={(plan) => void selectPlan(plan)}
               currentPlan={currentUser ? currentPlanId : null}
               busyPlan={pendingPlan}
+              viewerFamily={currentUser ? roleFamily : null}
             />
 
             <section className="section">
@@ -1221,6 +1223,7 @@ function App() {
             onSelectPlan={(plan) => void selectPlan(plan)}
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
+            viewerFamily={currentUser ? roleFamily : null}
           />
         )}
       </main>

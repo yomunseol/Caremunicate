@@ -548,6 +548,7 @@ const translations = {
     'plans.convertTitle': 'Change account type and plan?',
     'plans.convertBody': 'Your role becomes {{role}} and your plan becomes {{plan}}. The two change together.',
     'plans.confirmCta': 'Change account type',
+    'plans.patientPlansOnly': 'Patient plans are for patient accounts',
   },
 
   fr: {
@@ -1062,6 +1063,7 @@ const translations = {
     'plans.convertTitle': 'Changer de type de compte et de forfait ?',
     'plans.convertBody': 'Votre rôle devient {{role}} et votre forfait devient {{plan}}. Les deux changent ensemble.',
     'plans.confirmCta': 'Changer de type de compte',
+    'plans.patientPlansOnly': 'Les forfaits patients sont réservés aux comptes patients',
   },
 
   es: {
@@ -1571,6 +1573,7 @@ const translations = {
     'plans.convertTitle': '¿Cambiar el tipo de cuenta y el plan?',
     'plans.convertBody': 'Tu rol pasa a ser {{role}} y tu plan pasa a ser {{plan}}. Ambos cambian juntos.',
     'plans.confirmCta': 'Cambiar tipo de cuenta',
+    'plans.patientPlansOnly': 'Los planes para pacientes son para cuentas de paciente',
   },
 
   ko: {
@@ -2065,6 +2068,7 @@ const translations = {
     'plans.convertTitle': '계정 유형과 요금제를 변경할까요?',
     'plans.convertBody': '역할이 {{role}}(으)로, 요금제가 {{plan}}(으)로 바뀝니다. 두 가지가 함께 변경됩니다.',
     'plans.confirmCta': '계정 유형 변경',
+    'plans.patientPlansOnly': '환자 요금제는 환자 계정 전용입니다',
   },
 
   zh: {
@@ -2552,6 +2556,7 @@ const translations = {
     'plans.convertTitle': '更改账户类型和方案？',
     'plans.convertBody': '您的角色将变为{{role}}，方案将变为{{plan}}。两者会同时更改。',
     'plans.confirmCta': '更改账户类型',
+    'plans.patientPlansOnly': '患者方案仅适用于患者账户',
   },
 
   pt: {
@@ -3060,6 +3065,7 @@ const translations = {
     'plans.convertTitle': 'Alterar o tipo de conta e o plano?',
     'plans.convertBody': 'Seu perfil passa a ser {{role}} e seu plano passa a ser {{plan}}. Os dois mudam juntos.',
     'plans.confirmCta': 'Alterar tipo de conta',
+    'plans.patientPlansOnly': 'Os planos para pacientes são para contas de paciente',
   },
 
   de: {
@@ -3572,6 +3578,7 @@ const translations = {
     'plans.convertTitle': 'Kontotyp und Tarif ändern?',
     'plans.convertBody': 'Ihre Rolle wird {{role}} und Ihr Tarif wird {{plan}}. Beides ändert sich zusammen.',
     'plans.confirmCta': 'Kontotyp ändern',
+    'plans.patientPlansOnly': 'Patiententarife sind für Patienten-Konten',
   },
 
   it: {
@@ -4080,6 +4087,7 @@ const translations = {
     'plans.convertTitle': 'Cambiare tipo di account e piano?',
     'plans.convertBody': 'Il tuo ruolo diventa {{role}} e il tuo piano diventa {{plan}}. I due cambiano insieme.',
     'plans.confirmCta': 'Cambia tipo di account',
+    'plans.patientPlansOnly': 'I piani per pazienti sono per account pazienti',
   },
 
   ar: {
@@ -4580,6 +4588,7 @@ const translations = {
     'plans.convertTitle': 'تغيير نوع الحساب والخطة؟',
     'plans.convertBody': 'سيصبح دورك {{role}} وستصبح خطتك {{plan}}. يتغير الاثنان معًا.',
     'plans.confirmCta': 'تغيير نوع الحساب',
+    'plans.patientPlansOnly': 'خطط المرضى مخصصة لحسابات المرضى',
   },
 
   he: {
@@ -5074,6 +5083,7 @@ const translations = {
     'plans.convertTitle': 'לשנות את סוג החשבון ואת התוכנית?',
     'plans.convertBody': 'התפקיד שלך יהפוך ל-{{role}} והתוכנית שלך תהפוך ל-{{plan}}. השניים משתנים יחד.',
     'plans.confirmCta': 'שינוי סוג החשבון',
+    'plans.patientPlansOnly': 'תוכניות למטופלים מיועדות לחשבונות מטופלים',
   },
 };
 

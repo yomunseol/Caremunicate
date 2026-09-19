@@ -239,13 +239,27 @@ export const loadProviders = async (): Promise<PersonInfo[]> => {
   return ((data ?? []) as Array<Record<string, unknown>>).map(toPerson).filter((p) => p.id);
 };
 
+/** Codes that mean "that column or unique constraint does not exist". */
+const SCHEMA_MISMATCH = new Set(['42703', '42P10', 'PGRST204', 'PGRST100']);
+const schemaMismatch = (code: string | null | undefined): boolean =>
+  SCHEMA_MISMATCH.has(String(code ?? ''));
+
 export const loadAvailability = async (providerId: string): Promise<Availability[]> => {
   if (!providerId) return [];
-  const { data, error } = await supabase
-    .from('availability')
-    .select('*')
-    .eq('provider_id', providerId)
-    .order('weekday', { ascending: true });
+
+  const read = (ownerColumn: 'provider_id' | 'host_id') =>
+    supabase
+      .from('availability')
+      .select('*')
+      .eq(ownerColumn, providerId)
+      .order('weekday', { ascending: true });
+
+  let { data, error } = await read('provider_id');
+
+  // A host_id table (see saveAvailability) would 42703 here; read it that way.
+  if (error && schemaMismatch(error.code)) {
+    ({ data, error } = await read('host_id'));
+  }
 
   if (error) {
     console.error('CALENDAR ERROR:', error.message);
@@ -275,16 +289,18 @@ export const loadAppointments = async (
 export type SaveAvailabilityResult = { ok: true } | { ok: false; code: string };
 
 /**
- * Writes the weekly availability.
+ * Writes the weekly availability — plain table writes, no RPC anywhere.
  *
- *  - Checked weekdays: upsert, updating end / slot / buffer on the existing row.
+ *  - Checked weekdays: upsert on (host_id, weekday, start_time), updating
+ *    end / slot / buffer on the existing row.
  *  - Unchecked weekdays: delete any row that exists for them.
  *
  * `start_time` / `end_time` are raw 'HH:MM:SS' wall-clock strings — the column
  * is `time`, so nothing is converted through a Date or a zone.
  *
- * The conflict target is the table's unique key (provider_id, weekday), so a
- * save replaces that day rather than adding a second row for it.
+ * If the live table still carries the repo migration's column and key
+ * (`provider_id`, unique(provider_id, weekday)), the write retries once with
+ * that rather than failing — the project's usual degrade-on-schema pattern.
  */
 export const saveAvailability = async (
   providerId: string,
@@ -292,9 +308,9 @@ export const saveAvailability = async (
 ): Promise<SaveAvailabilityResult> => {
   if (!providerId) return { ok: false, code: 'no-provider' };
 
-  if (rules.length > 0) {
-    const rows = rules.map((rule) => ({
-      provider_id: providerId,
+  const rowsFor = (ownerColumn: 'host_id' | 'provider_id') =>
+    rules.map((rule) => ({
+      [ownerColumn]: providerId,
       weekday: rule.weekday,
       start_time: rule.start_time,
       end_time: rule.end_time,
@@ -302,13 +318,25 @@ export const saveAvailability = async (
       buffer_minutes: rule.buffer_minutes,
     }));
 
-    const { error } = await supabase
+  if (rules.length > 0) {
+    const primary = await supabase
       .from('availability')
-      .upsert(rows, { onConflict: 'provider_id,weekday' });
+      .upsert(rowsFor('host_id'), { onConflict: 'host_id,weekday,start_time' });
 
-    if (error) {
-      console.error('CALENDAR ERROR:', error.message);
-      return { ok: false, code: error.code ?? error.message };
+    if (primary.error) {
+      console.error('CALENDAR ERROR:', primary.error.message);
+      if (!schemaMismatch(primary.error.code)) {
+        return { ok: false, code: primary.error.code ?? primary.error.message };
+      }
+
+      const retry = await supabase
+        .from('availability')
+        .upsert(rowsFor('provider_id'), { onConflict: 'provider_id,weekday' });
+
+      if (retry.error) {
+        console.error('CALENDAR ERROR:', retry.error.message);
+        return { ok: false, code: retry.error.code ?? retry.error.message };
+      }
     }
   }
 
@@ -317,14 +345,28 @@ export const saveAvailability = async (
   const keep = rules.map((rule) => rule.weekday);
   const remove = [0, 1, 2, 3, 4, 5, 6].filter((weekday) => !keep.includes(weekday));
   if (remove.length > 0) {
-    const { error: deleteError } = await supabase
+    const primary = await supabase
       .from('availability')
       .delete()
-      .eq('provider_id', providerId)
+      .eq('host_id', providerId)
       .in('weekday', remove);
-    if (deleteError) {
-      console.error('CALENDAR ERROR:', deleteError.message);
-      return { ok: false, code: deleteError.code ?? deleteError.message };
+
+    if (primary.error) {
+      console.error('CALENDAR ERROR:', primary.error.message);
+      if (!schemaMismatch(primary.error.code)) {
+        return { ok: false, code: primary.error.code ?? primary.error.message };
+      }
+
+      const retry = await supabase
+        .from('availability')
+        .delete()
+        .eq('provider_id', providerId)
+        .in('weekday', remove);
+
+      if (retry.error) {
+        console.error('CALENDAR ERROR:', retry.error.message);
+        return { ok: false, code: retry.error.code ?? retry.error.message };
+      }
     }
   }
 

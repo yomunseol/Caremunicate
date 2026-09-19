@@ -1,10 +1,9 @@
 // ---------------------------------------------------------------------------
 // Overpass proxy core — SERVER-SIDE ONLY.
 //
-// The browser never talks to an Overpass mirror. It calls the same-origin
-// /api/overpass route, which runs this: mirrors are tried in order with a 15s
-// AbortController each, a descriptive User-Agent attached, and the JSON result
-// cached at the edge (Cache-Control: public, s-maxage=600).
+// Mirrors are tried IN ORDER, each with its own 15s AbortController, and the
+// reason for every failure is collected. On total failure the caller answers
+// 502 with that `reasons` array; a thrown crash inside the route answers 500.
 //
 // Consumed by both runtimes so the mirror order has exactly one definition:
 //   • api/overpass.ts  — the Vercel serverless function (production)
@@ -19,7 +18,7 @@ export const OVERPASS_MIRRORS = [
 ] as const;
 
 /** Identifies the app and its purpose to the Overpass operators. */
-export const OVERPASS_USER_AGENT = 'Caremunicate/1.0 (Care Places Overpass proxy)';
+export const OVERPASS_USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
 
 /** Per-mirror ceiling. Each mirror gets its own controller. */
 export const MIRROR_TIMEOUT_MS = 15_000;
@@ -28,46 +27,63 @@ export const OVERPASS_CACHE_CONTROL = 'public, s-maxage=600';
 
 export type OverpassProxyResult =
   | { ok: true; status: number; body: unknown }
-  | { ok: false; status: number; error: string; detail: string };
+  | { ok: false; status: number; error: string; reasons: string[]; detail: string };
+
+/** `${host}:${status}` or `${host}:${ErrorName}` — one entry per failed mirror. */
+const mirrorReason = (mirror: string, reason: string | number): string => {
+  try {
+    return `${new URL(mirror).host}:${reason}`;
+  } catch {
+    return `${mirror}:${reason}`;
+  }
+};
 
 /**
  * POSTs the Overpass QL to each mirror in order until one answers.
  *
  * `application/x-www-form-urlencoded` is what the Overpass interpreter expects;
- * `data` carries the query. Throws nothing — the last failure is returned so the
- * caller can answer 502 with a reason.
+ * `data` carries the query. Nothing is thrown: when every mirror fails the
+ * collected `reasons` come back so the route can answer 502 with them.
  */
 export const proxyOverpass = async (query: string): Promise<OverpassProxyResult> => {
-  let lastError = '';
+  const reasons: string[] = [];
 
   for (const mirror of OVERPASS_MIRRORS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
-
     try {
-      const upstream = await fetch(mirror, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-          'User-Agent': OVERPASS_USER_AGENT,
-        },
-        body: `data=${encodeURIComponent(query)}`,
-        signal: controller.signal,
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
 
-      if (!upstream.ok) {
-        lastError = `${mirror} responded ${upstream.status}`;
-        continue;
+      try {
+        const upstream = await fetch(mirror, {
+          method: 'POST',
+          body: new URLSearchParams({ data: query }),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': OVERPASS_USER_AGENT,
+          },
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+
+        if (upstream.ok) {
+          return { ok: true, status: 200, body: await upstream.json() };
+        }
+
+        reasons.push(mirrorReason(mirror, upstream.status));
+      } finally {
+        clearTimeout(timer);
       }
-
-      return { ok: true, status: 200, body: await upstream.json() };
     } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    } finally {
-      clearTimeout(timer);
+      const name = error instanceof Error && error.name ? error.name : 'err';
+      reasons.push(mirrorReason(mirror, name));
     }
   }
 
-  return { ok: false, status: 502, error: 'All Overpass mirrors failed', detail: lastError };
+  return {
+    ok: false,
+    status: 502,
+    error: 'all mirrors failed',
+    reasons,
+    detail: reasons.join(', '),
+  };
 };

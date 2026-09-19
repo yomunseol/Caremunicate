@@ -1,14 +1,18 @@
 // ---------------------------------------------------------------------------
 // /api/overpass — Vercel serverless function (Node runtime).
 //
-// The browser calls this same-origin route; this function is what actually
-// reaches the Overpass mirrors (see server/overpass.ts). Deployed by Vercel from
-// the api/ directory; it is intentionally NOT part of any tsconfig project, so
-// `tsc -b` neither compiles nor emits it.
+// The hardened route, expressed in the Vercel `(req, res)` shape this repo uses
+// (the app is Vite — there is no `next/server` here). Behaviour is identical:
 //
 //   GET /api/overpass?data=<encoded Overpass QL>
 //   -> 200 JSON (Overpass payload), Cache-Control: public, s-maxage=600
-//   -> 400 missing data | 405 wrong method | 502 every mirror failed
+//   -> 400 { error: 'missing data' }
+//   -> 405 { error: 'method not allowed' }
+//   -> 502 { error: 'all mirrors failed', reasons: [...] }
+//   -> 500 { error: 'route crash', detail }
+//
+// The mirror loop, per-mirror 15s abort and the `reasons` list live in
+// server/overpass.ts, shared with the dev middleware in vite.config.ts.
 // ---------------------------------------------------------------------------
 
 import { OVERPASS_CACHE_CONTROL, proxyOverpass } from '../server/overpass';
@@ -54,25 +58,32 @@ const readQuery = (req: ProxyRequest): string => {
 };
 
 export default async function handler(req: ProxyRequest, res: ProxyResponse): Promise<void> {
-  if (req.method && req.method !== 'GET' && req.method !== 'POST') {
-    res.status(405).json({ error: 'Method not allowed' });
-    return;
+  try {
+    if (req.method && req.method !== 'GET' && req.method !== 'POST') {
+      res.status(405).json({ error: 'method not allowed' });
+      return;
+    }
+
+    const data = readQuery(req);
+    if (!data.trim()) {
+      res.status(400).json({ error: 'missing data' });
+      return;
+    }
+
+    const result = await proxyOverpass(data);
+
+    if ('error' in result) {
+      // "all mirrors failed" + the per-mirror reasons, so the client can show
+      // `Search failed (mirrors: …)` instead of a bare status.
+      res.status(result.status).json({ error: result.error, reasons: result.reasons });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', OVERPASS_CACHE_CONTROL);
+    res.status(200).json(result.body);
+  } catch (caught) {
+    const detail = String((caught as { message?: unknown })?.message ?? caught);
+    res.status(500).json({ error: 'route crash', detail });
   }
-
-  const query = readQuery(req);
-  if (!query.trim()) {
-    res.status(400).json({ error: 'Missing "data" query parameter' });
-    return;
-  }
-
-  const result = await proxyOverpass(query);
-
-  if ('error' in result) {
-    res.status(result.status).json({ error: result.error, detail: result.detail });
-    return;
-  }
-
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', OVERPASS_CACHE_CONTROL);
-  res.status(200).json(result.body);
 }
