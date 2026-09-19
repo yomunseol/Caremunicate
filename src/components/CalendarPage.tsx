@@ -17,6 +17,7 @@ import {
   weekStartsOn,
   approveAppointment,
   respondToAppointment,
+  takeStashedAppointment,
   type Appointment,
   type PersonInfo,
 } from '../lib/appointments';
@@ -92,9 +93,21 @@ export default function CalendarPage() {
       if (!user?.id) return;
       setLoading(true);
       const list = await loadAppointments(user.id, side);
+
+      // A write just handed us its row: render it immediately rather than
+      // assuming the refetch has caught up. No hand-off → plain refetched list.
+      const handedOff = takeStashedAppointment();
+      const merged =
+        handedOff && !list.some((item) => item.id === handedOff.id)
+          ? [...list, handedOff]
+          : list;
+
       if (cancelled) return;
-      setAppointments(list);
-      setPeople(await loadPeople(list.map((a) => (side === 'patient' ? a.provider_id : a.patient_id))));
+      setAppointments(merged);
+      if (handedOff) setView('schedule');
+      setPeople(
+        await loadPeople(merged.map((a) => (side === 'patient' ? a.provider_id : a.patient_id))),
+      );
       setLoading(false);
     })();
     return () => {

@@ -2,7 +2,13 @@ import { useEffect, useRef } from 'react';
 import { CalendarPlus, Phone, X } from 'lucide-react';
 import { useLang } from '../i18n';
 import { roleLabelKey } from '../lib/roles';
-import { canJoin, effectiveStatus, formatRange, type Appointment } from '../lib/appointments';
+import {
+  canJoin,
+  effectiveStatus,
+  formatRange,
+  statusChipClass,
+  type Appointment,
+} from '../lib/appointments';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // ---------------------------------------------------------------------------
@@ -79,7 +85,8 @@ export default function CalendarEventPopover({
   }, [onClose]);
 
   const status = effectiveStatus(appointment);
-  const joinable = canJoin(appointment) && Boolean(appointment.room_code);
+  // canJoin enforces scheduled/confirmed + a real room + the T−10min window.
+  const joinable = canJoin(appointment);
   const left = Math.max(MARGIN, Math.min(anchor.x, window.innerWidth - WIDTH - MARGIN));
   const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - 260));
 
@@ -114,7 +121,9 @@ export default function CalendarEventPopover({
         </button>
       </div>
 
-      <span className={`cal-status chip-${status}`}>{STATUS_LABEL[status]}</span>
+      <span className={`cal-status ${statusChipClass(status)}`}>
+        {STATUS_LABEL[status] ?? status}
+      </span>
       <p className="cal-popover-when">
         {formatRange(appointment.start_at, appointment.end_at, locale)}
       </p>

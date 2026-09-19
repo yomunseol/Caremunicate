@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { generateWordCode } from './wordcode';
+import { asRows, firstRow } from './rows';
 
 // ---------------------------------------------------------------------------
 // Appointments + availability.
@@ -119,11 +120,48 @@ export const effectiveStatus = (appointment: Appointment, now = Date.now()): App
   return new Date(appointment.end_at).getTime() <= now ? 'completed' : appointment.status;
 };
 
-/** The Join button is disabled until T−10min, and after the call ends. */
+/** The statuses a row may carry; anything else falls back to a neutral chip. */
+export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
+  'requested',
+  'scheduled',
+  'confirmed',
+  'completed',
+  'cancelled',
+];
+
+/** A chip class that is always valid, whatever the server sends. */
+export const statusChipClass = (status: string): string =>
+  (APPOINTMENT_STATUSES as string[]).includes(status) ? `chip-${status}` : 'chip-neutral';
+
+/** A room exists ONLY once a host has approved the request. */
+export const hasRoom = (appointment: Appointment): boolean =>
+  Boolean(appointment.room_id && appointment.room_code);
+
+/**
+ * Join call ONLY when the status is scheduled/confirmed, a room has actually
+ * been minted, and we are inside the T−10min window.
+ */
 export const canJoin = (appointment: Appointment, now = Date.now()): boolean => {
   const status = effectiveStatus(appointment, now);
-  if (status === 'cancelled' || status === 'completed') return false;
+  if (status !== 'scheduled' && status !== 'confirmed') return false;
+  if (!hasRoom(appointment)) return false;
   return now >= new Date(appointment.start_at).getTime() - JOIN_WINDOW_MS;
+};
+
+// ---------------------------------------------------------------------------
+// Navigation hand-off: the row a write just returned, so the calendar can render
+// it WITHOUT assuming a refetch will find it.
+// ---------------------------------------------------------------------------
+let stashedAppointment: Appointment | null = null;
+
+export const stashAppointment = (appointment: Appointment | null): void => {
+  stashedAppointment = appointment;
+};
+
+export const takeStashedAppointment = (): Appointment | null => {
+  const appointment = stashedAppointment;
+  stashedAppointment = null;
+  return appointment;
 };
 
 /** Unlocked AND not yet finished — drives the mint pulse. */
@@ -230,7 +268,7 @@ export const loadPeople = async (ids: string[]): Promise<Map<string, PersonInfo>
     console.error('CALENDAR ERROR:', error.message);
     return map;
   }
-  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+  for (const row of asRows<Record<string, unknown>>(data)) {
     const person = toPerson(row);
     if (person.id) map.set(person.id, person);
   }
@@ -248,7 +286,7 @@ export const loadProviders = async (): Promise<PersonInfo[]> => {
     console.error('CALENDAR ERROR:', error.message);
     return [];
   }
-  return ((data ?? []) as Array<Record<string, unknown>>).map(toPerson).filter((p) => p.id);
+  return asRows<Record<string, unknown>>(data).map(toPerson).filter((p) => p.id);
 };
 
 /** Codes that mean "that column or unique constraint does not exist". */
@@ -292,7 +330,7 @@ export const loadAvailability = async (providerId: string): Promise<Availability
 
   // Normalize the slot/buffer column names so the booking slot picker keeps
   // working whichever the table carries.
-  return ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+  return asRows<Record<string, unknown>>(data).map((row) => ({
     ...(row as unknown as Availability),
     slot_minutes: Number(row.slot_minutes ?? row.slot_min ?? 30),
     buffer_minutes: Number(row.buffer_minutes ?? row.buffer_min ?? 0),
@@ -314,7 +352,7 @@ export const loadAppointments = async (
     console.error('CALENDAR ERROR:', error.message);
     return [];
   }
-  return (data ?? []) as Appointment[];
+  return asRows<Appointment>(data);
 };
 
 /**
@@ -332,7 +370,7 @@ export const loadBusySlots = async (providerId: string): Promise<Appointment[]> 
     return [];
   }
 
-  return ((data ?? []) as Array<{ start_at: string; end_at: string }>).map((row) => ({
+  return asRows<{ start_at: string; end_at: string }>(data).map((row) => ({
     id: '',
     patient_id: '',
     provider_id: providerId,
@@ -373,7 +411,7 @@ export const createAppointment = async (payload: {
     console.error('CALENDAR ERROR:', error.message);
     return null;
   }
-  return data as Appointment;
+  return firstRow<Appointment>(data);
 };
 
 export const setAppointmentStatus = async (
@@ -394,14 +432,18 @@ export const setAppointmentStatus = async (
 
 export type RpcResult = { ok: true } | { ok: false; code: string };
 
+export type RequestResult =
+  | { ok: true; appointment: Appointment | null }
+  | { ok: false; code: string };
+
 /** Patient: ask the host for a slot. No room exists until it is approved. */
 export const requestAppointment = async (payload: {
   hostId: string;
   start: Date;
   durationMin: number;
   note?: string;
-}): Promise<RpcResult> => {
-  const { error } = await supabase.rpc('request_appointment', {
+}): Promise<RequestResult> => {
+  const { data, error } = await supabase.rpc('request_appointment', {
     p_host_id: payload.hostId,
     p_start_at: payload.start.toISOString(),
     p_duration_min: payload.durationMin,
@@ -412,7 +454,9 @@ export const requestAppointment = async (payload: {
     console.error('CALENDAR ERROR:', error.message);
     return { ok: false, code: error.code ?? error.message };
   }
-  return { ok: true };
+
+  // The RPC returns the created row; normalize object / array / null.
+  return { ok: true, appointment: firstRow<Appointment>(data) };
 };
 
 /** Host: accept or decline a pending request. */

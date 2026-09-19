@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { firstRow } from './rows';
 import { generateWordCode, isValidWordCode, normalizeCode } from './wordcode';
 
 // ---------------------------------------------------------------------------
@@ -188,7 +189,8 @@ export async function checkRoom(
   });
 
   if (error) throw error;
-  return ((data as CheckRoomResult[] | null)?.[0] ?? null) as CheckRoomResult | null;
+  // The RPC may answer with one row or an array — normalize both.
+  return firstRow<CheckRoomResult>(data);
 }
 
 // ---------------------------------------------------------------------------

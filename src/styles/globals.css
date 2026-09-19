@@ -1129,6 +1129,61 @@ img {
   color: #8a6512;
 }
 
+/* ---- Error boundary fallback --------------------------------------------- */
+.error-fallback {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+  padding: 24px 16px;
+}
+
+.error-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  width: min(480px, 100%);
+  padding: 24px;
+  border-radius: 1rem;
+  background: var(--bg-panel, #fff);
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  box-shadow: 0 20px 50px var(--shadow, rgba(17, 55, 47, 0.08));
+  text-align: center;
+}
+
+.error-title { margin: 0; font-size: 1.1rem; color: var(--text, #133b35); }
+
+.error-detail {
+  margin: 0;
+  max-width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-muted, #557b76);
+  overflow-wrap: anywhere;
+}
+
+/* Unknown status: a neutral chip, so a new value can never crash rendering. */
+.appt-status.chip-neutral,
+.cal-status.chip-neutral {
+  background: rgba(85, 123, 118, 0.14);
+  color: var(--text-muted, #557b76);
+}
+
+/* 'Awaiting approval' — an amber outline chip, matching the requested blocks. */
+.awaiting-chip {
+  display: inline-flex;
+  align-items: center;
+  padding-block: 0.5rem;
+  padding-inline: 0.9rem;
+  border-radius: 999px;
+  border: 1px solid #d9a93a;
+  background: rgba(240, 210, 122, 0.18);
+  color: #8a6512;
+  font-size: 0.8rem;
+  font-weight: 800;
+  min-height: 44px;
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1.05fr 0.95fr;

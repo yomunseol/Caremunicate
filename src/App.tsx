@@ -822,6 +822,9 @@ function App() {
       <RejoinBanner />
 
       <main className="main-content">
+        {/* EVERY route is wrapped: a render crash shows the mint card, never a
+            blank page. key={route} resets the boundary when the route changes. */}
+        <ErrorBoundary key={route}>
         {route === 'home' && (
           <>
             <section className="section hero-section">
@@ -1233,6 +1236,7 @@ function App() {
             busyPlan={pendingPlan}
           />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* Account conversion: role and plan change together, so confirm first. */}

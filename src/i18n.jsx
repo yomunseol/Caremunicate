@@ -559,6 +559,9 @@ const translations = {
     'notif.approveRequest': 'Approve',
     'notif.declineRequest': 'Decline',
     'cal.requestSent': 'Request sent. You\'ll be notified when it\'s confirmed.',
+    'errors.somethingWrong': 'Something went wrong',
+    'errors.reload': 'Reload',
+    'cal.awaitingApproval': 'Awaiting approval',
   },
 
   fr: {
@@ -1084,6 +1087,9 @@ const translations = {
     'notif.approveRequest': 'Approuver',
     'notif.declineRequest': 'Refuser',
     'cal.requestSent': 'Demande envoyée. Vous serez notifié à la confirmation.',
+    'errors.somethingWrong': 'Une erreur est survenue',
+    'errors.reload': 'Recharger',
+    'cal.awaitingApproval': 'En attente d\'approbation',
   },
 
   es: {
@@ -1604,6 +1610,9 @@ const translations = {
     'notif.approveRequest': 'Aprobar',
     'notif.declineRequest': 'Rechazar',
     'cal.requestSent': 'Solicitud enviada. Te avisaremos cuando se confirme.',
+    'errors.somethingWrong': 'Algo salió mal',
+    'errors.reload': 'Recargar',
+    'cal.awaitingApproval': 'Pendiente de aprobación',
   },
 
   ko: {
@@ -2109,6 +2118,9 @@ const translations = {
     'notif.approveRequest': '승인',
     'notif.declineRequest': '거절',
     'cal.requestSent': '요청이 전송되었습니다. 확정 시 알림을 받습니다.',
+    'errors.somethingWrong': '문제가 발생했습니다',
+    'errors.reload': '새로고침',
+    'cal.awaitingApproval': '승인 대기 중',
   },
 
   zh: {
@@ -2607,6 +2619,9 @@ const translations = {
     'notif.approveRequest': '批准',
     'notif.declineRequest': '拒绝',
     'cal.requestSent': '请求已发送，确认后将通知您。',
+    'errors.somethingWrong': '出错了',
+    'errors.reload': '重新加载',
+    'cal.awaitingApproval': '等待批准',
   },
 
   pt: {
@@ -3126,6 +3141,9 @@ const translations = {
     'notif.approveRequest': 'Aprovar',
     'notif.declineRequest': 'Recusar',
     'cal.requestSent': 'Solicitação enviada. Você será notificado quando for confirmada.',
+    'errors.somethingWrong': 'Algo deu errado',
+    'errors.reload': 'Recarregar',
+    'cal.awaitingApproval': 'Aguardando aprovação',
   },
 
   de: {
@@ -3649,6 +3667,9 @@ const translations = {
     'notif.approveRequest': 'Genehmigen',
     'notif.declineRequest': 'Ablehnen',
     'cal.requestSent': 'Anfrage gesendet. Du wirst bei Bestätigung benachrichtigt.',
+    'errors.somethingWrong': 'Etwas ist schiefgelaufen',
+    'errors.reload': 'Neu laden',
+    'cal.awaitingApproval': 'Wartet auf Genehmigung',
   },
 
   it: {
@@ -4168,6 +4189,9 @@ const translations = {
     'notif.approveRequest': 'Approva',
     'notif.declineRequest': 'Rifiuta',
     'cal.requestSent': 'Richiesta inviata. Riceverai una notifica alla conferma.',
+    'errors.somethingWrong': 'Qualcosa è andato storto',
+    'errors.reload': 'Ricarica',
+    'cal.awaitingApproval': 'In attesa di approvazione',
   },
 
   ar: {
@@ -4679,6 +4703,9 @@ const translations = {
     'notif.approveRequest': 'موافقة',
     'notif.declineRequest': 'رفض',
     'cal.requestSent': 'أُرسل الطلب. سيتم إشعارك عند التأكيد.',
+    'errors.somethingWrong': 'حدث خطأ ما',
+    'errors.reload': 'إعادة التحميل',
+    'cal.awaitingApproval': 'بانتظار الموافقة',
   },
 
   he: {
@@ -5184,6 +5211,9 @@ const translations = {
     'notif.approveRequest': 'אישור',
     'notif.declineRequest': 'דחייה',
     'cal.requestSent': 'הבקשה נשלחה. תקבלו הודעה כשתאושר.',
+    'errors.somethingWrong': 'משהו השתבש',
+    'errors.reload': 'רענון',
+    'cal.awaitingApproval': 'ממתין לאישור',
   },
 };
 

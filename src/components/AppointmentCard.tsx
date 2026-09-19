@@ -6,6 +6,7 @@ import {
   formatDayLong,
   formatRange,
   isLive,
+  statusChipClass,
   type Appointment,
 } from '../lib/appointments';
 import { roleLabelKey } from '../lib/roles';
@@ -70,9 +71,9 @@ export default function AppointmentCard({
   }, [menuOpen]);
 
   const status = effectiveStatus(appointment, now);
-  // A roomless appointment (provider quick-create) has nothing to join, so the
-  // button must not light up and then no-op.
-  const joinable = canJoin(appointment, now) && Boolean(appointment.room_code);
+  // canJoin already requires status scheduled/confirmed, a real room_id, and
+  // the T−10min window — so a 'requested' row can never light the button up.
+  const joinable = canJoin(appointment, now);
   const live = isLive(appointment, now);
   const cancelled = status === 'cancelled';
 
@@ -92,8 +93,8 @@ export default function AppointmentCard({
           {formatRange(appointment.start_at, appointment.end_at, locale)}
         </strong>
 
-        <span className={`appt-status chip-${status}`} style={styles.statusChip}>
-          {statusLabel[status]}
+        <span className={`appt-status ${statusChipClass(status)}`} style={styles.statusChip}>
+          {statusLabel[status] ?? status}
         </span>
       </div>
 
@@ -110,17 +111,22 @@ export default function AppointmentCard({
       </div>
 
       <div style={styles.actions}>
-        <button
-          type="button"
-          className={live ? 'appt-join is-live' : 'appt-join'}
-          style={{ ...styles.join, ...(joinable ? styles.joinReady : null) }}
-          disabled={!joinable}
-          title={joinable ? t('cal.joinCall') : t('cal.joinTooEarly')}
-          aria-label={t('cal.joinCall')}
-          onClick={() => onJoin(appointment)}
-        >
-          <Phone size={15} aria-hidden="true" /> {t('cal.joinCall')}
-        </button>
+        {status === 'requested' && side === 'patient' ? (
+          /* No room exists yet: an amber chip instead of a Join button. */
+          <span className="awaiting-chip">{t('cal.awaitingApproval')}</span>
+        ) : (
+          <button
+            type="button"
+            className={live ? 'appt-join is-live' : 'appt-join'}
+            style={{ ...styles.join, ...(joinable ? styles.joinReady : null) }}
+            disabled={!joinable}
+            title={joinable ? t('cal.joinCall') : t('cal.joinTooEarly')}
+            aria-label={t('cal.joinCall')}
+            onClick={() => onJoin(appointment)}
+          >
+            <Phone size={15} aria-hidden="true" /> {t('cal.joinCall')}
+          </button>
+        )}
 
         {side === 'provider' && status === 'requested' ? (
           <>

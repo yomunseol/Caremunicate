@@ -6,6 +6,7 @@ import {
   loadBusySlots,
   requestAppointment,
   slotsForDate,
+  stashAppointment,
   BOOKING_WINDOW_DAYS,
   type Appointment,
   type Availability,
@@ -129,9 +130,13 @@ export default function BookingFlow({
       return;
     }
 
+    // Hand the returned row to the calendar so it renders immediately, without
+    // assuming a refetch will find it. Then go to the schedule view.
+    stashAppointment(result.appointment);
     setSent(true);
     setSaving(false);
     onBooked();
+    window.location.hash = '#calendar';
   };
 
   const timezone = useMemo(() => {

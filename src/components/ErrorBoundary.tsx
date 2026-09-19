@@ -1,5 +1,14 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
+
+// ---------------------------------------------------------------------------
+// Route error boundary.
+//
+// Every route is wrapped, so a render crash degrades to a centred mint card —
+// never a blank page. The raw message is shown in small monospace so the cause
+// is visible while debugging, and Reload restarts the app.
+// ---------------------------------------------------------------------------
 
 type ErrorBoundaryProps = {
   children: ReactNode;
@@ -9,24 +18,22 @@ type ErrorBoundaryState = {
   error: Error | null;
 };
 
-// A class cannot call hooks, so the fallback is a small function component that
-// can read the translation context.
-function ErrorFallback({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorFallback({ message }: { message: string }) {
   const { t } = useLang();
 
   return (
-    <div role="alert" style={styles.wrapper}>
-      <p style={styles.title}>{t('errors.conversationTitle')}</p>
-      <p style={styles.detail}>{message}</p>
-      <button type="button" style={styles.button} onClick={onRetry}>
-        {t('common.tryAgain')}
-      </button>
+    <div className="error-fallback" role="alert">
+      <div className="error-card">
+        <h2 className="error-title">{t('errors.somethingWrong')}</h2>
+        <p className="error-detail">{message}</p>
+        <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+          {t('errors.reload')}
+        </button>
+      </div>
     </div>
   );
 }
 
-// Minimal error boundary so an unexpected render crash inside a chat view
-// degrades to an inline message instead of unmounting the whole app.
 export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { error: null };
 
@@ -40,40 +47,8 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   render() {
     if (this.state.error) {
-      return (
-        <ErrorFallback
-          message={this.state.error.message}
-          onRetry={() => this.setState({ error: null })}
-        />
-      );
+      return <ErrorFallback message={describeError(this.state.error)} />;
     }
-
     return this.props.children;
   }
 }
-
-const styles = {
-  wrapper: {
-    textAlign: 'center' as const,
-    padding: '3rem 1rem',
-  },
-  title: {
-    margin: 0,
-    fontWeight: 600,
-    fontSize: 16,
-  },
-  detail: {
-    margin: '0.5rem 0 1rem',
-    fontSize: 14,
-    color: '#c0392b',
-  },
-  button: {
-    padding: '8px 16px',
-    borderRadius: 999,
-    border: 'none',
-    background: 'var(--accent, #3ea985)',
-    color: '#fff',
-    fontWeight: 600,
-    cursor: 'pointer',
-  },
-};
