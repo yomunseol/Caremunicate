@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { asRows } from './rows';
 
 // ---------------------------------------------------------------------------
 // Notifications — the bell's data layer.
@@ -45,7 +46,7 @@ export const loadNotifications = async (
     console.error('NOTIF ERROR:', error.message);
     return [];
   }
-  return (data ?? []) as NotificationRow[];
+  return asRows<NotificationRow>(data);
 };
 
 /** The badge count: unread rows for this user. */
