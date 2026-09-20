@@ -1928,6 +1928,55 @@ img {
   pointer-events: none;
 }
 
+/* ---- Green room: preview states (never a black box) ---------------------- */
+.call-preview-skeleton {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    100deg,
+    rgba(62, 169, 133, 0.1) 30%,
+    rgba(62, 169, 133, 0.28) 50%,
+    rgba(62, 169, 133, 0.1) 70%
+  );
+  background-size: 220% 100%;
+  animation: callPreviewShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes callPreviewShimmer {
+  from { background-position: 140% 0; }
+  to { background-position: -40% 0; }
+}
+
+.call-preview-blocked {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 1rem;
+  text-align: center;
+  color: var(--text-muted, #557b76);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+/* Waiting-room state: an On/Off chip, never a bare dash. */
+.call-state-chip {
+  padding-block: 0.12rem;
+  padding-inline: 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.call-state-chip.is-on {
+  background: rgba(62, 169, 133, 0.16);
+  color: var(--accent-strong, #216e5d);
+}
+
+.call-state-chip.is-off {
+  background: rgba(15, 58, 50, 0.08);
+  color: var(--text-muted, #557b76);
+}
+
 @keyframes callReactionFloat {
   0% { opacity: 0; transform: translateY(0.5rem) scale(0.8); }
   20% { opacity: 1; transform: translateY(0) scale(1.05); }
@@ -2839,6 +2888,12 @@ img {
 .cal-month {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Row 1 is the weekday header (auto); every date row is exactly 112px. With
+     align-content: start the leftover space collects BELOW the grid, never
+     inside a cell. */
+  grid-template-rows: auto;
+  grid-auto-rows: 112px;
+  align-content: start;
   border: 1px solid var(--cal-line-strong, rgba(15, 58, 50, 0.16));
   border-radius: 0.9rem;
   overflow: hidden;
@@ -2933,6 +2988,81 @@ img {
 }
 
 .cal-schedule-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+
+/* The end of the 30-day window. */
+.cal-schedule-end { padding-block: 0.35rem; text-align: center; }
+
+/* ---- Availability editor geometry ---------------------------------------- */
+/* 24px card padding · 16px from the chip to the first row · 44px rows 12px
+   apart · 140px label column · 16px above the meta row and the Save button. */
+.cal-availability {
+  display: grid;
+  padding: 24px;
+  margin-block-start: 24px;
+}
+
+.cal-availability > .eyebrow { margin-block-end: 16px; }
+
+.cal-availability-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.cal-availability-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-height: 44px;
+}
+
+.cal-availability-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 140px;
+  min-width: 140px;
+  font-size: 0.84rem;
+}
+
+.cal-availability-time {
+  width: 7rem;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.cal-availability-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-block-start: 16px;
+  flex-wrap: wrap;
+}
+
+.cal-availability-meta-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted, #557b76);
+}
+
+.cal-availability-meta-value {
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: var(--text, #133b35);
+}
+
+/* 100% of the CARD CONTENT box — inside the 24px padding, never past an edge. */
+.cal-availability-save {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  height: 48px;
+  min-height: 48px;
+  margin-block-start: 16px;
+}
 
 /* ---- Popovers (anchored, never modal) ------------------------------------ */
 .cal-popover {

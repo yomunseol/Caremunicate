@@ -106,7 +106,7 @@ export default function CalendarEventPopover({
         <span className="cal-popover-title">
           {title}
           {verified ? (
-            <span className="cal-verified-dot" title="Verified" aria-label="Verified">
+            <span className="cal-verified-dot" title={t('verify.verified')} aria-label={t('verify.verified')}>
               ✓
             </span>
           ) : null}

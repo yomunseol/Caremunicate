@@ -130,6 +130,26 @@ export const formatDayShort = (date: Date | string, locale: string): string =>
 export const formatMonth = (date: Date, locale: string): string =>
   formatWith(date, locale, { month: 'long', year: 'numeric' }, 'formatMonth');
 
+/**
+ * A week's range label, start–end, from the locale's own patterns: one month
+ * reads "14 – 20 September 2026", a straddling week "28 Sep – 4 Oct 2026".
+ * Both ends come from Intl, so no lookup table and no per-locale order.
+ */
+export const formatWeekRange = (first: Date, last: Date, locale: string): string => {
+  const sameMonth =
+    first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
+  const head = formatWith(first, locale, { day: 'numeric' }, 'formatWeekRange');
+  const tail = formatWith(
+    last,
+    locale,
+    sameMonth
+      ? { day: 'numeric', month: 'long', year: 'numeric' }
+      : { day: 'numeric', month: 'short', year: 'numeric' },
+    'formatWeekRange',
+  );
+  return `${head} – ${tail}`;
+};
+
 export const formatWeekdayNarrow = (date: Date, locale: string): string =>
   formatWith(date, locale, { weekday: 'narrow' }, 'formatWeekdayNarrow');
 

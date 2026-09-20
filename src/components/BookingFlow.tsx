@@ -30,9 +30,9 @@ import { useLang } from '../i18n';
 // overlapping a live appointment (cancelled ones do not block), with a 5-minute
 // buffer so back-to-back bookings are not jammed together.
 //
-// Booking is two writes: a call room created with the lobby on, then the
-// appointment row that points at it. The success panel shows the room's 4-word
-// code so the patient can read it out, plus .ics and a link into the calendar.
+// Booking is a REQUEST, never a room: requestAppointment tells the server and
+// the host decides. No room exists until an approval mints its code, so the
+// success panel shows no code — only the appointment and a link to the calendar.
 // ---------------------------------------------------------------------------
 
 export type BookableProvider = { id: string; name: string; role: string; verified: boolean };
@@ -207,7 +207,7 @@ export default function BookingFlow({
                   >
                     <span className="cal-provider-name">
                       {option.name || option.id}
-                      {option.verified ? <span className="cal-verified-dot" aria-label="Verified">✓</span> : null}
+                      {option.verified ? <span className="cal-verified-dot" aria-label={t('verify.verified')}>✓</span> : null}
                     </span>
                     {option.role ? (
                       <span className="cal-provider-role">{t(roleLabelKey(option.role))}</span>
@@ -225,7 +225,7 @@ export default function BookingFlow({
                 <h3 className="cal-modal-title">
                   {provider.name}
                   {provider.verified ? (
-                    <span className="cal-verified-dot" title="Verified" aria-label="Verified">
+                    <span className="cal-verified-dot" title={t('verify.verified')} aria-label={t('verify.verified')}>
                       ✓
                     </span>
                   ) : null}

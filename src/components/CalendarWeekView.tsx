@@ -19,12 +19,13 @@ import { endAt, parseDate } from '../lib/time';
 import type { Anchor } from './CalendarEventPopover';
 
 // ---------------------------------------------------------------------------
-// The time grid, used for both Week (7 columns) and Day (1 column).
+// The week time grid — exactly SEVEN day columns.
 //
 // Hour gutter 12 AM–11 PM with hairline rules; one column per day; a mint
 // now-line with a dot that re-renders every 30s; events absolutely positioned
 // by minutes-from-midnight and laid side by side by lib/calendarLayout (never
-// stacked, never hidden).
+// stacked, never hidden). The column set is always one week — the day list
+// comes from weekDaysOf() and is never a month-length set.
 // ---------------------------------------------------------------------------
 
 const HOUR_HEIGHT = 48;
@@ -82,14 +83,19 @@ export default function CalendarWeekView({
     [days, appointments],
   );
 
-  // Open on business hours (or two hours before 'now'), inside the grid's own
-  // scroll container — the page itself never scrolls in Week view.
+  // Open on NOW, inside the grid's own scroll container — the page itself
+  // never scrolls in Week view.
   useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
 
-    const hour = Math.max(8, new Date().getHours() - 2);
-    node.scrollTo({ top: hour * HOUR_HEIGHT, behavior: 'smooth' });
+    const at = new Date();
+    const minutes = at.getHours() * 60 + at.getMinutes();
+    // Put the current hour a third of the way down, so the day reads around now.
+    node.scrollTo({
+      top: Math.max(0, (minutes / 60) * HOUR_HEIGHT - node.clientHeight / 3),
+      behavior: 'smooth',
+    });
 
     // Dev guard: an hour row must be exactly 48px, never stretched.
     if (import.meta.env?.DEV) {
@@ -97,6 +103,12 @@ export default function CalendarWeekView({
       const measured = column ? column.clientHeight / 24 : 0;
       console.assert(measured === HOUR_HEIGHT, 'week row height', measured);
     }
+  }, [days]);
+
+  // Dev guard: a week is SEVEN columns, never a month-length set and never a
+  // stacked second week.
+  useEffect(() => {
+    if (import.meta.env?.DEV) console.assert(days.length === 7, 'week columns', days.length);
   }, [days]);
 
   const slotFromClick = (event: React.MouseEvent<HTMLDivElement>, day: Date): number => {

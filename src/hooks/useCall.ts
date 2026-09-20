@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import {
   forgetActiveRoom,
+  loadDevicePrefs,
   readSoundsEnabled,
   rememberActiveRoom,
+  saveDevicePrefs,
   stashCreatedRoom,
   storeSoundsEnabled,
   type CreatedRoom,
@@ -390,6 +392,10 @@ export type UseCallResult = {
   toggleStats: () => void;
   /** Pre-connection phases: the green room (prejoin) and the waiting room (lobby). */
   stage: Stage;
+  /** Green room: getUserMedia is still resolving — show the shimmer skeleton. */
+  previewAcquiring: boolean;
+  /** Green room: the device the browser refused, so the tile can name it. */
+  previewBlocked: 'mic' | 'camera' | null;
   lobby: LobbyGuest[];
   lobbyEnabled: boolean;
   devices: { mics: DeviceOption[]; cams: DeviceOption[]; sinks: DeviceOption[] };
@@ -503,6 +509,8 @@ export function useCall(
   const [cams, setCams] = useState<DeviceOption[]>([]);
   const [micId, setMicId] = useState<string | null>(() => readStoredDevice('mic'));
   const [camId, setCamId] = useState<string | null>(() => readStoredDevice('cam'));
+  const [previewAcquiring, setPreviewAcquiring] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState<'mic' | 'camera' | null>(null);
   const [peerStats, setPeerStats] = useState<Record<string, PeerStats>>({});
   const [codeRoom, setCodeRoom] = useState(false);
   /** True when the current room is someone's personal line. */
@@ -527,6 +535,8 @@ export function useCall(
   const stageRef = useRef<Stage>('idle');
   const micIdRef = useRef<string | null>(null);
   const camIdRef = useRef<string | null>(null);
+  /** Why the last getUserMedia failed, so the green room can name the device. */
+  const mediaErrorRef = useRef<'mic' | 'camera' | null>(null);
   /** Green-room preview stream (no peer connection yet). */
   const preview = useRef<MediaStream | null>(null);
   /** Our own camera track, kept so screen share can be undone. */
@@ -613,28 +623,47 @@ export function useCall(
         width: { ideal: MAX_WIDTH, max: MAX_WIDTH },
         height: { ideal: MAX_HEIGHT, max: MAX_HEIGHT },
         frameRate: { ideal: MAX_FPS, max: MAX_FPS },
-        ...(withDevice && cam ? { deviceId: { exact: cam } } : {}),
+        // The front camera by default. An explicitly chosen device replaces the
+        // hint — asking for both at once can raise OverconstrainedError.
+        ...(withDevice && cam ? { deviceId: { exact: cam } } : { facingMode: 'user' as const }),
       });
 
-      try {
-        return await navigator.mediaDevices.getUserMedia({
-          audio: { ...AUDIO_CONSTRAINTS, ...(mic ? { deviceId: { exact: mic } } : {}) },
-          video: video ? videoConstraints(true) : false,
+      const request = (withDevice: boolean) =>
+        navigator.mediaDevices.getUserMedia({
+          audio: { ...AUDIO_CONSTRAINTS, ...(withDevice && mic ? { deviceId: { exact: mic } } : {}) },
+          video: video ? videoConstraints(withDevice) : false,
         });
+
+      mediaErrorRef.current = null;
+      try {
+        return await request(true);
       } catch (error) {
         console.error('CALL ERROR:', error);
-        // A stale stored deviceId must never block the call — retry with defaults.
-        if (!mic && !cam) return null;
+      }
+
+      // A stale stored deviceId must never block the call — retry with defaults.
+      if (mic || cam) {
         try {
-          return await navigator.mediaDevices.getUserMedia({
-            audio: AUDIO_CONSTRAINTS,
-            video: video ? videoConstraints(false) : false,
-          });
+          return await request(false);
         } catch (retryError) {
           console.error('CALL ERROR:', retryError);
-          return null;
         }
       }
+
+      // Still nothing. With video requested, an audio-only probe separates a
+      // blocked CAMERA from a blocked MIC, and keeping the audio track leaves
+      // the rest of the dialog usable.
+      if (video) {
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ audio: AUDIO_CONSTRAINTS });
+          mediaErrorRef.current = 'camera';
+          return audioOnly;
+        } catch (audioError) {
+          console.error('CALL ERROR:', audioError);
+        }
+      }
+      mediaErrorRef.current = 'mic';
+      return null;
     },
     [],
   );
@@ -713,6 +742,8 @@ export function useCall(
       setHandRaised(false);
       setReactions([]);
       setStage('idle');
+      setPreviewAcquiring(false);
+      setPreviewBlocked(null);
       setLobby([]);
       setPeerStats({});
       setCodeRoom(false);
@@ -1392,9 +1423,10 @@ export function useCall(
       micIdRef.current = deviceId;
       setMicId(deviceId);
       storeDevice('mic', deviceId);
+      void saveDevicePrefs(me, { micId: deviceId, camId: camIdRef.current });
       await applyDeviceChange();
     },
-    [applyDeviceChange],
+    [applyDeviceChange, me],
   );
 
   const selectCamera = useCallback(
@@ -1402,9 +1434,10 @@ export function useCall(
       camIdRef.current = deviceId;
       setCamId(deviceId);
       storeDevice('cam', deviceId);
+      void saveDevicePrefs(me, { micId: micIdRef.current, camId: deviceId });
       await applyDeviceChange();
     },
-    [applyDeviceChange],
+    [applyDeviceChange, me],
   );
 
   // ---- green room / waiting room -------------------------------------------
@@ -1420,6 +1453,22 @@ export function useCall(
 
     setStage('prejoin');
     stageRef.current = 'prejoin';
+    setPreviewAcquiring(true);
+    setPreviewBlocked(null);
+
+    // The account's saved devices win over this browser's localStorage mirror,
+    // so a picker opens on the same microphone wherever the user signs in.
+    const saved = await loadDevicePrefs(me);
+    if (saved.micId) {
+      micIdRef.current = saved.micId;
+      setMicId(saved.micId);
+      storeDevice('mic', saved.micId);
+    }
+    if (saved.camId) {
+      camIdRef.current = saved.camId;
+      setCamId(saved.camId);
+      storeDevice('cam', saved.camId);
+    }
 
     preview.current?.getTracks().forEach((track) => track.stop());
     const media = await getMedia(true);
@@ -1427,9 +1476,11 @@ export function useCall(
     preview.current = media;
     // The preview doubles as the local stream so the mirrored self-view renders.
     setLocalStream(media);
+    setPreviewBlocked(mediaErrorRef.current);
+    setPreviewAcquiring(false);
     // Labels are only available once permission has been granted.
     await refreshDevices();
-  }, [getMedia, refreshDevices]);
+  }, [getMedia, me, refreshDevices]);
 
   useEffect(() => {
     enterPrejoinRef.current = enterPrejoin;
@@ -1531,7 +1582,11 @@ export function useCall(
 
     // Carry the green-room mic/camera choices into the call state.
     const micMuted = media?.getAudioTracks()[0]?.enabled === false;
-    const camOff = media?.getVideoTracks()[0]?.enabled === false;
+    // No video track at all ("Join without video"), or one that was stopped or
+    // disabled, all read as camera-off.
+    const videoTrack = media?.getVideoTracks()[0] ?? null;
+    const camOff =
+      !videoTrack || videoTrack.enabled === false || videoTrack.readyState === 'ended';
     mutedRef.current = micMuted;
     cameraOffRef.current = camOff;
     setMuted(micMuted);
@@ -2224,6 +2279,8 @@ export function useCall(
     peers: list,
     peerInfo,
     localStream,
+    previewAcquiring,
+    previewBlocked,
     shareStream,
     audioOnly,
     muted,

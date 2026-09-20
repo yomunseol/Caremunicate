@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { loadAvailability, weekStartsOn, weekdayName } from '../lib/appointments';
 import { describeError } from '../lib/errors';
 import { supabase } from '../lib/supabase';
@@ -70,6 +70,13 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
     void load();
   }, [load]);
 
+  // Dev guard: report the REAL measured height of a time input, as a number.
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const input = document.querySelector('.cal-availability-time') as HTMLElement | null;
+    console.assert(input?.offsetHeight === 44, 'availability input height', input?.offsetHeight);
+  }, []);
+
   const patch = (weekday: number, changes: Partial<Row>) => {
     setRangeErrorWeekday(null);
     setRows((previous) =>
@@ -138,16 +145,16 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
   const ordered = Array.from({ length: 7 }, (_, index) => (first + index) % 7);
 
   return (
-    <div className="panel" style={styles.panel}>
+    <div className="panel cal-availability">
       <div className="eyebrow">{t('cal.availability')}</div>
 
-      <ul style={styles.list}>
+      <ul className="cal-availability-list">
         {ordered.map((weekday) => {
           const row = rows[weekday];
           const name = weekdayName(weekday, locale);
           return (
-            <li key={weekday} style={styles.row}>
-              <label style={styles.toggle}>
+            <li key={weekday} className="cal-availability-row">
+              <label className="cal-availability-toggle">
                 <input
                   type="checkbox"
                   checked={row.enabled}
@@ -158,7 +165,7 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
               </label>
 
               <input
-                className="input ltr-isolate"
+                className="input ltr-isolate cal-availability-time"
                 type="text"
                 inputMode="numeric"
                 dir="ltr"
@@ -168,11 +175,10 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
                 disabled={!row.enabled}
                 value={row.start}
                 onChange={(event) => patch(weekday, { start: event.target.value })}
-                style={styles.time}
               />
               <span aria-hidden="true">–</span>
               <input
-                className="input ltr-isolate"
+                className="input ltr-isolate cal-availability-time"
                 type="text"
                 inputMode="numeric"
                 dir="ltr"
@@ -182,7 +188,6 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
                 disabled={!row.enabled}
                 value={row.end}
                 onChange={(event) => patch(weekday, { end: event.target.value })}
-                style={styles.time}
               />
 
               {rangeErrorWeekday === weekday ? (
@@ -193,17 +198,24 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
         })}
       </ul>
 
-      <button type="button" className="primary-button" disabled={busy} aria-busy={busy} onClick={() => void save()}>
-        Save
+      {/* The two numbers every slot is built from. */}
+      <div className="cal-availability-meta">
+        <span className="cal-availability-meta-label">{t('cal.slotLength')}</span>
+        <span className="cal-availability-meta-value">{t('cal.minUnit', { count: SLOT_MIN })}</span>
+        <span className="cal-availability-meta-label">{t('cal.buffer')}</span>
+        <span className="cal-availability-meta-value">{t('cal.minUnit', { count: BUFFER_MIN })}</span>
+      </div>
+
+      {/* Full width of the card CONTENT box, 48px tall. */}
+      <button
+        type="button"
+        className="primary-button cal-availability-save"
+        disabled={busy}
+        aria-busy={busy}
+        onClick={() => void save()}
+      >
+        {t('cal.save')}
       </button>
     </div>
   );
 }
-
-const styles: Record<string, CSSProperties> = {
-  panel: { display: 'grid', gap: '0.7rem' },
-  list: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.45rem' },
-  row: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' },
-  toggle: { display: 'inline-flex', alignItems: 'center', gap: '0.45rem', minWidth: '9rem', fontSize: '0.84rem' },
-  time: { width: '7rem', minHeight: 40 },
-};

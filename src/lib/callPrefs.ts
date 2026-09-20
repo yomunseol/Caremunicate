@@ -58,6 +58,62 @@ export const saveCallPrefs = async (userId: string, prefs: CallPrefs): Promise<v
 };
 
 // ---------------------------------------------------------------------------
+// The chosen microphone / camera, in `profiles.call_prefs.devices`.
+//
+// Written with a read-modify-write because `devices` is ONE key inside the same
+// JSON object the meeting flags live in, and saveCallPrefs() replaces the whole
+// object — going through it would drop one or the other.
+// ---------------------------------------------------------------------------
+
+export type DevicePrefs = { micId: string | null; camId: string | null };
+
+const EMPTY_DEVICE_PREFS: DevicePrefs = { micId: null, camId: null };
+
+const deviceId = (value: unknown): string | null =>
+  typeof value === 'string' && value ? value : null;
+
+const readCallPrefs = async (userId: string): Promise<Record<string, unknown> | null> => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('call_prefs')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('CALL PREFS ERROR:', error.message);
+    return null;
+  }
+  const prefs = (data as { call_prefs?: unknown } | null)?.call_prefs;
+  return prefs && typeof prefs === 'object' ? (prefs as Record<string, unknown>) : {};
+};
+
+/** The devices this account last used. Absent/garbage values read as null. */
+export const loadDevicePrefs = async (userId: string): Promise<DevicePrefs> => {
+  if (!userId) return EMPTY_DEVICE_PREFS;
+
+  const prefs = await readCallPrefs(userId);
+  if (!prefs) return EMPTY_DEVICE_PREFS;
+
+  const devices = (prefs.devices && typeof prefs.devices === 'object' ? prefs.devices : {}) as Record<
+    string,
+    unknown
+  >;
+  return { micId: deviceId(devices.micId), camId: deviceId(devices.camId) };
+};
+
+export const saveDevicePrefs = async (userId: string, prefs: DevicePrefs): Promise<void> => {
+  if (!userId) return;
+
+  const current = await readCallPrefs(userId);
+  if (!current) return;
+
+  const { error } = await supabase
+    .from('profiles')
+    .update({ call_prefs: { ...current, devices: { micId: prefs.micId, camId: prefs.camId } } })
+    .eq('user_id', userId);
+  if (error) console.error('CALL PREFS ERROR:', error.message);
+};
+
+// ---------------------------------------------------------------------------
 // Local, per-device call UI state.
 // ---------------------------------------------------------------------------
 

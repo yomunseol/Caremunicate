@@ -5,8 +5,8 @@ import { isProvider } from '../lib/roles';
 import {
   buildIcs,
   downloadIcs,
-  formatDayShort,
   formatMonth,
+  formatWeekRange,
   loadAppointments,
   loadPeople,
   loadProviders,
@@ -20,7 +20,7 @@ import {
   type Appointment,
   type PersonInfo,
 } from '../lib/appointments';
-import { addDays, startOfDay } from '../lib/calendarLayout';
+import { addDays, startOfDay, weekDaysOf } from '../lib/calendarLayout';
 import { useToast } from '../context/ToastContext';
 import { useLang } from '../i18n';
 import CalendarToolbar, { type CalendarView } from './CalendarToolbar';
@@ -37,8 +37,8 @@ import AvailabilityEditor from './AvailabilityEditor';
 // /calendar — role aware, Google Calendar design language.
 //
 //   Sidebar   mint Create + mini month
-//   Toolbar   Today · ‹ › · Intl range label · Day/Week/Month/Schedule
-//   Views     time grid (Day/Week), month grid, and the Schedule list
+//   Toolbar   Today · ‹ › · Intl range label · Week/Month/Schedule
+//   Views     a seven-column week grid, the month grid, the Schedule list
 //
 // Every date goes through Intl with the active locale; weeks start on the
 // locale's first day; stored UTC renders in local time; the whole layout uses
@@ -120,6 +120,26 @@ export default function CalendarPage() {
       document.body.style.overflow = previous;
     };
   }, [view]);
+
+  // Dev guard: no child of a calendar card may exceed the card's content box.
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const id = window.setTimeout(() => {
+      const cards = document.querySelectorAll<HTMLElement>(
+        '.cal-page .panel, .cal-page .cal-month, .cal-page .cal-timegrid',
+      );
+      cards.forEach((card) => {
+        if (card.scrollWidth > card.clientWidth) {
+          console.warn('CALENDAR OVERFLOW:', {
+            card: card.className,
+            scrollWidth: card.scrollWidth,
+            clientWidth: card.clientWidth,
+          });
+        }
+      });
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [view, loading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,22 +279,12 @@ export default function CalendarPage() {
     else setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + direction, 1));
   };
 
-  const weekDays = useMemo(() => {
-    const firstDay = new Date(cursor);
-    // Same first-day-of-week the mini month uses, so the two grids agree.
-    const offset = (firstDay.getDay() - weekStartsOn(locale) + 7) % 7;
-    const start = addDays(firstDay, -offset);
-    return Array.from({ length: 7 }, (_, index) => addDays(start, index));
-  }, [cursor, locale]);
+  // Exactly seven columns: the locale week containing the anchor. Same
+  // first-day-of-week the mini month uses, so the two grids always agree.
+  const weekDays = useMemo(() => weekDaysOf(cursor, weekStartsOn(locale)), [cursor, locale]);
 
   const rangeLabel = useMemo(() => {
-    if (view === 'week') {
-      const first = weekDays[0];
-      const last = weekDays[6];
-      // Same month → "September 2026"; straddling two → a short range.
-      if (first.getMonth() === last.getMonth()) return formatMonth(first, locale);
-      return `${formatDayShort(first, locale)} – ${formatDayShort(last, locale)}`;
-    }
+    if (view === 'week') return formatWeekRange(weekDays[0], weekDays[6], locale);
     return formatMonth(cursor, locale);
   }, [view, cursor, weekDays, locale]);
 

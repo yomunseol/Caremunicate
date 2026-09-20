@@ -104,7 +104,7 @@ export default function AppointmentCard({
           <span style={styles.roleBadge}>{t(roleLabelKey(counterpart.role))}</span>
         ) : null}
         {counterpart.verified ? (
-          <span style={styles.verifiedBadge} title="Verified" aria-label="Verified">
+          <span style={styles.verifiedBadge} title={t('verify.verified')} aria-label={t('verify.verified')}>
             ✓
           </span>
         ) : null}

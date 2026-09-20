@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
+import { useToast } from '../context/ToastContext';
 import { useLang } from '../i18n';
 import { isProvider } from '../lib/roles';
 import { supabase } from '../lib/supabase';
@@ -43,9 +44,15 @@ const goToRoom = (code: string) => {
 export default function CallHub() {
   const { t } = useLang();
   const { user } = useAuth();
+  const { notify } = useToast();
   const { rememberCreatedRoom } = useCallContext();
 
   const [canHost, setCanHost] = useState(false);
+  /** The DB truth behind the gate: logged on mount and on every 42501. */
+  const [freshRole, setFreshRole] = useState('');
+  const [freshPlan, setFreshPlan] = useState<string | null>(null);
+  /** Set only when the DB itself says this account is not a provider. */
+  const [notProvider, setNotProvider] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hostBusy, setHostBusy] = useState(false);
   const [hostError, setHostError] = useState<string | null>(null);
@@ -66,26 +73,56 @@ export default function CallHub() {
   /** Raw reason the personal line could not be loaded, if it threw. */
   const [lineError, setLineError] = useState<string | null>(null);
 
+  /**
+   * The DB truth: role + plan read STRAIGHT from profiles, never from the
+   * session cache, the login-time context, or user_metadata — except as the
+   * last resort when the profile row is genuinely absent (a normal state).
+   */
+  const readProfile = useCallback(async (): Promise<{ role: string; plan: string | null }> => {
+    if (!user?.id) return { role: '', plan: null };
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role, plan')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error('CALL ERROR:', error.message);
+      return { role: '', plan: null };
+    }
+
+    const row = data as { role?: string; plan?: string } | null;
+    return {
+      role: String(row?.role ?? user.user_metadata?.role ?? ''),
+      plan: typeof row?.plan === 'string' ? row.plan : null,
+    };
+  }, [user?.id, user?.user_metadata?.role]);
+
   // Can this account host a meeting? (doctor / department / hospital)
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       if (!user?.id) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const fresh = await readProfile();
       if (cancelled) return;
-      const role = String(
-        (data as { role?: string } | null)?.role ?? user.user_metadata?.role ?? '',
-      );
-      setCanHost(isProvider(role));
+      setFreshRole(fresh.role);
+      setFreshPlan(fresh.plan);
+      const provider = isProvider(fresh.role);
+      setCanHost(provider);
+      if (import.meta.env.DEV) {
+        console.log('CALL HUB GATE:', {
+          role: fresh.role,
+          plan: fresh.plan,
+          source: 'fresh-fetch',
+          canHost: provider,
+        });
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id, user?.user_metadata?.role]);
+  }, [user?.id, readProfile]);
 
   // The personal line is created lazily, once, and keeps its code forever.
   // A throw is reported inline with its raw code and a retry, exactly like
@@ -110,6 +147,18 @@ export default function CallHub() {
   }, [loadLine]);
 
   const startMeeting = async (settings: MeetingSettings) => {
+    // Re-check the DB immediately before starting: a role that changed in
+    // another tab must never open a meeting from a stale gate.
+    const atStart = await readProfile();
+    setFreshRole(atStart.role);
+    setFreshPlan(atStart.plan);
+    if (!isProvider(atStart.role)) {
+      setCanHost(false);
+      setSettingsOpen(false);
+      notify(t('call.notProvider'), 'info');
+      return;
+    }
+
     setHostBusy(true);
     setHostError(null);
     setHostErrorDetail(null);
@@ -154,6 +203,38 @@ export default function CallHub() {
       // alongside it: no masked errors, ever.
       console.error('CALL ERROR:', error);
       const failure = error as { code?: string; message?: string } | null;
+      const code = failure?.code ?? '';
+
+      // 42501 = the row-level policy refused the insert. Before naming a cause,
+      // ask the DB who we actually are: the gate may simply be stale.
+      if (code === '42501') {
+        const truth = await readProfile();
+        // Log BOTH sides, so the next occurrence identifies itself as
+        // gate-staleness (gate ≠ db) or genuine DB truth (gate === db).
+        console.error('CALL ERROR: 42501 gate check', {
+          gate: { role: freshRole, plan: freshPlan },
+          db: { role: truth.role, plan: truth.plan },
+        });
+
+        setFreshRole(truth.role);
+        setFreshPlan(truth.plan);
+
+        if (!isProvider(truth.role)) {
+          // The account is not a provider. That is the whole truth, and no raw
+          // code belongs in front of the user for it.
+          setCanHost(false);
+          setHostError(null);
+          setHostErrorDetail(null);
+          setNotProvider(true);
+          return;
+        }
+
+        // Genuinely a provider: this is a real refusal, so report it as one.
+        setHostError('call.startFailed');
+        setHostErrorDetail(code);
+        return;
+      }
+
       setHostError('call.startFailed');
       setHostErrorDetail(failure?.code ?? failure?.message ?? String(error));
     } finally {
@@ -227,6 +308,14 @@ export default function CallHub() {
         <div className="eyebrow">{t('common.appName')}</div>
         <h2 id="call-hub-heading">{t('call.callHub')}</h2>
       </div>
+
+      {/* The DB said this account is not a provider: say so plainly, with no
+          raw code — the Start card is gone, so the message lives here. */}
+      {notProvider ? (
+        <p className="field-error" role="alert">
+          {t('call.notProvider')}
+        </p>
+      ) : null}
 
       <div className="call-hub-grid">
         {/* Start a meeting — providers only. */}

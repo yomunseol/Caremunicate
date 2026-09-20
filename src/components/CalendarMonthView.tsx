@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLang } from '../i18n';
 import { formatTime, localDayKey, weekStartsOn, type Appointment } from '../lib/appointments';
 import { addDays } from '../lib/calendarLayout';
@@ -50,6 +50,14 @@ export default function CalendarMonthView({
     }
     return map;
   }, [appointments]);
+
+  // Dev guard: report the REAL measured cell height, as a number. The rows come
+  // from grid-auto-rows, so this must always read exactly 112.
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const cell = document.querySelector('.cal-month-cell') as HTMLElement | null;
+    console.assert(cell?.offsetHeight === 112, 'month cell height', cell?.offsetHeight);
+  }, [days]);
 
   return (
     <div className="cal-month" role="grid">

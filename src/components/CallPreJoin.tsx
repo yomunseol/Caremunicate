@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
@@ -8,18 +8,23 @@ import CallDevicePicker from './CallDevicePicker';
 // The green room — Meet-style layout.
 //
 //   heading
-//   self preview (rounded-2xl) with circular mic/cam toggles beneath
-//   info card: room code · who you are joining as · waiting-room status
+//   self preview (rounded-2xl): a mint shimmer while acquiring, the mirrored
+//     live feed once it lands, or a named device-blocked tile — never black
+//   circular mic/cam toggles that flip the REAL tracks
+//   info card: room code · who you are joining as · waiting-room state
 //   primary "Join now" mint pill + secondary "Join without video"
 //
-// Nothing here opens a peer connection: all we hold is a local getUserMedia
-// preview, and the RTC layer only starts on join (commitJoin).
+// getUserMedia runs exactly ONCE, here; commitJoin hands this very stream to the
+// peer connections, so no second capture is ever opened. Nothing here opens a
+// peer connection — the RTC layer starts only on join.
 // ---------------------------------------------------------------------------
 
 export default function CallPreJoin() {
   const { t } = useLang();
   const {
     localStream,
+    previewAcquiring,
+    previewBlocked,
     roomCode,
     isHost,
     peerName,
@@ -38,6 +43,16 @@ export default function CallPreJoin() {
   const [camOn, setCamOn] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  // The pressed state mirrors the REAL track, not a local wish: a track that
+  // never arrived (permission refused) reads as off, instantly and without a
+  // second source of truth.
+  useEffect(() => {
+    const audio = localStream?.getAudioTracks()[0] ?? null;
+    const video = localStream?.getVideoTracks()[0] ?? null;
+    setMicOn(Boolean(audio && audio.enabled));
+    setCamOn(Boolean(video && video.enabled && video.readyState === 'live'));
+  }, [localStream]);
+
   const copyCode = () => {
     if (!roomCode) return;
     setCopied(true);
@@ -54,19 +69,24 @@ export default function CallPreJoin() {
     if (!track) return;
     track.enabled = !track.enabled;
     if (kind === 'audio') setMicOn(track.enabled);
-    else setCamOn(track.enabled);
+    else setCamOn(track.enabled && track.readyState === 'live');
   };
 
-  /** Joins with the camera switched off — audio-only, same session. */
+  /** Joins with the camera stopped — audio only, same session. */
   const joinWithoutVideo = () => {
-    const track = localStream?.getVideoTracks()[0];
-    if (track) track.enabled = false;
+    // Stop the camera FIRST so the LED goes out and nothing is captured. The
+    // ended track stays on the stream, so its transceiver still gets negotiated.
+    for (const track of localStream?.getVideoTracks() ?? []) {
+      track.enabled = false;
+      track.stop();
+    }
     setCamOn(false);
     void commitJoin();
   };
 
   // The host's own name for the host; the partner's name when we know it.
   const displayName = (isHost ? participants[0]?.name : peerName) || participants[0]?.name || '';
+  const initial = (displayName || '?').trim().charAt(0).toUpperCase() || '?';
 
   return (
     <div className="call-prejoin" style={styles.shell} role="dialog" aria-modal="true" aria-label={t('call.prejoinTitle')}>
@@ -74,24 +94,41 @@ export default function CallPreJoin() {
         <h2 style={styles.title}>{t('call.prejoinTitle')}</h2>
 
         <div style={styles.previewWrap}>
-          <video
-            ref={(el) => {
-              if (!el || !localStream) return;
-              if (el.srcObject !== localStream) {
-                el.srcObject = localStream;
-                void el.play().catch(() => {});
-              }
-            }}
-            autoPlay
-            playsInline
-            muted
-            style={styles.preview}
-          />
-          {!camOn ? (
-            <span className="call-avatar" style={styles.avatar} aria-hidden="true">
-              {(displayName || '?').trim().charAt(0).toUpperCase()}
+          {previewBlocked ? (
+            /* The browser refused a device: name it and keep the rest working. */
+            <span className="call-preview-blocked" role="status">
+              {previewBlocked === 'camera' ? (
+                <VideoOff size={22} aria-hidden="true" />
+              ) : (
+                <MicOff size={22} aria-hidden="true" />
+              )}
+              <span>{t(previewBlocked === 'camera' ? 'call.cameraBlocked' : 'call.micBlocked')}</span>
             </span>
-          ) : null}
+          ) : previewAcquiring || !localStream ? (
+            /* Acquiring: a mint shimmer, never a black rectangle. */
+            <span className="call-preview-skeleton" aria-hidden="true" />
+          ) : (
+            <>
+              <video
+                ref={(el) => {
+                  if (!el || !localStream) return;
+                  if (el.srcObject !== localStream) {
+                    el.srcObject = localStream;
+                    void el.play().catch(() => {});
+                  }
+                }}
+                autoPlay
+                playsInline
+                muted
+                style={styles.preview}
+              />
+              {!camOn ? (
+                <span className="call-avatar" style={styles.avatar} aria-hidden="true">
+                  {initial}
+                </span>
+              ) : null}
+            </>
+          )}
         </div>
 
         {/* Circular toggles sit beneath the preview, Meet-style. */}
@@ -142,7 +179,9 @@ export default function CallPreJoin() {
           ) : null}
           <span style={styles.infoRow}>
             <span style={styles.infoLabel}>{t('call.waitingRoom')}</span>
-            <span style={styles.infoValue}>{lobbyEnabled ? '✓' : '—'}</span>
+            <span className={lobbyEnabled ? 'call-state-chip is-on' : 'call-state-chip is-off'}>
+              {t(lobbyEnabled ? 'call.stateOn' : 'call.stateOff')}
+            </span>
           </span>
         </div>
 
@@ -197,7 +236,9 @@ const styles: Record<string, CSSProperties> = {
     position: 'relative',
     width: '100%',
     aspectRatio: '16 / 9',
-    background: '#000',
+    // Mint, never black: the surface is only ever covered by the skeleton, the
+    // blocked tile or the live feed.
+    background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
     borderRadius: '1rem',
     overflow: 'hidden',
     boxShadow: '0 12px 30px rgba(6, 26, 22, 0.28)',

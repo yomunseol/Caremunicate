@@ -1,13 +1,16 @@
 import { useMemo } from 'react';
-import { CalendarOff } from 'lucide-react';
 import { useLang } from '../i18n';
-import { effectiveStatus, formatDayLong, type Appointment } from '../lib/appointments';
+import { formatDayLong, localDayKey, type Appointment } from '../lib/appointments';
+import { addDays, groupByDay, SCHEDULE_WINDOW_DAYS, startOfDay } from '../lib/calendarLayout';
 import AppointmentCard, { type Counterpart } from './AppointmentCard';
 
 // ---------------------------------------------------------------------------
-// Schedule — the appointments list. Grouped by day, each row an AppointmentCard
-// with its status chip and Join button; cancelled and finished appointments
-// sink below the ones still to come.
+// Schedule — a flat list from today forward 30 days.
+//
+// Grouped ONLY by days that actually carry an appointment, so an empty day and
+// an empty week render nothing at all: no full-week scaffolding, no month of
+// blank day headers. The single exception is a today section, which is always
+// present — with a muted line when nothing is on.
 // ---------------------------------------------------------------------------
 
 type CalendarScheduleViewProps = {
@@ -38,25 +41,17 @@ export default function CalendarScheduleView({
   const { t, locale } = useLang();
 
   const groups = useMemo(() => {
-    const now = Date.now();
-    const ordered = [...appointments].sort((a, b) => a.start_at.localeCompare(b.start_at));
-    const isDone = (appointment: Appointment) => {
-      const status = effectiveStatus(appointment, now);
-      return status === 'completed' || status === 'cancelled';
-    };
-    const upcoming = ordered.filter((appointment) => !isDone(appointment));
-    const past = ordered.filter(isDone);
-
-    const bucket = (list: Appointment[]) => {
-      const byDay = new Map<string, Appointment[]>();
-      for (const appointment of list) {
-        const key = new Date(appointment.start_at).toDateString();
-        byDay.set(key, [...(byDay.get(key) ?? []), appointment]);
-      }
-      return [...byDay.entries()];
-    };
-
-    return { upcoming: bucket(upcoming), past: bucket(past) };
+    const today = startOfDay(new Date());
+    const todayKey = localDayKey(today);
+    // Today forward 30 days. groupByDay keeps only the days that carry an
+    // appointment, so a day in the window with nothing on renders no section.
+    const days = groupByDay(
+      appointments,
+      (appointment) => localDayKey(appointment.start_at),
+      todayKey,
+      localDayKey(addDays(today, SCHEDULE_WINDOW_DAYS)),
+    );
+    return { today, todayKey, days };
   }, [appointments]);
 
   const renderRow = (appointment: Appointment) => (
@@ -76,34 +71,29 @@ export default function CalendarScheduleView({
     </li>
   );
 
-  if (appointments.length === 0) {
-    /* Never a bare '—': an icon and a sentence. */
-    return (
-      <div className="cal-empty-state">
-        <CalendarOff size={22} aria-hidden="true" />
-        {/* Not yet translated — needs the 10-locale string. */}
-        <p>No appointments yet.</p>
-      </div>
-    );
-  }
+  const todayItems = groups.days.find(([key]) => key === groups.todayKey)?.[1] ?? [];
+  const laterDays = groups.days.filter(([key]) => key !== groups.todayKey);
 
   return (
     <div className="cal-schedule">
-      {groups.upcoming.map(([dayKey, items]) => (
+      {/* Today is always the first section, even with nothing on it. */}
+      <section className="cal-schedule-day">
+        <h3 className="cal-schedule-date">{formatDayLong(groups.today, locale)}</h3>
+        {todayItems.length > 0 ? (
+          <ul className="cal-schedule-list">{todayItems.map(renderRow)}</ul>
+        ) : (
+          <p className="cal-muted">{t('cal.nothingToday')}</p>
+        )}
+      </section>
+
+      {laterDays.map(([dayKey, items]) => (
         <section key={dayKey} className="cal-schedule-day">
           <h3 className="cal-schedule-date">{formatDayLong(items[0].start_at, locale)}</h3>
           <ul className="cal-schedule-list">{items.map(renderRow)}</ul>
         </section>
       ))}
 
-      {groups.past.length > 0 ? (
-        <section className="cal-schedule-day is-past">
-          <h3 className="cal-schedule-date">{t('cal.appointments')}</h3>
-          <ul className="cal-schedule-list">
-            {groups.past.flatMap(([, items]) => items).map(renderRow)}
-          </ul>
-        </section>
-      ) : null}
+      <p className="cal-muted cal-schedule-end">{t('cal.noMoreAppointments')}</p>
     </div>
   );
 }

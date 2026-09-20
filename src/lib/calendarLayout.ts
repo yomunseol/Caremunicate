@@ -47,6 +47,20 @@ export const addDays = (date: Date, days: number): Date => {
   return copy;
 };
 
+/**
+ * The seven days of the week that CONTAINS `anchor` — the locale's week-start
+ * (`weekStarts`, 0 = Sunday) through week-end, at local midnight.
+ *
+ * Always exactly seven entries: never a month-length column set, never two
+ * weeks stacked, never a repeated week row. This is the ONLY week day list.
+ */
+export const weekDaysOf = (anchor: Date, weekStarts: number): Date[] => {
+  const day = startOfDay(anchor);
+  const offset = (day.getDay() - weekStarts + 7) % 7;
+  const start = addDays(day, -offset);
+  return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+};
+
 /** Wall-clock minutes since local midnight — 0..1439. */
 export const minutesOfDay = (date: Date): number => date.getHours() * 60 + date.getMinutes();
 
@@ -145,6 +159,36 @@ export const spansDay = (event: TimeSpan, day: Date): boolean => {
   const from = startOfDay(day).getTime();
   const to = addDays(startOfDay(day), 1).getTime();
   return event.start.getTime() < to && event.end.getTime() > from;
+};
+
+/** How far forward the Schedule list looks. */
+export const SCHEDULE_WINDOW_DAYS = 30;
+
+/**
+ * Bucket items by their LOCAL day key, keeping ONLY days that carry at least one
+ * item — an empty day, and so an empty week, produces no entry at all.
+ *
+ * `fromKey` is inclusive and `untilKey` exclusive, both 'YYYY-MM-DD' from
+ * lib/time's dayKey, which sorts chronologically as a string. An item whose key
+ * cannot be derived (dayKey returns '') is dropped, never landed on a phantom
+ * day. Days and each day's items come back sorted.
+ */
+export const groupByDay = <T extends { start_at: string }>(
+  items: T[],
+  keyOf: (item: T) => string,
+  fromKey: string,
+  untilKey: string,
+): Array<[string, T[]]> => {
+  const byDay = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (!key || key < fromKey || key >= untilKey) continue;
+    byDay.set(key, [...(byDay.get(key) ?? []), item]);
+  }
+
+  return [...byDay.entries()]
+    .map(([key, list]) => [key, [...list].sort((a, b) => a.start_at.localeCompare(b.start_at))] as [string, T[]])
+    .sort(([a], [b]) => a.localeCompare(b));
 };
 
 /** The 24 hour-gutter labels: "00", "01", … in the active locale, 24-hour. */
