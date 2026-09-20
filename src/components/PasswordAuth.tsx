@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Mail } from 'lucide-react';
 import type { AuthResponse, Factor } from '@supabase/supabase-js';
 import {
   clearPersistedSupabaseSession,
@@ -36,6 +37,12 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [sendNotice, setSendNotice] = useState('');
   // Resend cooldown, counted down one second at a time.
   const [resendIn, setResendIn] = useState(0);
+  // The inline "Forgot password?" panel, shown under the password field.
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryError, setRecoveryError] = useState('');
+  const [recoverySent, setRecoverySent] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   // Clear any partially-persisted session from a previous attempt whenever the
   // component mounts (arriving at the login screen) or the view resets.
@@ -409,6 +416,40 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
+  // Sends the Supabase recovery email. A rate limit is reported as a friendly
+  // retry-later line — never as a raw status code.
+  const sendRecovery = async () => {
+    const address = (recoveryEmail || email).trim();
+    if (!address) {
+      setRecoveryError(t('login.err.enterBoth'));
+      return;
+    }
+
+    setRecoveryBusy(true);
+    setRecoveryError('');
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(address, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      console.log('Recovery email response:', { error: resetError });
+
+      if (resetError) {
+        console.log('Recovery email error:', resetError);
+        const status = (resetError as { status?: number }).status;
+        const rateLimited =
+          status === 429 || /rate limit|too many/i.test(resetError.message ?? '');
+        setRecoveryError(
+          rateLimited ? 'Too many attempts. Please try again later.' : t('errors.somethingWrong'),
+        );
+        return;
+      }
+
+      setRecoverySent(true);
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
   const goBackToPassword = () => {
     setPending2FA(false);
     setView('password');
@@ -486,6 +527,34 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       lineHeight: 1.45,
     },
     resendRow: { display: 'flex', gap: '0.5rem', alignItems: 'stretch' },
+    linkButton: {
+      justifySelf: 'start',
+      border: 'none',
+      padding: 0,
+      background: 'transparent',
+      color: '#216e5d',
+      fontWeight: 700,
+      fontSize: '0.82rem',
+      textDecoration: 'underline',
+      cursor: 'pointer',
+    },
+    recoveryPanel: {
+      display: 'grid',
+      gap: '0.6rem',
+      padding: '0.8rem',
+      border: '1px solid rgba(62, 169, 133, 0.28)',
+      borderRadius: '0.9rem',
+      background: 'rgba(62, 169, 133, 0.06)',
+    },
+    recoveryDone: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.45rem',
+      margin: 0,
+      color: '#216e5d',
+      fontWeight: 700,
+      fontSize: '0.88rem',
+    },
     resendButton: {
       border: '1px solid rgba(62, 169, 133, 0.3)',
       borderRadius: '999px',
@@ -562,6 +631,62 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           <button type="submit" style={styles.primaryButton} disabled={loading}>
             {loading ? t('login.signingIn') : t('login.signIn')}
           </button>
+
+          {/* "Forgot password?" sits under the password field and opens the
+              inline recovery panel. A plain <div>, never a nested <form>. */}
+          <button
+            type="button"
+            style={styles.linkButton}
+            onClick={() => {
+              setRecoveryOpen((open) => !open);
+              setRecoveryError('');
+            }}
+            disabled={loading || recoveryBusy}
+          >
+            {t('auth.forgotPassword')}
+          </button>
+
+          {recoveryOpen ? (
+            <div style={styles.recoveryPanel}>
+              {recoverySent ? (
+                <p style={styles.recoveryDone} role="status">
+                  <Mail size={16} aria-hidden="true" /> {t('auth.recoverySent')}
+                </p>
+              ) : (
+                <>
+                  <div style={styles.field}>
+                    <label style={styles.label} htmlFor="pa-recovery-email">
+                      {t('login.labelEmail')}
+                    </label>
+                    <input
+                      id="pa-recovery-email"
+                      style={styles.input}
+                      type="email"
+                      autoComplete="email"
+                      placeholder={t('login.phEmail')}
+                      value={recoveryEmail || email}
+                      onChange={(event) => setRecoveryEmail(event.target.value)}
+                      disabled={recoveryBusy}
+                    />
+                  </div>
+
+                  {recoveryError ? (
+                    <p style={styles.error} role="alert">{recoveryError}</p>
+                  ) : null}
+
+                  {/* Not supplied by the spec — needs its 10-locale string. */}
+                  <button
+                    type="button"
+                    style={styles.ghostButton}
+                    onClick={() => void sendRecovery()}
+                    disabled={recoveryBusy}
+                  >
+                    Send recovery email
+                  </button>
+                </>
+              )}
+            </div>
+          ) : null}
         </form>
       ) : null}
 

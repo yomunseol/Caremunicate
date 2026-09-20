@@ -33,6 +33,7 @@ import { useToast } from './context/ToastContext';
 import { isProvider, roleLabelKey } from './lib/roles';
 import { describeError } from './lib/errors';
 import { useLang } from './i18n';
+import ResetPassword from './components/ResetPassword';
 
 type RouteKey =
   | 'home'
@@ -43,7 +44,8 @@ type RouteKey =
   | 'chat'
   | 'call'
   | 'calendar'
-  | 'verify';
+  | 'verify'
+  | 'reset';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -119,6 +121,12 @@ const CALL_HUB_PATH = /^\/call\/?$/;
 const isCallHubPath = (): boolean =>
   typeof window !== 'undefined' && CALL_HUB_PATH.test(window.location.pathname);
 
+/** `/reset-password` — where a Supabase recovery email lands. */
+const RESET_PASSWORD_PATH = /^\/reset-password\/?$/;
+
+const isResetPasswordPath = (): boolean =>
+  typeof window !== 'undefined' && RESET_PASSWORD_PATH.test(window.location.pathname);
+
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
   const match = window.location.pathname.match(CALL_PATH);
@@ -132,6 +140,8 @@ const pathCallCode = (): string | null => {
 
 const getInitialRoute = (): RouteKey => {
   if (typeof window === 'undefined') return 'home';
+  // A recovery link lands on a real path, with the tokens in the fragment.
+  if (isResetPasswordPath()) return 'reset';
   if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
 };
@@ -143,7 +153,9 @@ const getInitialRoute = (): RouteKey => {
  */
 const routerBasePath = (): string => {
   if (typeof window === 'undefined') return '/';
-  return /^\/call(\/|$)/.test(window.location.pathname) ? '/' : window.location.pathname;
+  const path = window.location.pathname;
+  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path)) return '/';
+  return path;
 };
 
 const getInitialConversationId = (): string | null =>
@@ -937,6 +949,9 @@ function App() {
             </section>
           </>
         )}
+
+        {/* A recovery link: its own route, still inside the ErrorBoundary. */}
+        {route === 'reset' && <ResetPassword />}
 
         {(route === 'signup' || route === 'login') && (
           <section className="section form-grid auth-combined-layout">

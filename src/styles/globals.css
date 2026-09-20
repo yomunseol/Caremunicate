@@ -2989,6 +2989,35 @@ img {
 
 .cal-schedule-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
 
+/* A schedule row's circular buttons: a 20px glyph, optically centred in a 40px
+   circle (48px under 640px), in mint-800. */
+.appt-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  background: #fff;
+  color: var(--accent-strong, #216e5d);
+  cursor: pointer;
+}
+
+.appt-icon-btn svg { display: block; }
+
+@media (max-width: 640px) {
+  .appt-icon-btn {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+  }
+}
+
 /* The end of the 30-day window. */
 .cal-schedule-end { padding-block: 0.35rem; text-align: center; }
 

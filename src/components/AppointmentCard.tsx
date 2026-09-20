@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { CalendarPlus, MoreVertical, Phone } from 'lucide-react';
+import { CalendarPlus, Phone } from 'lucide-react';
+import Icon from './Icon';
 import {
   canJoin,
   effectiveStatus,
@@ -69,6 +70,19 @@ export default function AppointmentCard({
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [menuOpen]);
+
+  // Dev guard: no glyph rendered in this card may measure under 16px.
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    document.querySelectorAll<SVGElement>('.appt-card svg').forEach((glyph) => {
+      const box = glyph.getBoundingClientRect();
+      console.assert(
+        box.width >= 16 && box.height >= 16,
+        'icon size',
+        `${box.width.toFixed(1)}x${box.height.toFixed(1)}`,
+      );
+    });
+  }, []);
 
   const status = effectiveStatus(appointment, now);
   // canJoin already requires status scheduled/confirmed, a real room_id, and
@@ -152,28 +166,26 @@ export default function AppointmentCard({
         <button
           type="button"
           className="ghost-button appt-icon-btn"
-          style={styles.iconButton}
-          aria-label={t('cal.appointments')}
-          title={t('cal.appointments')}
-          onClick={() => onAddToCalendar(appointment)}
+          aria-label={t('cal.reschedule')}
+          title={t('cal.reschedule')}
+          onClick={() => onReschedule(appointment)}
         >
-          {/* 20px, never a speck. */}
-          <CalendarPlus size={20} aria-hidden="true" />
+          {/* A 20px glyph, centred in its circle. */}
+          <Icon name="calendar-edit" size={20} />
         </button>
 
         <div ref={menuRef} style={styles.menuWrap}>
           <button
             type="button"
-            className="ghost-button"
-            style={styles.iconButton}
+            className="ghost-button appt-icon-btn"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             aria-label="More"
             title="More"
             onClick={() => setMenuOpen((open) => !open)}
           >
-            {/* Three DISTINCT dots at 20px — r=2, 5px apart in the 24px grid. */}
-            <MoreVertical size={20} strokeWidth={2} aria-hidden="true" />
+            {/* Three SOLID dots at 20px. */}
+            <Icon name="ellipsis-vertical" size={20} />
           </button>
 
           {menuOpen ? (
@@ -192,16 +204,18 @@ export default function AppointmentCard({
                 </button>
               ) : null}
 
+              {/* Reschedule is the row's own button now, so the menu keeps the
+                  .ics export instead of duplicating it. */}
               <button
                 type="button"
                 role="menuitem"
                 style={styles.menuItem}
                 onClick={() => {
                   setMenuOpen(false);
-                  onReschedule(appointment);
+                  onAddToCalendar(appointment);
                 }}
               >
-                {t('cal.reschedule')}
+                <CalendarPlus size={20} aria-hidden="true" /> Add to calendar
               </button>
 
               {!cancelled ? (
@@ -306,18 +320,6 @@ const styles: Record<string, CSSProperties> = {
     background: 'linear-gradient(120deg, #48b58f, #7adab1)',
     borderColor: 'rgba(62, 169, 133, 0.5)',
     color: '#072c2a',
-    cursor: 'pointer',
-  },
-  iconButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 40,
-    height: 40,
-    borderRadius: '50%',
-    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
-    background: '#fff',
-    color: 'var(--accent-strong, #216e5d)',
     cursor: 'pointer',
   },
   menuWrap: { position: 'relative' },
