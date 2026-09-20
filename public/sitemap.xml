@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- One entry, deliberately: every other screen is a hash route on this same
+       document, and /call/<words> is a private room that robots.txt excludes. -->
+  <url>
+    <loc>https://caremunicate.online/</loc>
+    <changefreq>weekly</changefreq>
+  </url>
+</urlset>

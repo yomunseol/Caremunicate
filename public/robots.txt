@@ -1,0 +1,13 @@
+# Caremunicate — a single-document SPA, so "/" is the only indexable document.
+# The in-app screens are hash routes (#login, #calendar, …), and a fragment is
+# not a separate URL to a crawler.
+
+User-agent: *
+Allow: /
+
+# Private consultation rooms are word-code URLs. vercel.json rewrites every
+# path to /index.html, so these are reachable and must never be indexed.
+Disallow: /call/
+Disallow: /reset-password
+
+Sitemap: https://caremunicate.online/sitemap.xml
