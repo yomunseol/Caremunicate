@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { CalendarOff, X } from 'lucide-react';
 import { useLang } from '../i18n';
+import { useToast } from '../context/ToastContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   createAppointment,
+  createAppointmentRoom,
   formatDayLong,
   SLOT_CHOICES,
   type PersonInfo,
@@ -34,6 +36,8 @@ type QuickCreatePopoverProps = {
   minutes: number;
   providerId: string;
   patients: PersonInfo[];
+  /** The provider's saved slot length — the default duration. */
+  slotMinutes: number;
   onClose: () => void;
   onCreated: () => void;
 };
@@ -44,18 +48,28 @@ export default function QuickCreatePopover({
   minutes,
   providerId,
   patients,
+  slotMinutes,
   onClose,
   onCreated,
 }: QuickCreatePopoverProps) {
-  const { t, locale } = useLang();
+  const { t, tString, locale } = useLang();
+  const { notify } = useToast();
   const trapRef = useFocusTrap<HTMLFormElement>(true);
   const nodeRef = useRef<HTMLFormElement | null>(null);
 
   const [title, setTitle] = useState('');
   const [time, setTime] = useState(`${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`);
-  const [duration, setDuration] = useState<number>(SLOT_CHOICES[1]);
+  const [duration, setDuration] = useState<number>(slotMinutes);
   const [patientId, setPatientId] = useState(patients[0]?.id ?? '');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  // The provider's own slot length may not be one of the standard durations, so
+  // offer the union — otherwise the select would show a blank value.
+  const durationChoices = useMemo(
+    () => [...new Set([...SLOT_CHOICES, slotMinutes])].sort((a, b) => a - b),
+    [slotMinutes],
+  );
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -85,20 +99,48 @@ export default function QuickCreatePopover({
     const end = new Date(start.getTime() + duration * 60_000);
 
     setSaving(true);
-    const created = await createAppointment({
-      patientId,
-      providerId,
-      roomId: null,
-      roomCode: null,
-      start,
-      end,
-      note: title.trim() || undefined,
-    });
-    setSaving(false);
+    setError('');
+    try {
+      const created = await createAppointment({
+        patientId,
+        providerId,
+        roomId: null,
+        roomCode: null,
+        start,
+        end,
+        note: title.trim() || undefined,
+      });
 
-    if (created) {
+      if (!created) {
+        setError('createFailed');
+        return;
+      }
+
+      // The room is minted SERVER-side, which is also what notifies the patient.
+      const linked = await createAppointmentRoom(created.id);
+
+      if (!linked.ok) {
+        console.error('CALENDAR ERROR: create_appointment_room', linked.code);
+
+        if (linked.missing) {
+          // The FUNCTION is absent. Say so loudly with the raw code and stop —
+          // never silently skip room linking, and never claim success.
+          notify(`server function missing: create_appointment_room (${linked.code})`, 'error');
+          setError('createRoomMissing');
+          onCreated();
+          return;
+        }
+
+        setError(linked.code);
+        onCreated();
+        return;
+      }
+
+      notify(tString('notif.notifApproved', { code: linked.code }), 'success');
       onCreated();
       onClose();
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -162,9 +204,9 @@ export default function QuickCreatePopover({
             aria-label="Duration"
             onChange={(event) => setDuration(Number(event.target.value))}
           >
-            {SLOT_CHOICES.map((choice) => (
+            {durationChoices.map((choice) => (
               <option key={choice} value={choice}>
-                {choice} min
+                {t('cal.minUnit', { count: choice })}
               </option>
             ))}
           </select>
@@ -194,6 +236,13 @@ export default function QuickCreatePopover({
           </span>
         )}
       </label>
+
+      {/* Self-reporting: the raw server code, never a softened reason. */}
+      {error ? (
+        <span className="field-error" role="alert">
+          <span className="error-detail">{error}</span>
+        </span>
+      ) : null}
 
       <div className="cal-popover-actions">
         <button type="button" className="ghost-button" onClick={onClose}>

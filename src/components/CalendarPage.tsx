@@ -8,6 +8,7 @@ import {
   formatMonth,
   formatWeekRange,
   loadAppointments,
+  loadAvailability,
   loadPeople,
   loadProviders,
   localDayKey,
@@ -76,6 +77,8 @@ export default function CalendarPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [detail, setDetail] = useState<{ appointment: Appointment; anchor: Anchor } | null>(null);
   const [quickCreate, setQuickCreate] = useState<{ anchor: Anchor; day: Date; minutes: number } | null>(null);
+  /** The provider's saved slot length — the default duration for a new block. */
+  const [slotMinutes, setSlotMinutes] = useState(30);
 
   const side: Side = isProvider(role) ? 'provider' : 'patient';
 
@@ -165,6 +168,21 @@ export default function CalendarPage() {
   useEffect(() => {
     void (async () => setProviders(await loadProviders()))();
   }, []);
+
+  // A provider's slot length seeds the duration of a zone-created block.
+  useEffect(() => {
+    if (!user?.id || side !== 'provider') return;
+    let cancelled = false;
+    void (async () => {
+      const rules = await loadAvailability(user.id);
+      if (cancelled) return;
+      const saved = Number(rules[0]?.slot_minutes);
+      setSlotMinutes(Number.isFinite(saved) && saved > 0 ? saved : 30);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, side]);
 
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
@@ -332,6 +350,7 @@ export default function CalendarPage() {
               appointments={appointments}
               titleFor={titleFor}
               statusOf={(appointment) => effectiveStatus(appointment)}
+              canCreate={side === 'provider'}
               onEventClick={(appointment, anchor) => setDetail({ appointment, anchor })}
               onSlotClick={onSlotClick}
             />
@@ -399,6 +418,7 @@ export default function CalendarPage() {
           minutes={quickCreate.minutes}
           providerId={user.id}
           patients={patients}
+          slotMinutes={slotMinutes}
           onClose={() => setQuickCreate(null)}
           onCreated={refresh}
         />

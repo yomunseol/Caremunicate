@@ -462,6 +462,8 @@ export const createAppointment = async (payload: {
   end: Date;
   note?: string;
 }): Promise<Appointment | null> => {
+  const durationMin = Math.max(1, Math.round((payload.end.getTime() - payload.start.getTime()) / 60_000));
+
   const { data, error } = await supabase
     .from('appointments')
     .insert({
@@ -471,7 +473,10 @@ export const createAppointment = async (payload: {
       room_code: payload.roomCode,
       start_at: payload.start.toISOString(),
       end_at: payload.end.toISOString(),
-      status: 'scheduled',
+      duration_min: durationMin,
+      // A provider creating their own block confirms it outright — there is no
+      // request to approve.
+      status: 'confirmed',
       note: payload.note ?? null,
     })
     .select('*')
@@ -482,6 +487,40 @@ export const createAppointment = async (payload: {
     return null;
   }
   return firstRow<Appointment>(data);
+};
+
+/**
+ * Mints the room for a provider-created appointment, server-side. A 23505 (the
+ * code was already taken) retries with a FRESH code, up to 10 times.
+ *
+ * `missing` marks the FUNCTION ITSELF being absent (42883 undefined_function,
+ * PGRST202 not in the schema cache) — the caller must surface that loudly and
+ * stop, never silently skip room linking.
+ */
+export const createAppointmentRoom = async (
+  appointmentId: string,
+): Promise<{ ok: true; code: string } | { ok: false; code: string; missing: boolean }> => {
+  let lastCode = '';
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const code = generateWordCode();
+    const { error } = await supabase.rpc('create_appointment_room', {
+      p_appointment_id: appointmentId,
+      p_code: code,
+    });
+
+    if (!error) return { ok: true, code };
+
+    console.error('CALENDAR ERROR:', error.message);
+    lastCode = error.code ?? error.message;
+
+    if (error.code === '42883' || error.code === 'PGRST202') {
+      return { ok: false, code: lastCode, missing: true };
+    }
+    if (error.code !== '23505') break;
+  }
+
+  return { ok: false, code: lastCode, missing: false };
 };
 
 export const setAppointmentStatus = async (

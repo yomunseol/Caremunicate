@@ -191,10 +191,19 @@ export const groupByDay = <T extends { start_at: string }>(
     .sort(([a], [b]) => a.localeCompare(b));
 };
 
-/** The 24 hour-gutter labels: "00", "01", … in the active locale, 24-hour. */
+/**
+ * The 24 hour-gutter labels — the hour AXIS, not a clock reading.
+ *
+ * `hour: 'numeric'` with h23 lets each locale use its own hour pattern, so ko
+ * reads 0시…23시 with no leading zero and never the forced pad that
+ * `hour: '2-digit'` produced ('00시'). en/ar/fr/de legitimately pad under h23
+ * ("00", "00 h", "00 Uhr") — that is their convention, not a pad we imposed.
+ *
+ * Clock times INSIDE blocks and chips stay padded HH:MM (fmtTime in lib/time).
+ */
 export const hourLabels = (locale: string): string[] =>
   Array.from({ length: 24 }, (_, hour) =>
-    new Intl.DateTimeFormat(locale, { hour: '2-digit', hourCycle: 'h23' }).format(
+    new Intl.DateTimeFormat(locale, { hour: 'numeric', hourCycle: 'h23' }).format(
       new Date(2024, 0, 1, hour),
     ),
   );

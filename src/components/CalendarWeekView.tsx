@@ -33,6 +33,13 @@ const HOUR_HEIGHT = 48;
 /** The sticky day header's height, inside the grid's scrollport. */
 const HEAD_HEIGHT = 40;
 
+/**
+ * Empty half-hour cells — the provider's click targets. 48 per day, 24 hours
+ * × 2. Click-only for now: drag-select (a range in one gesture) is v2.
+ */
+const ZONE_MINUTES = 30;
+const ZONES = Array.from({ length: DAY_MINUTES / ZONE_MINUTES }, (_, index) => index * ZONE_MINUTES);
+
 /** span(start, computed end) for layout — never reads an end_at column. */
 const spanOf = (appointment: Appointment): { start: Date; end: Date } => {
   const start = parseDate(appointment.start_at, 'CalendarWeekView') ?? new Date();
@@ -45,6 +52,8 @@ type CalendarWeekViewProps = {
   appointments: Appointment[];
   titleFor: (appointment: Appointment) => string;
   statusOf: (appointment: Appointment) => AppointmentStatus;
+  /** Providers get hoverable empty-cell zones; patients' grid stays inert. */
+  canCreate: boolean;
   onEventClick: (appointment: Appointment, anchor: Anchor) => void;
   onSlotClick: (day: Date, minutes: number, anchor: Anchor) => void;
 };
@@ -64,6 +73,7 @@ export default function CalendarWeekView({
   appointments,
   titleFor,
   statusOf,
+  canCreate,
   onEventClick,
   onSlotClick,
 }: CalendarWeekViewProps) {
@@ -115,6 +125,33 @@ export default function CalendarWeekView({
     if (import.meta.env?.DEV) console.assert(days.length === 7, 'week columns', days.length);
   }, [days]);
 
+  // Dev guard: the gutter's FIRST label must be this locale's zero-hour string
+  // (ko '0시', never the forced '00시').
+  useEffect(() => {
+    if (!import.meta.env?.DEV) return;
+    const hourFormat = (option: 'numeric' | '2-digit') =>
+      new Intl.DateTimeFormat(locale, { hour: option, hourCycle: 'h23' });
+    const zero = hourFormat('numeric').format(new Date(2024, 0, 1, 0));
+    const first = document.querySelector('.cal-gutter-label') as HTMLElement | null;
+
+    console.assert(
+      first?.textContent === zero,
+      'gutter zero-hour label',
+      `${JSON.stringify(first?.textContent)} vs ${JSON.stringify(zero)}`,
+    );
+    console.log('GUTTER LABEL:', {
+      locale,
+      resolvedHour: hourFormat('numeric').resolvedOptions().hour,
+      zero,
+      forced2DigitWouldBe: hourFormat('2-digit').format(new Date(2024, 0, 1, 0)),
+      labels: labels.slice(0, 3),
+    });
+  }, [locale, labels]);
+
+  /** 'HH:MM' for an offset from midnight — a zone's 24-hour label. */
+  const zoneClock = (minutes: number): string =>
+    `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+
   const slotFromClick = (event: React.MouseEvent<HTMLDivElement>, day: Date): number => {
     const rect = event.currentTarget.getBoundingClientRect();
     const ratio = (event.clientY - rect.top) / rect.height;
@@ -149,7 +186,7 @@ export default function CalendarWeekView({
           <div className="cal-gutter" aria-hidden="true">
             {labels.map((label, hour) => (
               <span key={label + hour} className="cal-gutter-label" style={{ top: hour * HOUR_HEIGHT }}>
-                {hour === 0 ? '' : label}
+                {label}
               </span>
             ))}
           </div>
@@ -158,18 +195,58 @@ export default function CalendarWeekView({
             const isToday = localDayKey(day) === todayKey;
             const nowTop = (minutesOfDay(now) / DAY_MINUTES) * 100;
 
+            // Which half-hour cells already hold an appointment? Taken from the
+            // day-CLIPPED percentages, so an event spanning midnight cannot mark
+            // the wrong cells. A zone is never rendered under an event block.
+            const busy = new Set<number>();
+            for (const positioned of byColumn[index]) {
+              const from = Math.floor(
+                ((positioned.topPct / 100) * DAY_MINUTES) / ZONE_MINUTES,
+              ) * ZONE_MINUTES;
+              const to = ((positioned.topPct + positioned.heightPct) / 100) * DAY_MINUTES;
+              for (let minute = from; minute < to; minute += ZONE_MINUTES) busy.add(minute);
+            }
+
             return (
               <div
                 key={localDayKey(day)}
                 className="cal-col"
                 role="gridcell"
-                onClick={(event) => {
-                  const target = event.target as HTMLElement;
-                  // A click that landed on an event block is that event's.
-                  if (target.closest('.cal-ev')) return;
-                  onSlotClick(day, slotFromClick(event, day), { x: event.clientX, y: event.clientY });
-                }}
+                // Patients get an inert grid, so only their column stays clickable
+                // (it opens the booking flow). Providers click a ZONE instead.
+                onClick={
+                  canCreate
+                    ? undefined
+                    : (event) => {
+                        const target = event.target as HTMLElement;
+                        // A click that landed on an event block is that event's.
+                        if (target.closest('.cal-ev')) return;
+                        onSlotClick(day, slotFromClick(event, day), {
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }
+                }
               >
+                {canCreate
+                  ? ZONES.filter((minutes) => !busy.has(minutes)).map((minutes) => (
+                      <button
+                        key={`zone-${minutes}`}
+                        type="button"
+                        className="cal-zone"
+                        style={{
+                          top: `${(minutes / DAY_MINUTES) * 100}%`,
+                          height: `${(ZONE_MINUTES / DAY_MINUTES) * 100}%`,
+                        }}
+                        aria-label={`${t('cal.bookAppointment')} ${zoneClock(minutes)}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onSlotClick(day, minutes, { x: event.clientX, y: event.clientY });
+                        }}
+                      />
+                    ))
+                  : null}
+
                 {byColumn[index].map((positioned) => {
                   const appointment = positioned.event as Appointment & { start: Date; end: Date };
                   const status = statusOf(appointment);

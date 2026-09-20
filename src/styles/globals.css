@@ -2849,6 +2849,38 @@ img {
 
 .cal-ev:hover { filter: brightness(0.96); }
 
+/* Empty half-hour cells — the provider's click targets. They sit UNDER the
+   event blocks (z-index 0 vs 1) and are never rendered where an appointment
+   already is, so nothing overlaps. Drag-select is v2: click-only for now. */
+.cal-zone {
+  position: absolute;
+  inset-inline: 0;
+  z-index: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cal-zone:hover { background: rgba(62, 169, 133, 0.1); }
+
+/* A 16px plus, drawn with two bars so hover costs no extra DOM. */
+.cal-zone::after {
+  content: '';
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  width: 16px;
+  height: 16px;
+  opacity: 0;
+  background:
+    linear-gradient(var(--cal-mint-ink, #216e5d), var(--cal-mint-ink, #216e5d)) center / 16px 2px no-repeat,
+    linear-gradient(var(--cal-mint-ink, #216e5d), var(--cal-mint-ink, #216e5d)) center / 2px 16px no-repeat;
+}
+
+.cal-zone:hover::after { opacity: 1; }
+
 .cal-ev.is-scheduled { background: var(--cal-mint-soft, rgba(62, 169, 133, 0.16)); border-inline-start-color: var(--cal-mint, #3ea985); }
 .cal-ev.is-confirmed { background: var(--cal-mint, #3ea985); border-inline-start-color: var(--cal-mint-ink, #216e5d); }
 .cal-ev.is-completed { background: rgba(15, 58, 50, 0.1); border-inline-start-color: rgba(15, 58, 50, 0.3); color: var(--text-muted, #557b76); }
