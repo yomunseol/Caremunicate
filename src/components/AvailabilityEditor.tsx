@@ -18,9 +18,19 @@ import { useLang } from '../i18n';
 //   • disabled weekdays -> delete
 // ---------------------------------------------------------------------------
 
-/** Fixed for now: the editor's state carries only on/off and the two times. */
-const SLOT_MIN = 30;
-const BUFFER_MIN = 0;
+/** The slot lengths a provider may offer. */
+const SLOT_LENGTH_CHOICES = [15, 20, 30, 45, 60] as const;
+
+/** Used until a stored row tells us otherwise. */
+const DEFAULT_SLOT_MINUTES = 30;
+const DEFAULT_BUFFER_MINUTES = 0;
+
+/** The buffer's allowed range, and the step the input moves in. */
+const MAX_BUFFER_MINUTES = 60;
+const BUFFER_STEP_MINUTES = 5;
+
+const clampBuffer = (value: number): number =>
+  Number.isFinite(value) ? Math.min(MAX_BUFFER_MINUTES, Math.max(0, value)) : 0;
 
 /** The only accepted time shape: 24-hour HH:MM. */
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -46,6 +56,9 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [busy, setBusy] = useState(false);
   const [rangeErrorWeekday, setRangeErrorWeekday] = useState<number | null>(null);
+  // Slot length and buffer are per-provider: written on every row, edited once.
+  const [slotMinutes, setSlotMinutes] = useState<number>(DEFAULT_SLOT_MINUTES);
+  const [bufferMinutes, setBufferMinutes] = useState<number>(DEFAULT_BUFFER_MINUTES);
 
   // Read the stored rows back into the same raw strings they were saved as.
   const load = useCallback(async () => {
@@ -63,6 +76,14 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
         end: toInputTime(rule.end_time),
       };
     }
+
+    // Adopt what was stored, so the controls show the saved truth after a
+    // reload instead of resetting to the defaults.
+    const savedSlot = Number(stored[0]?.slot_minutes);
+    if (Number.isFinite(savedSlot) && savedSlot > 0) setSlotMinutes(savedSlot);
+    const savedBuffer = Number(stored[0]?.buffer_minutes);
+    if (Number.isFinite(savedBuffer) && savedBuffer >= 0) setBufferMinutes(savedBuffer);
+
     setRows(next);
   }, [providerId]);
 
@@ -70,11 +91,13 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
     void load();
   }, [load]);
 
-  // Dev guard: report the REAL measured height of a time input, as a number.
+  // Dev guard: report the REAL measured heights, as numbers.
   useEffect(() => {
     if (!import.meta.env?.DEV) return;
     const input = document.querySelector('.cal-availability-time') as HTMLElement | null;
     console.assert(input?.offsetHeight === 44, 'availability input height', input?.offsetHeight);
+    const control = document.querySelector('.cal-availability-control') as HTMLElement | null;
+    console.assert(control?.offsetHeight === 44, 'availability control height', control?.offsetHeight);
   }, []);
 
   const patch = (weekday: number, changes: Partial<Row>) => {
@@ -109,8 +132,8 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
           weekday: row.weekday,
           start_time: row.start,
           end_time: row.end,
-          slot_min: SLOT_MIN,
-          buffer_min: BUFFER_MIN,
+          slot_min: slotMinutes,
+          buffer_min: bufferMinutes,
         }));
 
         const { error: upsertError } = await supabase
@@ -198,12 +221,44 @@ export default function AvailabilityEditor({ providerId }: AvailabilityEditorPro
         })}
       </ul>
 
-      {/* The two numbers every slot is built from. */}
+      {/* The two numbers every slot is built from — live controls, not text. */}
       <div className="cal-availability-meta">
-        <span className="cal-availability-meta-label">{t('cal.slotLength')}</span>
-        <span className="cal-availability-meta-value">{t('cal.minUnit', { count: SLOT_MIN })}</span>
-        <span className="cal-availability-meta-label">{t('cal.buffer')}</span>
-        <span className="cal-availability-meta-value">{t('cal.minUnit', { count: BUFFER_MIN })}</span>
+        <span className="cal-availability-meta-field">
+          <label className="cal-availability-meta-label" htmlFor="cal-slot-length">
+            {t('cal.slotLength')}
+          </label>
+          <select
+            id="cal-slot-length"
+            className="input cal-availability-control"
+            value={slotMinutes}
+            onChange={(event) => setSlotMinutes(Number(event.target.value))}
+          >
+            {SLOT_LENGTH_CHOICES.map((choice) => (
+              <option key={choice} value={choice}>
+                {t('cal.minUnit', { count: choice })}
+              </option>
+            ))}
+          </select>
+        </span>
+
+        <span className="cal-availability-meta-field">
+          <label className="cal-availability-meta-label" htmlFor="cal-buffer">
+            {t('cal.buffer')}
+          </label>
+          <input
+            id="cal-buffer"
+            className="input cal-availability-control"
+            type="number"
+            min={0}
+            max={MAX_BUFFER_MINUTES}
+            step={BUFFER_STEP_MINUTES}
+            value={bufferMinutes}
+            onChange={(event) => setBufferMinutes(clampBuffer(Number(event.target.value)))}
+          />
+          <span className="cal-availability-meta-value">
+            {t('cal.minUnit', { count: bufferMinutes })}
+          </span>
+        </span>
       </div>
 
       {/* Full width of the card CONTENT box, 48px tall. */}

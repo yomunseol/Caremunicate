@@ -1154,10 +1154,8 @@ img {
   color: #8a6512;
 }
 
-/* Week view owns the viewport: the page itself must not scroll. */
-.cal-page.is-week {
-  overflow: hidden;
-}
+/* The page scrolls normally in every view; only the week grid owns an internal
+   scroll container (.cal-timegrid-body below). */
 
 /* Month guard: cells are a fixed 112px and the grid aligns to the start, so
    empty space stays below the card instead of stretching cells. */
@@ -3070,6 +3068,20 @@ img {
   gap: 12px;
   margin-block-start: 16px;
   flex-wrap: wrap;
+}
+
+.cal-availability-meta-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The live slot-length select and buffer input: 44px, like every other row. */
+.cal-availability-control {
+  height: 44px;
+  min-height: 44px;
+  width: 6.5rem;
+  padding: 0 12px;
 }
 
 .cal-availability-meta-label {

@@ -131,23 +131,22 @@ export const formatMonth = (date: Date, locale: string): string =>
   formatWith(date, locale, { month: 'long', year: 'numeric' }, 'formatMonth');
 
 /**
- * A week's range label, start–end, from the locale's own patterns: one month
- * reads "14 – 20 September 2026", a straddling week "28 Sep – 4 Oct 2026".
- * Both ends come from Intl, so no lookup table and no per-locale order.
+ * A week's range label, start–end, from the locale's own patterns:
+ * "Sep 14 – 20, 2026" in en, "2026년 9월 14일~20일" in ko. Intl.formatRange
+ * collapses whichever parts the two ends share, so the shared-month short form
+ * falls out per locale with no branching of our own.
  */
 export const formatWeekRange = (first: Date, last: Date, locale: string): string => {
-  const sameMonth =
-    first.getMonth() === last.getMonth() && first.getFullYear() === last.getFullYear();
-  const head = formatWith(first, locale, { day: 'numeric' }, 'formatWeekRange');
-  const tail = formatWith(
-    last,
-    locale,
-    sameMonth
-      ? { day: 'numeric', month: 'long', year: 'numeric' }
-      : { day: 'numeric', month: 'short', year: 'numeric' },
-    'formatWeekRange',
-  );
-  return `${head} – ${tail}`;
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).formatRange(first, last);
+  } catch {
+    // An engine without formatRange: two ends, never a crash.
+    return `${formatDayShort(first, locale)} – ${formatDayShort(last, locale)}`;
+  }
 };
 
 export const formatWeekdayNarrow = (date: Date, locale: string): string =>
@@ -266,9 +265,12 @@ export const slotsForDate = (
 
   const startMinutes = startHour * 60 + startMinute;
   const endMinutes = endHour * 60 + endMinute;
-  // The buffer applies to the candidate, so a booking that merely touches the
-  // slot edge still leaves a gap.
-  const buffer = SLOT_BUFFER_MINUTES * 60_000;
+  // The buffer the provider saved for this weekday widens the gap between
+  // bookable chips. SLOT_BUFFER_MINUTES is only the fallback for a rule whose
+  // buffer column is absent.
+  const ruleBuffer = Number(rule.buffer_minutes);
+  const buffer =
+    (Number.isFinite(ruleBuffer) ? ruleBuffer : SLOT_BUFFER_MINUTES) * 60_000;
 
   const busy = booked
     .filter((appointment) => appointment.status !== 'cancelled')

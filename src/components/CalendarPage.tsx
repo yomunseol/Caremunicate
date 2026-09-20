@@ -110,16 +110,9 @@ export default function CalendarPage() {
     }
   }, [view, user?.id]);
 
-  // Week view owns the viewport: lock document scrolling while it is active, so
-  // all vertical movement happens inside the grid's own scroll container.
-  useEffect(() => {
-    if (view !== 'week') return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [view]);
+  // The page scrolls normally in EVERY view — Week included, so the
+  // availability card below the grid stays reachable. Only the grid keeps its
+  // own fixed-height internal scroll container.
 
   // Dev guard: no child of a calendar card may exceed the card's content box.
   useEffect(() => {
@@ -294,10 +287,7 @@ export default function CalendarPage() {
   };
 
   return (
-    <section
-      className={view === 'week' ? 'section cal-page is-week' : 'section cal-page'}
-      aria-labelledby="cal-heading"
-    >
+    <section className="section cal-page" aria-labelledby="cal-heading">
       <div className="cal-shell">
         <CalendarSidebar
           cursor={cursor}

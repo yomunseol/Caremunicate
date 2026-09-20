@@ -30,6 +30,9 @@ import type { Anchor } from './CalendarEventPopover';
 
 const HOUR_HEIGHT = 48;
 
+/** The sticky day header's height, inside the grid's scrollport. */
+const HEAD_HEIGHT = 40;
+
 /** span(start, computed end) for layout — never reads an end_at column. */
 const spanOf = (appointment: Appointment): { start: Date; end: Date } => {
   const start = parseDate(appointment.start_at, 'CalendarWeekView') ?? new Date();
@@ -92,8 +95,9 @@ export default function CalendarWeekView({
     const at = new Date();
     const minutes = at.getHours() * 60 + at.getMinutes();
     // Put the current hour a third of the way down, so the day reads around now.
+    // The sticky header owns the first HEAD_HEIGHT pixels of the scrollport.
     node.scrollTo({
-      top: Math.max(0, (minutes / 60) * HOUR_HEIGHT - node.clientHeight / 3),
+      top: Math.max(0, HEAD_HEIGHT + (minutes / 60) * HOUR_HEIGHT - node.clientHeight / 3),
       behavior: 'smooth',
     });
 
@@ -121,22 +125,23 @@ export default function CalendarWeekView({
 
   return (
     <div className="cal-timegrid">
-      <div className="cal-timegrid-head" style={{ gridTemplateColumns: `3.4rem repeat(${days.length}, minmax(0, 1fr))` }}>
-        <span className="cal-gutter-corner" aria-hidden="true" />
-        {days.map((day) => {
-          const isToday = localDayKey(day) === todayKey;
-          return (
-            <div key={`head-${localDayKey(day)}`} className="cal-col-head">
-              <span className="cal-col-wd">
-                {new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(day)}
-              </span>
-              <span className={isToday ? 'cal-col-date is-today' : 'cal-col-date'}>{day.getDate()}</span>
-            </div>
-          );
-        })}
-      </div>
-
+      {/* The day header lives INSIDE the scroller, so it pins to the top of the
+          grid's own scrollport while the PAGE scrolls around it normally. */}
       <div className="cal-timegrid-body" ref={scrollRef}>
+        <div className="cal-timegrid-head" style={{ gridTemplateColumns: `3.4rem repeat(${days.length}, minmax(0, 1fr))` }}>
+          <span className="cal-gutter-corner" aria-hidden="true" />
+          {days.map((day) => {
+            const isToday = localDayKey(day) === todayKey;
+            return (
+              <div key={`head-${localDayKey(day)}`} className="cal-col-head">
+                <span className="cal-col-wd">
+                  {new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(day)}
+                </span>
+                <span className={isToday ? 'cal-col-date is-today' : 'cal-col-date'}>{day.getDate()}</span>
+              </div>
+            );
+          })}
+        </div>
         <div
           className="cal-timegrid-cols"
           style={{ gridTemplateColumns: `3.4rem repeat(${days.length}, minmax(0, 1fr))` }}
