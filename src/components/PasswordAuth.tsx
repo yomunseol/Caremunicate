@@ -23,7 +23,7 @@ function findTotpFactor(factors: Factor[] | undefined): Factor | null {
 
 export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const { setPending2FA } = useAuth();
-  const { t } = useLang();
+  const { t, locale } = useLang();
   const [view, setView] = useState<View>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -77,7 +77,10 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const sendEmailCode = async (): Promise<boolean> => {
     const { data, error: otpError } = await supabaseMemory.auth.signInWithOtp({
       email: email.trim(),
-      options: { shouldCreateUser: false },
+      options: {
+        shouldCreateUser: false,
+        data: { locale },
+      },
     });
     console.log('Branch C (email): signInWithOtp response:', { data, error: otpError });
 
