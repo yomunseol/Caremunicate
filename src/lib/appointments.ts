@@ -188,16 +188,15 @@ export const hasRoom = (appointment: Appointment): boolean =>
   Boolean(appointment.room_id && appointment.room_code);
 
 /**
- * Join call ONLY when the status is scheduled/confirmed, a room has actually
- * been minted, and we are inside the T−10min window.
+ * Join call ONLY when the status is scheduled/confirmed and a room has actually
+ * been minted. There is NO T−10min window: an approved appointment is joinable
+ * immediately, so an in-progress call can be rejoined. Once the end time passes
+ * effectiveStatus reads 'completed' and the gate closes again.
  */
 export const canJoin = (appointment: Appointment, now = Date.now()): boolean => {
   const status = effectiveStatus(appointment, now);
   if (status !== 'scheduled' && status !== 'confirmed') return false;
-  if (!hasRoom(appointment)) return false;
-  const start = parseDate(appointment.start_at, 'canJoin');
-  if (!start) return false;
-  return now >= start.getTime() - JOIN_WINDOW_MS;
+  return hasRoom(appointment);
 };
 
 // ---------------------------------------------------------------------------

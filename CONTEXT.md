@@ -97,7 +97,9 @@ max / personal)` — maintained in Supabase, not in this repo ·
 - **The owner column may be `host_id` or `provider_id`** — the client tolerates
   both; a schema error (42703/42P10/PGRST204) is the only thing that retries.
 - `room_id`/`room_code` are optional. `hasRoom()` gates on both; `canJoin()`
-  requires status `scheduled|confirmed` + a real room + the T−10min window.
+  requires status `scheduled|confirmed` + a real room — **no T−10min window**:
+  an approved appointment is joinable immediately and stays joinable while the
+  call runs (the gate closes once `effectiveStatus` reads `completed`).
 - **There is no rendered `end_at`.** A range is computed:
   `endAt(appt) = start_at + (duration_min ?? 30)`.
 - Calendar views are **Week / Month / Schedule only** (the Day view was

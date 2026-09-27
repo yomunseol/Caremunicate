@@ -221,7 +221,16 @@ export default function CalendarPage() {
   );
 
   const join = (appointment: Appointment) => {
-    if (!appointment.room_code) return;
+    // No word code on the row means no room was ever minted, so there is
+    // nothing to open. Report it instead of no-oping silently.
+    if (!appointment.room_code) {
+      console.warn('CALENDAR JOIN: appointment has no room_code — no room minted yet.', {
+        appointmentId: appointment.id,
+        status: appointment.status,
+        room_id: appointment.room_id,
+      });
+      return;
+    }
     window.location.hash = `#call/${appointment.room_code}`;
   };
 
