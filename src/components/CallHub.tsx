@@ -1,12 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useCallContext } from '../context/CallContext';
-import { useToast } from '../context/ToastContext';
 import { useLang } from '../i18n';
-import { isProvider } from '../lib/roles';
-import { supabase } from '../lib/supabase';
 import {
-  createRoom,
   ensurePersonalRoom,
   resolveJoin,
   setPersonalRoomStatus,
@@ -14,15 +9,13 @@ import {
   type PersonalRoom,
 } from '../lib/callRooms';
 import { normalizeCode } from '../lib/wordcode';
-import { saveCallPrefs, stashPendingPolicy } from '../lib/callPrefs';
-import CallSettingsModal, { type MeetingSettings } from './CallSettingsModal';
 
 // ---------------------------------------------------------------------------
 // The Call Hub — the ONE call entry point (/call).
 //
-// Top to bottom: the page title, the provider-only "Start meeting" button (and
-// its settings modal), the join-with-code box for everyone, and the personal
-// line card. There is no second start-meeting implementation and no other call
+// Top to bottom: the page title, the join-with-code box for everyone, and the
+// personal line card. The personal line is the meeting mechanism; the former
+// provider-only "Start meeting" card has been removed. There is no second call
 // surface: everything either navigates to /call/<words> or calls startCall()
 // directly for a 1:1.
 // ---------------------------------------------------------------------------
@@ -44,20 +37,6 @@ const goToRoom = (code: string) => {
 export default function CallHub() {
   const { t } = useLang();
   const { user } = useAuth();
-  const { notify } = useToast();
-  const { rememberCreatedRoom } = useCallContext();
-
-  const [canHost, setCanHost] = useState(false);
-  /** The DB truth behind the gate: logged on mount and on every 42501. */
-  const [freshRole, setFreshRole] = useState('');
-  const [freshPlan, setFreshPlan] = useState<string | null>(null);
-  /** Set only when the DB itself says this account is not a provider. */
-  const [notProvider, setNotProvider] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [hostBusy, setHostBusy] = useState(false);
-  const [hostError, setHostError] = useState<string | null>(null);
-  /** The raw Postgres/Supabase code or message behind hostError. */
-  const [hostErrorDetail, setHostErrorDetail] = useState<string | null>(null);
 
   const [joinCode, setJoinCode] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
@@ -72,57 +51,6 @@ export default function CallHub() {
   const [lineCopied, setLineCopied] = useState(false);
   /** Raw reason the personal line could not be loaded, if it threw. */
   const [lineError, setLineError] = useState<string | null>(null);
-
-  /**
-   * The DB truth: role + plan read STRAIGHT from profiles, never from the
-   * session cache, the login-time context, or user_metadata — except as the
-   * last resort when the profile row is genuinely absent (a normal state).
-   */
-  const readProfile = useCallback(async (): Promise<{ role: string; plan: string | null }> => {
-    if (!user?.id) return { role: '', plan: null };
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('role, plan')
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (error) {
-      console.error('CALL ERROR:', error.message);
-      return { role: '', plan: null };
-    }
-
-    const row = data as { role?: string; plan?: string } | null;
-    return {
-      role: String(row?.role ?? user.user_metadata?.role ?? ''),
-      plan: typeof row?.plan === 'string' ? row.plan : null,
-    };
-  }, [user?.id, user?.user_metadata?.role]);
-
-  // Can this account host a meeting? (doctor / department / hospital)
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!user?.id) return;
-      const fresh = await readProfile();
-      if (cancelled) return;
-      setFreshRole(fresh.role);
-      setFreshPlan(fresh.plan);
-      const provider = isProvider(fresh.role);
-      setCanHost(provider);
-      if (import.meta.env.DEV) {
-        console.log('CALL HUB GATE:', {
-          role: fresh.role,
-          plan: fresh.plan,
-          source: 'fresh-fetch',
-          canHost: provider,
-        });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, readProfile]);
 
   // The personal line is created lazily, once, and keeps its code forever.
   // A throw is reported inline with its raw code and a retry, exactly like
@@ -145,102 +73,6 @@ export default function CallHub() {
   useEffect(() => {
     void loadLine();
   }, [loadLine]);
-
-  const startMeeting = async (settings: MeetingSettings) => {
-    // Re-check the DB immediately before starting: a role that changed in
-    // another tab must never open a meeting from a stale gate.
-    const atStart = await readProfile();
-    setFreshRole(atStart.role);
-    setFreshPlan(atStart.plan);
-    if (!isProvider(atStart.role)) {
-      setCanHost(false);
-      setSettingsOpen(false);
-      notify(t('call.notProvider'), 'info');
-      return;
-    }
-
-    setHostBusy(true);
-    setHostError(null);
-    setHostErrorDetail(null);
-    try {
-      // The plaintext password only travels into createRoom, which hashes it.
-      const password = settings.requirePassword ? settings.password : '';
-
-      // createRoom awaits the insert fully before returning, so the row exists
-      // by the time the route guard looks for it.
-      const room = await createRoom({
-        password,
-        lobbyEnabled: settings.waitingRoom,
-        autoMute: settings.autoMute,
-        allowShare: settings.allowScreenShare,
-      });
-
-      // Hand the room to the provider so /call/<code> opens it by id — the
-      // channel is call:${room.id} and the host needs no lookup at all.
-      rememberCreatedRoom(room);
-
-      if (user?.id) {
-        void saveCallPrefs(user.id, {
-          waitingRoom: settings.waitingRoom,
-          requirePassword: settings.requirePassword,
-          autoMute: settings.autoMute,
-          allowScreenShare: settings.allowScreenShare,
-        });
-      }
-      stashPendingPolicy({
-        lobby_enabled: settings.waitingRoom,
-        locked: false,
-        auto_mute: settings.autoMute,
-        allow_share: settings.allowScreenShare,
-        has_password: Boolean(password.trim()),
-      });
-
-      setSettingsOpen(false);
-      goToRoom(room.code);
-    } catch (error) {
-      // SECTION 2: a start failure is reported under the START card only,
-      // as startFailed — never as a missing room. The raw code is shown
-      // alongside it: no masked errors, ever.
-      console.error('CALL ERROR:', error);
-      const failure = error as { code?: string; message?: string } | null;
-      const code = failure?.code ?? '';
-
-      // 42501 = the row-level policy refused the insert. Before naming a cause,
-      // ask the DB who we actually are: the gate may simply be stale.
-      if (code === '42501') {
-        const truth = await readProfile();
-        // Log BOTH sides, so the next occurrence identifies itself as
-        // gate-staleness (gate ≠ db) or genuine DB truth (gate === db).
-        console.error('CALL ERROR: 42501 gate check', {
-          gate: { role: freshRole, plan: freshPlan },
-          db: { role: truth.role, plan: truth.plan },
-        });
-
-        setFreshRole(truth.role);
-        setFreshPlan(truth.plan);
-
-        if (!isProvider(truth.role)) {
-          // The account is not a provider. That is the whole truth, and no raw
-          // code belongs in front of the user for it.
-          setCanHost(false);
-          setHostError(null);
-          setHostErrorDetail(null);
-          setNotProvider(true);
-          return;
-        }
-
-        // Genuinely a provider: this is a real refusal, so report it as one.
-        setHostError('call.startFailed');
-        setHostErrorDetail(code);
-        return;
-      }
-
-      setHostError('call.startFailed');
-      setHostErrorDetail(failure?.code ?? failure?.message ?? String(error));
-    } finally {
-      setHostBusy(false);
-    }
-  };
 
   const submitJoin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -309,39 +141,7 @@ export default function CallHub() {
         <h2 id="call-hub-heading">{t('call.callHub')}</h2>
       </div>
 
-      {/* The DB said this account is not a provider: say so plainly, with no
-          raw code — the Start card is gone, so the message lives here. */}
-      {notProvider ? (
-        <p className="field-error" role="alert">
-          {t('call.notProvider')}
-        </p>
-      ) : null}
-
       <div className="call-hub-grid">
-        {/* Start a meeting — providers only. */}
-        {canHost ? (
-          <div className="panel">
-            <div className="eyebrow">{t('call.startMeeting')}</div>
-            <button
-              className="primary-button call-join-trigger"
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              disabled={hostBusy}
-              aria-busy={hostBusy}
-            >
-              {t('call.startMeeting')}
-            </button>
-            {hostError ? (
-              <span className="field-error">
-                {t(hostError)}
-                {hostErrorDetail ? (
-                  <span className="error-detail">({hostErrorDetail})</span>
-                ) : null}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-
         {/* Join a room — everyone. */}
         <div className="panel">
           <div className="eyebrow">{t('call.joinWithCode')}</div>
@@ -387,7 +187,7 @@ export default function CallHub() {
         </div>
 
         {/* Your personal line. Rendered unconditionally so /call is always
-            exactly three cards; the body degrades if the row is unavailable. */}
+            exactly two cards; the body degrades if the row is unavailable. */}
         <div className="panel">
           <div className="eyebrow">{t('call.personalCode')}</div>
 
@@ -454,27 +254,12 @@ export default function CallHub() {
           )}
         </div>
       </div>
-
-      {settingsOpen ? (
-        <CallSettingsModal
-          busy={hostBusy}
-          onClose={() => setSettingsOpen(false)}
-          onStart={(settings) => void startMeeting(settings)}
-        />
-      ) : null}
     </section>
   );
 }
 
 const styles: Record<string, CSSProperties> = {
   joinForm: { display: 'grid', gap: '0.5rem' },
-  lineRow: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: '0.6rem',
-    flexWrap: 'wrap',
-  },
   lineChip: {
     // Light-surface skin; layout comes from .call-code-chip.
     background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',

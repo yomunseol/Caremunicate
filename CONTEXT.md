@@ -51,7 +51,10 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
 
 - Word codes (1024-word bank, 4 distinct words) are the only public identifier;
   UUIDs are internal (`call:${room.id}`) and must never render.
-- ONE `/call` hub (three cards) and ONE `<CallLayer/>` — no duplicate surfaces.
+- ONE `/call` hub (two cards: join-with-code + personal line) and ONE
+  `<CallLayer/>` — no duplicate surfaces. The provider-only "Start meeting"
+  card is gone: the personal line is the meeting mechanism, so `createRoom()`
+  has no caller and no fresh-per-meeting codes are drawn.
 - Personal rooms exist for every user.
 - Lobby / password / lock / kick policies (client-enforced, signalled over the
   realtime channel).
