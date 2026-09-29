@@ -8,16 +8,17 @@
 
 Multilingual (10 locales) healthcare-communication platform: patients reach
 providers, providers reach patients. Calm mint design. Zero-dollar
-infrastructure — no paid services and no keys beyond Supabase's own.
+infrastructure — no paid services, and no keys beyond Supabase's own plus the
+single Resend key for reminder email.
 
 ## Stack
 
 - **Vercel** frontend (React 18 + TypeScript + Vite). No backend app server.
 - **Supabase** = auth + Postgres + Realtime + Storage.
 - **Own WebRTC call engine** — no Jitsi, no corsproxy, no third-party calling.
+- **Resend** for transactional email (server-side only — see Reminders).
 - **Overpass** through our own `/api/overpass` route (`server/overpass.ts` core;
   mirrors rotate server-side, 15s each).
-- **Brevo** for transactional email.
 - **Leaflet** maps (OpenStreetMap tiles), wrapped in `isolation: isolate` so its
   panes never escape above the app chrome.
 - Zero new npm dependencies unless the user names one explicitly.
@@ -80,11 +81,13 @@ tiles. Meet skin + Zoom muscles for the call UI.
 
 ## DB summary
 
-`profiles(role, plan, is_admin, verification_status, call_prefs)` ·
+`profiles(role, plan, is_admin, verification_status, call_prefs, specialty,
+clinic)` ·
 `call_rooms(code, host, status, lobby / password / lock / share / autoMute /
 max / personal)` — maintained in Supabase, not in this repo ·
-`appointments` · `availability` · `emergency_alerts` · bucket
-`verification-docs` (private).
+`appointments(+buffer_minutes, reminder_sent)` · `availability` ·
+`emergency_alerts` · `hospitals` ·
+`doctor_favorites` · bucket `verification-docs` (private).
 
 ## Booking & appointments — the request flow
 
@@ -106,6 +109,35 @@ max / personal)` — maintained in Supabase, not in this repo ·
   deleted). Week owns the viewport — body scroll locked, one internal scroller,
   48px rows, sticky 40px header. Month cells are a fixed 112px.
 
+## Hospitals map — `/hospitals`
+
+- One route (`#hospitals`), one component (`HospitalMap.tsx`), one table:
+  `hospitals(id, name, latitude, longitude, osm_id, added_by)`.
+- Pins are a **custom mint `L.divIcon`** (teardrop + white disc + cross). The
+  default blue Leaflet marker must never render.
+- Tiles are OSM raster; the location search goes through the **same-origin
+  `/api/overpass`** proxy (`src/lib/hospitals.ts`) — no Nominatim, no geocoder.
+- Adding is **provider-only** (`isProvider`); the row is written with
+  `added_by = auth.uid()`. RLS: read for all authenticated, insert/delete own.
+- The add form is **portaled to `<body>`** (the fixed-overlay rule) and carries
+  its own small map for click-to-drop-pin, plus a search list.
+
+## Doctor directory — `/doctors`
+
+- One route (`#doctors`), one component (`DoctorList.tsx`), one save table:
+  `doctor_favorites(patient_id, doctor_id)`.
+- The list is `profiles WHERE role = 'doctor'` (the directory SELECT policy
+  already publishes doctor rows). The name falls back username → email prefix.
+- `profiles.specialty` / `profiles.clinic` are the public directory fields;
+  doctor signup writes them onto the row (auth metadata is private to the user).
+- The select **drops optional columns on `42703`/`PGRST204`**, so the list still
+  renders on a project where the migration has not run.
+- The heart toggles a favourite **optimistically** (instant) and rolls back with
+  a toast if the write fails. "My favorites" is a client-side filter, patient-only
+  (`isProvider` gates it).
+- RLS: a favourite belongs to its patient only — select/insert/delete all gate on
+  `patient_id = auth.uid()`.
+
 ## Notifications
 
 - `notifications(id, user_id, type, payload jsonb, read, created_at)`; payload
@@ -122,6 +154,30 @@ max / personal)` — maintained in Supabase, not in this repo ·
   `Participant` never renders.
 - Realtime: a `postgres_changes` INSERT subscription filtered to the user bumps
   the badge; the unread count is a `count` query on mount.
+
+## Scheduling — conflicts, slots, reminders
+
+- `appointments` gained `buffer_minutes` (clearance per side) and `reminder_sent`
+  in `202609220001_appointment_scheduling.sql`. `specialty` lives on `profiles`,
+  never on `appointments`.
+- **Overlap is enforced twice**: a client pre-check (`findConflict` in
+  `src/lib/appointments.ts`) that renders `cal.slotTaken` — "Doctor is
+  unavailable at this time." — without a round-trip, AND a DB trigger
+  (`guard_appointment_overlap`) so a concurrent/stolen-token write cannot
+  double-book. Every live appointment is widened by its own buffer on both sides.
+- The guard raises **SQLSTATE `23P01`** (`appointment_overlap`); the client maps
+  it to `cal.slotTaken` via `isOverlapError`.
+- **Slots show, not hide**: `slotStatesForDate` returns every slot in the
+  weekday rule with `available` + `reason` ('past' | 'busy'); unavailable chips
+  render disabled/greyed. `slotsForDate` is just the open subset.
+- `provider_busy_slots` returns ranges only (no buffer), so a patient's client
+  falls back to the provider's rule buffer; the DB trigger is the exact backstop.
+- **Reminders** run in `supabase/functions/send-reminders` (Deno Edge Function,
+  daily): appointments due within 24h with `reminder_sent = false` (status
+  `scheduled|confirmed` only) are emailed via **Resend** and the flag flips only
+  on a successful send. `RESEND_API_KEY` / `RESEND_FROM` are Supabase function
+  secrets — never `VITE_`-prefixed, never in the bundle. `src/lib/reminders.ts`
+  builds the payload client-side and does not send.
 
 ## Time
 

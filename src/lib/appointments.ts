@@ -51,9 +51,19 @@ export type Appointment = {
   end_at?: string | null;
   status: AppointmentStatus;
   note: string | null;
+  /** Clearance honoured on each side of this appointment (new column). */
+  buffer_minutes?: number | null;
+  /** Set once a 24h reminder has gone out (new column). */
+  reminder_sent?: boolean | null;
 };
 
 export type Slot = { start: Date; end: Date };
+
+/**
+ * A slot plus WHY it is or is not bookable, so the UI can render every slot in
+ * the day and grey out the unavailable ones instead of hiding them.
+ */
+export type SlotState = { start: Date; end: Date; available: boolean; reason?: 'past' | 'busy' };
 
 export const SLOT_CHOICES = [15, 30, 45, 60] as const;
 
@@ -241,12 +251,66 @@ export const isLive = (appointment: Appointment, now = Date.now()): boolean => {
  */
 export const SLOT_BUFFER_MINUTES = 5;
 
-export const slotsForDate = (
+/**
+ * An existing appointment's occupied window, widened on each side by its OWN
+ * buffer (falling back to the provider's rule buffer when the row predates the
+ * column). The end is the legacy `end_at` when present, else
+ * `start_at + duration_min` — the same precedence the old overlap math used,
+ * now buffer-aware.
+ */
+const blockedInterval = (
+  appointment: Pick<Appointment, 'start_at' | 'end_at' | 'duration_min' | 'buffer_minutes'>,
+  fallbackBufferMinutes: number,
+): { start: number; end: number } | null => {
+  const start = parseDate(appointment.start_at, 'slotsForDate');
+  const end = parseDate(appointment.end_at ?? endAt(appointment), 'slotsForDate');
+  if (!start || !end) return null;
+
+  const raw = Number(appointment.buffer_minutes);
+  const bufferMinutes = Number.isFinite(raw) ? raw : fallbackBufferMinutes;
+  const buffer = Math.max(0, bufferMinutes) * 60_000;
+  return { start: start.getTime() - buffer, end: end.getTime() + buffer };
+};
+
+/**
+ * The first existing appointment that would collide with `candidate`, each side
+ * widened by its own buffer. This is the client-side pre-check the booking flow
+ * runs BEFORE it asks the server, so an obviously-taken slot never round-trips.
+ * `null` means the slot is clear.
+ */
+export const findConflict = (
+  candidate: { start: Date; end: Date },
+  existing: Appointment[],
+  candidateBufferMinutes = 0,
+  existingBufferFallbackMinutes = 0,
+): Appointment | null => {
+  const buffer = Math.max(0, candidateBufferMinutes) * 60_000;
+  const start = candidate.start.getTime() - buffer;
+  const end = candidate.end.getTime() + buffer;
+
+  return (
+    existing.find((appointment) => {
+      if (appointment.status === 'cancelled') return false;
+      const window = blockedInterval(appointment, existingBufferFallbackMinutes);
+      return window !== null && start < window.end && end > window.start;
+    }) ?? null
+  );
+};
+
+/**
+ * Every slot in the weekday rule's window for one date, each flagged bookable or
+ * not — so the UI renders unavailable times DISABLED rather than hiding them.
+ *
+ * Expand the rule from start→end in `slot_minutes` steps and mark each:
+ *   - 'past' when it has already started,
+ *   - 'busy' when it overlaps a live appointment widened by its buffer.
+ */
+export const slotStatesForDate = (
   day: Date,
   rules: Availability[],
   booked: Appointment[],
   now = Date.now(),
-): Slot[] => {
+): SlotState[] => {
   const rule = rules.find((item) => Number(item.weekday) === day.getDay());
   if (!rule) return [];
 
@@ -264,40 +328,50 @@ export const slotsForDate = (
 
   const startMinutes = startHour * 60 + startMinute;
   const endMinutes = endHour * 60 + endMinute;
-  // The buffer the provider saved for this weekday widens the gap between
-  // bookable chips. SLOT_BUFFER_MINUTES is only the fallback for a rule whose
-  // buffer column is absent.
+  // The provider's per-weekday buffer widens the candidate AND is the fallback
+  // for a busy row whose own buffer column is absent.
   const ruleBuffer = Number(rule.buffer_minutes);
-  const buffer =
-    (Number.isFinite(ruleBuffer) ? ruleBuffer : SLOT_BUFFER_MINUTES) * 60_000;
+  const bufferMinutes = Number.isFinite(ruleBuffer) ? ruleBuffer : SLOT_BUFFER_MINUTES;
+  const buffer = Math.max(0, bufferMinutes) * 60_000;
 
   const busy = booked
     .filter((appointment) => appointment.status !== 'cancelled')
-    .map((appointment) => ({
-      start: parseDate(appointment.start_at, 'slotsForDate'),
-      end: parseDate(appointment.end_at, 'slotsForDate'),
-    }))
-    .filter((item): item is { start: Date; end: Date } => Boolean(item.start && item.end))
-    .map((item) => ({ start: item.start.getTime(), end: item.end.getTime() }));
+    .map((appointment) => blockedInterval(appointment, bufferMinutes))
+    .filter((window): window is { start: number; end: number } => window !== null);
 
   const toHhmm = (minutes: number): string =>
     `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
-  const slots: Slot[] = [];
+  const states: SlotState[] = [];
   for (let cursor = startMinutes; cursor + slotMinutes <= endMinutes; cursor += slotMinutes) {
     const start = slotDate(dateStr, toHhmm(cursor));
     if (!start) break;
     const end = addMinutesToDate(start, slotMinutes);
 
+    const past = start.getTime() <= now;
     const blocked = busy.some(
-      (item) => start.getTime() - buffer < item.end && end.getTime() + buffer > item.start,
+      (window) => start.getTime() - buffer < window.end && end.getTime() + buffer > window.start,
     );
 
-    if (!blocked && start.getTime() > now) slots.push({ start, end });
+    const state: SlotState = { start, end, available: !past && !blocked };
+    if (past) state.reason = 'past';
+    else if (blocked) state.reason = 'busy';
+    states.push(state);
   }
 
-  return slots;
+  return states;
 };
+
+/** Just the OPEN slots — the date-strip count and the bookable slot grid. */
+export const slotsForDate = (
+  day: Date,
+  rules: Availability[],
+  booked: Appointment[],
+  now = Date.now(),
+): Slot[] =>
+  slotStatesForDate(day, rules, booked, now)
+    .filter((state) => state.available)
+    .map(({ start, end }) => ({ start, end }));
 
 // ---------------------------------------------------------------------------
 // Data access — every call degrades quietly if the tables are missing.
@@ -353,6 +427,17 @@ export const loadProviders = async (): Promise<PersonInfo[]> => {
 const SCHEMA_MISMATCH = new Set(['42703', '42P10', 'PGRST204', 'PGRST100']);
 const schemaMismatch = (code: string | null | undefined): boolean =>
   SCHEMA_MISMATCH.has(String(code ?? ''));
+
+/**
+ * The DB overlap guard raises SQLSTATE 23P01 (exclusion_violation) with the
+ * message `appointment_overlap`. Both map to ONE friendly, translated key.
+ */
+export const OVERLAP_MESSAGE_KEY = 'cal.slotTaken';
+
+export const isOverlapError = (error: {
+  code?: string | null;
+  message?: string | null;
+}): boolean => error.code === '23P01' || /appointment_overlap/i.test(error.message ?? '');
 
 /**
  * Localized weekday name for 0 = Sunday .. 6 = Saturday, from a fixed
@@ -460,7 +545,7 @@ export const createAppointment = async (payload: {
   start: Date;
   end: Date;
   note?: string;
-}): Promise<Appointment | null> => {
+}): Promise<RequestResult> => {
   const durationMin = Math.max(1, Math.round((payload.end.getTime() - payload.start.getTime()) / 60_000));
 
   const { data, error } = await supabase
@@ -483,9 +568,12 @@ export const createAppointment = async (payload: {
 
   if (error) {
     console.error('CALENDAR ERROR:', error.message);
-    return null;
+    // The DB overlap guard raises 23P01 → the one friendly key. Everything else
+    // self-reports its raw code.
+    const overlap = isOverlapError(error);
+    return { ok: false, code: overlap ? OVERLAP_MESSAGE_KEY : error.code ?? error.message };
   }
-  return firstRow<Appointment>(data);
+  return { ok: true, appointment: firstRow<Appointment>(data) };
 };
 
 /**
@@ -560,7 +648,10 @@ export const requestAppointment = async (payload: {
 
   if (error) {
     console.error('CALENDAR ERROR:', error.message);
-    return { ok: false, code: error.code ?? error.message };
+    return {
+      ok: false,
+      code: isOverlapError(error) ? OVERLAP_MESSAGE_KEY : error.code ?? error.message,
+    };
   }
 
   // The RPC returns the created row; normalize object / array / null.

@@ -1,14 +1,15 @@
 import type { Appointment } from './appointments';
 import { formatAppointmentRange, formatDayLong } from './appointments';
+import { addMinutes } from './time';
 
 // ---------------------------------------------------------------------------
-// Appointment reminder emails (Brevo / Sendinblue transactional API).
+// Appointment reminder emails (Resend transactional API).
 //
-// STUB — the request is fully built and returned but deliberately NOT sent.
-// The project's standing rule is zero API keys, and a Brevo key has to live
-// somewhere; when this is wired it belongs in a server-side cron job with the
-// key in an environment variable, POSTing exactly the object returned here to
-// https://api.brevo.com/v3/smtp/email
+// The payload is BUILT here and returned — it is NEVER sent from the browser:
+// the Resend key must not reach the Vite bundle. The daily job lives in
+// supabase/functions/send-reminders, which POSTs this exact shape to
+// https://api.resend.com/emails (that file carries the Deno copy of the
+// templates below, since an Edge Function cannot import a browser module).
 //
 // Templates are locale-aware with an English fallback: `locale` is honoured
 // where a translation exists, otherwise `en` is used. Supplying the missing
@@ -17,13 +18,21 @@ import { formatAppointmentRange, formatDayLong } from './appointments';
 
 export type ReminderKind = 'confirmation' | 'reminder24h' | 'reminder1h';
 
+/** The Resend request body — POST https://api.resend.com/emails. */
 export type ReminderPayload = {
+  from: string;
   to: string;
   subject: string;
   html: string;
-  /** ISO time the reminder should go out (cron reads this later). */
+  /** ISO time the reminder is due (the cron reads this later). */
   sendAt: string;
 };
+
+/**
+ * Verified Resend sender. Replace with an address on your verified domain for
+ * production; `onboarding@resend.dev` is Resend's no-domain testing sender.
+ */
+export const RESEND_FROM = 'Caremunicate <onboarding@resend.dev>';
 
 type Template = { subject: string; body: string };
 
@@ -56,8 +65,9 @@ const fill = (template: string, vars: Record<string, string>): string =>
   );
 
 /**
- * Builds the reminder email for an appointment. Returns the payload rather than
- * sending it — see the header. `kind` decides which of the three goes out.
+ * Builds the reminder email for an appointment. Returns the Resend payload
+ * rather than sending it — see the header. `kind` decides which of the three
+ * goes out.
  */
 export const sendAppointmentEmails = (
   kind: ReminderKind,
@@ -85,13 +95,13 @@ export const sendAppointmentEmails = (
   };
 
   // 24h / 1h before the start.
-  const startMs = new Date(params.appointment.start_at).getTime();
-  const leadMs = kind === 'reminder24h' ? 24 * 3600_000 : kind === 'reminder1h' ? 3600_000 : 0;
+  const leadMinutes = kind === 'reminder24h' ? 24 * 60 : kind === 'reminder1h' ? 60 : 0;
 
   return {
+    from: RESEND_FROM,
     to: params.to,
     subject: fill(template.subject, vars),
     html: `<p>${fill(template.body, vars).replace(/\n/g, '<br/>')}</p>`,
-    sendAt: new Date(startMs - leadMs).toISOString(),
+    sendAt: addMinutes(params.appointment.start_at, -leadMinutes) ?? '',
   };
 };

@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CalendarOff, Check, X } from 'lucide-react';
 import {
+  findConflict,
   formatTime,
   loadAvailability,
   loadBusySlots,
   requestAppointment,
+  slotStatesForDate,
   slotsForDate,
   stashAppointment,
   BOOKING_WINDOW_DAYS,
+  SLOT_BUFFER_MINUTES,
+  OVERLAP_MESSAGE_KEY,
   type Appointment,
   type Availability,
   type Slot,
@@ -104,8 +108,17 @@ export default function BookingFlow({
     };
   }, [provider]);
 
-  const slots = useMemo(
-    () => (provider ? slotsForDate(day, rules, booked) : []),
+  // The provider's buffer for the selected day, used to stay consistent with
+  // the slot grid when the pre-check re-tests a possibly stale busy list.
+  const ruleBuffer = useMemo(() => {
+    const rule = rules.find((item) => Number(item.weekday) === day.getDay());
+    const value = Number(rule?.buffer_minutes);
+    return Number.isFinite(value) ? value : SLOT_BUFFER_MINUTES;
+  }, [rules, day]);
+
+  // EVERY slot of the day, bookable or not — unavailable ones render disabled.
+  const slotStates = useMemo(
+    () => (provider ? slotStatesForDate(day, rules, booked) : []),
     [provider, day, rules, booked],
   );
 
@@ -113,6 +126,15 @@ export default function BookingFlow({
     if (!provider || !chosen || saving) return;
     setSaving(true);
     setError(null);
+
+    // Client pre-check: reject an overlap before asking the server, so a stale
+    // grid (booked changed under us) shows the message without a round-trip.
+    if (findConflict({ start: chosen.start, end: chosen.end }, booked, 0, ruleBuffer)) {
+      setError(OVERLAP_MESSAGE_KEY);
+      setSaving(false);
+      return;
+    }
+
     // A REQUEST, not a booking: the host decides. The server creates the row
     // (status 'requested') and, on approval, mints the room code — so nothing
     // room-related happens here.
@@ -277,21 +299,27 @@ export default function BookingFlow({
             <div className="cal-slot-grid">
               {loading ? (
                 <p className="cal-muted" aria-busy="true">{t('places.searching')}</p>
-              ) : slots.length === 0 ? (
+              ) : slotStates.length === 0 ? (
                 <div className="cal-empty-state">
                   <CalendarOff size={22} aria-hidden="true" />
                   <p>{t('cal.noSlotsYet')}</p>
                 </div>
               ) : (
-                slots.map((slot) => {
+                slotStates.map((slot) => {
                   const active = chosen?.start.getTime() === slot.start.getTime();
+                  const className = ['cal-slot', active ? 'is-active' : '', slot.available ? '' : 'is-unavailable']
+                    .filter(Boolean)
+                    .join(' ');
                   return (
                     <button
                       key={slot.start.toISOString()}
                       type="button"
                       dir="ltr"
-                      className={active ? 'cal-slot is-active' : 'cal-slot'}
+                      className={className}
                       aria-pressed={active}
+                      disabled={!slot.available}
+                      aria-disabled={!slot.available}
+                      title={slot.available ? undefined : t('cal.slotUnavailable')}
                       onClick={() => setChosen(slot)}
                     >
                       {formatTime(slot.start, locale)}
@@ -302,10 +330,16 @@ export default function BookingFlow({
             </div>
 
             {error ? (
-              <span className="field-error">
-                {/* Not yet translated — needs the 10-locale string. */}
-                Booking failed
-                <span className="error-detail">({error})</span>
+              <span className="field-error" role="alert">
+                {error === OVERLAP_MESSAGE_KEY ? (
+                  t('cal.slotTaken')
+                ) : (
+                  <>
+                    {/* Self-reporting: the raw server code, never softened. */}
+                    Booking failed
+                    <span className="error-detail">({error})</span>
+                  </>
+                )}
               </span>
             ) : null}
 

@@ -607,7 +607,12 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               id="pa-email"
               style={styles.input}
               type="email"
+              inputMode="email"
               autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              enterKeyHint="next"
               placeholder={t('login.phEmail')}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -623,6 +628,8 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               style={styles.input}
               type="password"
               autoComplete="current-password"
+              autoCapitalize="none"
+              enterKeyHint="go"
               placeholder={t('login.phPassword')}
               value={password}
               onChange={(event) => setPassword(event.target.value)}

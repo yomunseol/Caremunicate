@@ -6,8 +6,17 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import {
   createAppointment,
   createAppointmentRoom,
+  findConflict,
   formatDayLong,
+  formatTime,
+  loadAvailability,
+  loadBusySlots,
+  slotStatesForDate,
+  SLOT_BUFFER_MINUTES,
   SLOT_CHOICES,
+  OVERLAP_MESSAGE_KEY,
+  type Appointment,
+  type Availability,
   type PersonInfo,
 } from '../lib/appointments';
 import type { Anchor } from './CalendarEventPopover';
@@ -23,11 +32,6 @@ import type { Anchor } from './CalendarEventPopover';
 
 const WIDTH = 288;
 const MARGIN = 12;
-
-const pad = (value: number): string => String(value).padStart(2, '0');
-
-/** 24-hour HH:MM — the only shape this field accepts. */
-const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 type QuickCreatePopoverProps = {
   anchor: Anchor;
@@ -58,7 +62,9 @@ export default function QuickCreatePopover({
   const nodeRef = useRef<HTMLFormElement | null>(null);
 
   const [title, setTitle] = useState('');
-  const [time, setTime] = useState(`${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`);
+  const [rules, setRules] = useState<Availability[]>([]);
+  const [booked, setBooked] = useState<Appointment[]>([]);
+  const [slotStart, setSlotStart] = useState('');
   const [duration, setDuration] = useState<number>(slotMinutes);
   const [patientId, setPatientId] = useState(patients[0]?.id ?? '');
   const [saving, setSaving] = useState(false);
@@ -69,6 +75,52 @@ export default function QuickCreatePopover({
   const durationChoices = useMemo(
     () => [...new Set([...SLOT_CHOICES, slotMinutes])].sort((a, b) => a - b),
     [slotMinutes],
+  );
+
+  // The provider's availability + live busy ranges, so the time picker offers
+  // exactly the open slots (and shows the taken ones disabled).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const [nextRules, nextBusy] = await Promise.all([
+        loadAvailability(providerId),
+        loadBusySlots(providerId),
+      ]);
+      if (cancelled) return;
+      setRules(nextRules);
+      setBooked(nextBusy);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId]);
+
+  const ruleBuffer = useMemo(() => {
+    const rule = rules.find((item) => Number(item.weekday) === day.getDay());
+    const value = Number(rule?.buffer_minutes);
+    return Number.isFinite(value) ? value : SLOT_BUFFER_MINUTES;
+  }, [rules, day]);
+
+  const slotStates = useMemo(
+    () => slotStatesForDate(day, rules, booked),
+    [day, rules, booked],
+  );
+
+  // Default to the slot that was clicked (if it is open), else the first open
+  // one — never a slot the provider cannot actually take.
+  useEffect(() => {
+    if (slotStart) return;
+    const clicked = slotStates.find(
+      (state) =>
+        state.available && state.start.getHours() * 60 + state.start.getMinutes() === minutes,
+    );
+    const pick = clicked ?? slotStates.find((state) => state.available);
+    if (pick) setSlotStart(pick.start.toISOString());
+  }, [slotStates, minutes, slotStart]);
+
+  const chosen = useMemo(
+    () => slotStates.find((state) => state.start.toISOString() === slotStart) ?? null,
+    [slotStates, slotStart],
   );
 
   useEffect(() => {
@@ -91,16 +143,20 @@ export default function QuickCreatePopover({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!patientId || saving || !TIME_RE.test(time)) return;
+    if (!patientId || saving || !chosen) return;
 
-    const [hours, mins] = time.split(':').map(Number);
-    const start = new Date(day);
-    start.setHours(hours || 0, mins || 0, 0, 0);
+    const start = chosen.start;
     const end = new Date(start.getTime() + duration * 60_000);
 
     setSaving(true);
     setError('');
     try {
+      // Client pre-check: never fire an obviously-overlapping block.
+      if (findConflict({ start, end }, booked, 0, ruleBuffer)) {
+        setError(OVERLAP_MESSAGE_KEY);
+        return;
+      }
+
       const created = await createAppointment({
         patientId,
         providerId,
@@ -111,13 +167,17 @@ export default function QuickCreatePopover({
         note: title.trim() || undefined,
       });
 
-      if (!created) {
+      if (!created.ok) {
+        setError(created.code);
+        return;
+      }
+      if (!created.appointment) {
         setError('createFailed');
         return;
       }
 
       // The room is minted SERVER-side, which is also what notifies the patient.
-      const linked = await createAppointmentRoom(created.id);
+      const linked = await createAppointmentRoom(created.appointment.id);
 
       if (!linked.ok) {
         console.error('CALENDAR ERROR: create_appointment_room', linked.code);
@@ -183,17 +243,29 @@ export default function QuickCreatePopover({
       <div className="cal-field-row">
         <label className="cal-field">
           <span>Time</span>
-          <input
-            className="input ltr-isolate"
-            type="text"
-            inputMode="numeric"
+          <select
+            className="input"
             dir="ltr"
-            maxLength={5}
-            placeholder="HH:MM"
             aria-label="Time"
-            value={time}
-            onChange={(event) => setTime(event.target.value)}
-          />
+            value={slotStart}
+            disabled={slotStates.length === 0}
+            onChange={(event) => setSlotStart(event.target.value)}
+          >
+            {slotStates.length === 0 ? (
+              <option value="">{t('cal.noSlotsYet')}</option>
+            ) : (
+              slotStates.map((state) => (
+                <option
+                  key={state.start.toISOString()}
+                  value={state.start.toISOString()}
+                  disabled={!state.available}
+                >
+                  {formatTime(state.start, locale)}
+                  {state.available ? '' : ` · ${t('cal.slotUnavailable')}`}
+                </option>
+              ))
+            )}
+          </select>
         </label>
 
         <label className="cal-field">
@@ -237,10 +309,14 @@ export default function QuickCreatePopover({
         )}
       </label>
 
-      {/* Self-reporting: the raw server code, never a softened reason. */}
+      {/* Overlap → the translated line; anything else self-reports its raw code. */}
       {error ? (
         <span className="field-error" role="alert">
-          <span className="error-detail">{error}</span>
+          {error === OVERLAP_MESSAGE_KEY ? (
+            t('cal.slotTaken')
+          ) : (
+            <span className="error-detail">{error}</span>
+          )}
         </span>
       ) : null}
 
@@ -251,7 +327,7 @@ export default function QuickCreatePopover({
         <button
           type="submit"
           className="primary-button"
-          disabled={saving || !patientId}
+          disabled={saving || !patientId || !chosen}
           aria-busy={saving}
         >
           {t('cal.create')}

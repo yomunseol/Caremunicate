@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Calendar, CheckCircle2, MessageCircle, ShieldCheck, Video, X } from 'lucide-react';
+import { Calendar, CheckCircle2, MapPin, MessageCircle, ShieldCheck, Video, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { isProvider, roleLabelKey } from '../lib/roles';
@@ -406,6 +406,22 @@ export default function DashboardOverview({ role = '', planName = '' }: Dashboar
             {overview.isAdmin ? (
               <p style={styles.hint}>{t('verify.reviewQueue')}</p>
             ) : null}
+          </div>
+
+          {/* Providers can put themselves on the community hospital map. */}
+          <div className="panel">
+            <div className="eyebrow">{t('hospital.eyebrow')}</div>
+            <p style={styles.muted}>{t('hospital.description')}</p>
+            <button
+              type="button"
+              className="ghost-button"
+              style={styles.certCta}
+              onClick={() => {
+                window.location.hash = '#hospitals';
+              }}
+            >
+              <MapPin size={15} aria-hidden="true" /> {t('hospital.addButton')}
+            </button>
           </div>
         </>
       )}

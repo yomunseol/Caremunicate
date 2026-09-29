@@ -13,6 +13,8 @@ import CallPage from './components/CallPage';
 import CallHub from './components/CallHub';
 import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
+import HospitalMap from './components/HospitalMap';
+import DoctorList from './components/DoctorList';
 import VerificationCenter from './components/VerificationCenter';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import NotificationBell from './components/NotificationBell';
@@ -44,6 +46,8 @@ type RouteKey =
   | 'chat'
   | 'call'
   | 'calendar'
+  | 'hospitals'
+  | 'doctors'
   | 'verify'
   | 'reset';
 type AuthMode = 'signup' | 'login';
@@ -103,7 +107,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'verify'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -257,6 +261,8 @@ function App() {
   const [conversion, setConversion] = useState<{ plan: PlanId; option: Plan } | null>(null);
   // Bumped after a successful plan write to re-read profiles without a reload.
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  // Signup success banner, shown above the form until dismissed.
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -326,6 +332,8 @@ function App() {
         nextRoute === 'chat' ||
         nextRoute === 'call' ||
         nextRoute === 'calendar' ||
+        nextRoute === 'hospitals' ||
+        nextRoute === 'doctors' ||
         nextRoute === 'verify') &&
       (!currentUser || pending2FA)
     ) {
@@ -349,6 +357,7 @@ function App() {
     setSignupErrors({});
     setTouchedFields({});
     setAuthMessage('');
+    setShowSuccess(false);
     const hash = mode === 'signup' && selectedPlan ? `#signup?plan=${selectedPlan}` : mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -485,6 +494,7 @@ function App() {
     console.log('Sign-up submitted with valid data');
     setIsAuthLoading(true);
     setAuthMessage('');
+    setShowSuccess(false);
 
     // Plan mirrors the role for providers; patients land on basic (or the
     // patient tier they picked on the pricing page).
@@ -521,11 +531,12 @@ function App() {
 
       if (error) throw error;
 
+      // Signup resolved: surface the success banner at the top of the form.
+      setShowSuccess(true);
+
       if (!data.session) {
         // No session yet (email confirmation pending) so nothing can be written
         // under RLS; the role travels in the sign-up metadata until then.
-        setAuthMessageType('success');
-        setAuthMessage(t('auth.msg.createdConfirm'));
         return;
       }
 
@@ -539,6 +550,12 @@ function App() {
               role: authRole,
               plan: signupPlan,
               username: signupValues.fullName.trim(),
+              // Doctor directory fields live on profiles so other users can read
+              // them (auth metadata is private). Only doctors carry these.
+              ...(authRole === 'doctor' ? {
+                specialty: signupValues.specialty.trim() || null,
+                clinic: signupValues.clinic.trim() || null,
+              } : {}),
             },
             { onConflict: 'user_id' },
           );
@@ -755,6 +772,12 @@ function App() {
               </button>
               <button className="ghost-button" type="button" onClick={() => navigate('calendar')}>
                 {t('cal.calendar')}
+              </button>
+              <button className="ghost-button" type="button" onClick={() => navigate('hospitals')}>
+                {t('hospital.title')}
+              </button>
+              <button className="ghost-button" type="button" onClick={() => navigate('doctors')}>
+                {t('doctors.title')}
               </button>
               <div className="profile-menu">
                 <button
@@ -1013,6 +1036,19 @@ function App() {
                     ) : null}
 
                   <form onSubmit={handleSubmit} noValidate>
+                    {showSuccess ? (
+                      <div className="auth-success-banner" role="status">
+                        <span>{t('auth.msg.accountCreated')}</span>
+                        <button
+                          type="button"
+                          className="auth-success-close"
+                          aria-label={t('common.close')}
+                          onClick={() => setShowSuccess(false)}
+                        >
+                          <span aria-hidden="true">×</span>
+                        </button>
+                      </div>
+                    ) : null}
                     {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                     <>
                       <div className="form-row">
@@ -1226,6 +1262,18 @@ function App() {
         {route === 'calendar' && (
           <ProtectedRoute>
             <CalendarPage />
+          </ProtectedRoute>
+        )}
+
+        {route === 'hospitals' && (
+          <ProtectedRoute>
+            <HospitalMap />
+          </ProtectedRoute>
+        )}
+
+        {route === 'doctors' && (
+          <ProtectedRoute>
+            <DoctorList />
           </ProtectedRoute>
         )}
 
