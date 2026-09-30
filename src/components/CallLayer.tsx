@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  FileText,
   Hand,
   LayoutGrid,
   Link2,
+  MessageSquare,
   Mic,
   MicOff,
   MonitorUp,
@@ -22,10 +24,13 @@ import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
 import type { PeerConnState } from '../hooks/useCall';
 import { looksLikeUuid, resolveRoom } from '../lib/callRooms';
 import { playHandChime, playJoinChime, playLeaveChime } from '../lib/chime';
-import { roleLabelKey } from '../lib/roles';
+import { isProvider, roleLabelKey } from '../lib/roles';
+import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
+import CallChatPanel from './CallChatPanel';
+import CallDocsPanel from './CallDocsPanel';
 import CallInviteDrawer from './CallInviteDrawer';
 import CallOverflowMenu from './CallOverflowMenu';
 import ShortcutsOverlay from './ShortcutsOverlay';
@@ -243,6 +248,11 @@ export default function CallLayer() {
     clearNotice,
   } = useCallContext();
 
+  // Who is looking at this layer — the Docs panel is provider-only.
+  const { user } = useAuth();
+  const role = String(user?.user_metadata?.role ?? '');
+  const canUseDocs = isProvider(role);
+
   const emergency = kind === 'emergency';
   const incomingPhase = status === 'incoming' && Boolean(incoming);
   const inSession =
@@ -264,6 +274,8 @@ export default function CallLayer() {
   /** Set only if a UUID is caught in the chip slot and the code is recovered. */
   const [recoveredCode, setRecoveredCode] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
+  /** Which side panel is open — at most one at a time. */
+  const [panel, setPanel] = useState<'none' | 'chat' | 'docs'>('none');
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   /** Transient join/leave/hand toast, translated at the call site. */
   const [liveToast, setLiveToast] = useState<{ id: number; text: string } | null>(null);
@@ -362,7 +374,7 @@ export default function CallLayer() {
 
   // An open menu keeps both bars pinned.
   const showControls =
-    controlsVisible || participantsOpen || statsOpen || overflowOpen || reactionsOpen || !inSession;
+    controlsVisible || participantsOpen || statsOpen || overflowOpen || reactionsOpen || panel !== 'none' || !inSession;
 
   // ---- fullscreen ----------------------------------------------------------
   const toggleFullscreen = useCallback(() => {
@@ -911,6 +923,30 @@ export default function CallLayer() {
 
                 <button
                   type="button"
+                  onClick={() => setPanel((current) => (current === 'chat' ? 'none' : 'chat'))}
+                  title={t('call.chat')}
+                  aria-label={t('call.chat')}
+                  aria-pressed={panel === 'chat'}
+                  style={{ ...styles.circleButton, ...(panel === 'chat' ? styles.circleOn : null) }}
+                >
+                  <MessageSquare size={19} />
+                </button>
+
+                {canUseDocs ? (
+                  <button
+                    type="button"
+                    onClick={() => setPanel((current) => (current === 'docs' ? 'none' : 'docs'))}
+                    title={t('call.docs')}
+                    aria-label={t('call.docs')}
+                    aria-pressed={panel === 'docs'}
+                    style={{ ...styles.circleButton, ...(panel === 'docs' ? styles.circleOn : null) }}
+                  >
+                    <FileText size={19} />
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
                   onClick={() => {
                     setOverflowOpen((open) => !open);
                     setReactionsOpen(false);
@@ -949,6 +985,10 @@ export default function CallLayer() {
       ) : null}
 
           {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
+
+          {panel === 'chat' ? <CallChatPanel onClose={() => setPanel('none')} /> : null}
+
+          {panel === 'docs' ? <CallDocsPanel onClose={() => setPanel('none')} /> : null}
 
           {inviteOpen ? <CallInviteDrawer onClose={() => setInviteOpen(false)} /> : null}
 

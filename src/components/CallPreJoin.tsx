@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
+import { useMicLevel } from '../hooks/useMicLevel';
 import CallDevicePicker from './CallDevicePicker';
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,9 @@ export default function CallPreJoin() {
     setMicOn(Boolean(audio && audio.enabled));
     setCamOn(Boolean(video && video.enabled && video.readyState === 'live'));
   }, [localStream]);
+
+  // Live mic level for the test bar — runs only while the mic track is on.
+  const micLevel = useMicLevel(localStream, micOn);
 
   const copyCode = () => {
     if (!roomCode) return;
@@ -131,6 +135,14 @@ export default function CallPreJoin() {
           )}
         </div>
 
+        {/* Mic test — a live level bar, so "Looks Good" is an informed choice. */}
+        <div style={styles.meter}>
+          <span style={styles.meterLabel}>{t('call.micTest')}</span>
+          <span style={styles.meterTrack} aria-hidden="true">
+            <span style={{ ...styles.meterFill, inlineSize: `${Math.round(micLevel * 100)}%` }} />
+          </span>
+        </div>
+
         {/* Circular toggles sit beneath the preview, Meet-style. */}
         <div style={styles.toggles}>
           <button
@@ -202,7 +214,7 @@ export default function CallPreJoin() {
             {t('call.joinWithoutVideo')}
           </button>
           <button type="button" className="primary-button" onClick={() => void commitJoin()}>
-            {t('call.joinNow')}
+            {t('call.looksGood')}
           </button>
         </div>
       </div>
@@ -260,6 +272,23 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '1.4rem',
   },
   toggles: { display: 'flex', justifyContent: 'center', gap: '0.6rem' },
+  meter: { display: 'grid', gap: '0.35rem' },
+  meterLabel: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', fontWeight: 700 },
+  meterTrack: {
+    display: 'block',
+    blockSize: 8,
+    borderRadius: 999,
+    background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',
+    overflow: 'hidden',
+  },
+  meterFill: {
+    display: 'block',
+    blockSize: '100%',
+    inlineSize: 0,
+    borderRadius: 999,
+    background: 'var(--accent, #3ea985)',
+    transition: 'inline-size 80ms linear',
+  },
   toggle: {
     display: 'inline-flex',
     alignItems: 'center',

@@ -18,6 +18,13 @@ import {
   updateRoomPolicy,
   type CallPolicy,
 } from '../lib/callRooms';
+import {
+  appendCallMessage,
+  endCallSession,
+  ensureCallSession,
+  subscribeCallSession,
+  type CallChatEntry,
+} from '../lib/callSessions';
 
 // ---------------------------------------------------------------------------
 // First-party calling engine over Supabase Realtime broadcast.
@@ -367,6 +374,12 @@ export type UseCallResult = {
   roomId: string | null;
   /** Set only for code rooms (/call/{code}); drives the stage code chip. */
   roomCode: string | null;
+  /** The persisted call_sessions row (chat + docs anchor). Null when unavailable. */
+  sessionId: string | null;
+  /** In-call chat, rehydrated from the session's chat_log on join. */
+  chatMessages: CallChatEntry[];
+  /** Send one chat message (local echo, then persisted). */
+  sendChat: (body: string) => void;
   isHost: boolean;
   /** Display name of the other party when known — drives the CallLayer top bar. */
   peerName: string | null;
@@ -520,6 +533,9 @@ export function useCall(
   const [sounds, setSounds] = useState<boolean>(() => readSoundsEnabled());
   const [sinkId, setSinkId] = useState<string | null>(null);
   const [sinks, setSinks] = useState<DeviceOption[]>([]);
+  /** The persisted call_sessions row for this call (chat + docs anchor). */
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [chatMessages, setChatMessages] = useState<CallChatEntry[]>([]);
 
   const peers = useRef(new Map<string, Peer>());
   const channel = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -570,6 +586,9 @@ export function useCall(
   const retryCount = useRef(0);
   const alive = useRef(true);
   const lastBytes = useRef(0);
+  /** The session row id and its DEDICATED realtime unsubscribe. */
+  const sessionRef = useRef<string | null>(null);
+  const sessionUnsub = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     alive.current = true;
@@ -697,7 +716,19 @@ export function useCall(
     });
   }, []);
 
+  /** Close the persisted session: drop its channel and mark it ended. */
+  const closeSession = useCallback(() => {
+    const id = sessionRef.current;
+    sessionRef.current = null;
+    sessionUnsub.current?.();
+    sessionUnsub.current = null;
+    if (id) void endCallSession(id);
+    setSessionId(null);
+    setChatMessages([]);
+  }, []);
+
   const teardown = useCallback(() => {
+    closeSession();
     for (const id of [...peers.current.keys()]) closePeer(id);
     if (heartbeat.current) window.clearInterval(heartbeat.current);
     if (sweeper.current) window.clearInterval(sweeper.current);
@@ -721,7 +752,7 @@ export function useCall(
     hostRef.current = false;
     pending.current = null;
     room.current = null;
-  }, [closePeer]);
+  }, [closePeer, closeSession]);
 
   /** Full local reset plus an optional toast key. */
   const finish = useCallback(
@@ -1550,6 +1581,65 @@ export function useCall(
     [me, attachChannel, enterPrejoin, refreshDevices],
   );
 
+  /** Open (or rejoin) the persisted session and stream its chat_log. */
+  const openSession = useCallback(
+    async (
+      roomKey: string,
+      roomCodeValue: string | null,
+      hostId: string | null,
+      kindValue: string,
+    ) => {
+      const session = await ensureCallSession({
+        roomKey,
+        roomCode: roomCodeValue,
+        hostId,
+        kind: kindValue,
+      });
+      if (!session || !alive.current) return;
+
+      sessionRef.current = session.id;
+      setSessionId(session.id);
+      setChatMessages(session.chat_log);
+
+      // A DEDICATED channel — never the call: signaling one, which the engine
+      // deliberately releases once the mesh settles.
+      sessionUnsub.current?.();
+      sessionUnsub.current = subscribeCallSession(session.id, (entries) => {
+        if (alive.current) setChatMessages(entries);
+      });
+    },
+    [],
+  );
+
+  /** Local echo, then persist; reconcile with the server entry by id. */
+  const sendChat = useCallback(
+    (body: string) => {
+      const text = body.trim();
+      const activeId = sessionRef.current;
+      if (!text || !activeId) return;
+
+      const optimistic: CallChatEntry = {
+        id: `local-${Math.random().toString(36).slice(2)}`,
+        sender: myName,
+        body: text,
+        at: new Date().toISOString(),
+      };
+      setChatMessages((previous) => [...previous, optimistic]);
+
+      void appendCallMessage(activeId, myName, text).then((entry) => {
+        if (!entry || !alive.current) return;
+        setChatMessages((previous) => {
+          const withoutLocal = previous.filter((item) => item.id !== optimistic.id);
+          if (withoutLocal.some((item) => item.id === entry.id)) return withoutLocal;
+          return [...withoutLocal, entry].sort(
+            (a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id),
+          );
+        });
+      });
+    },
+    [myName],
+  );
+
   /** "Join now" — promote the preview to the live call and connect. */
   const commitJoin = useCallback(async () => {
     const todo = pending.current;
@@ -1604,7 +1694,14 @@ export function useCall(
 
     startTimers();
     attachChannel(todo.key);
-  }, [attachChannel, startTimers]);
+
+    void openSession(
+      todo.key,
+      todo.options.code ? todo.key : null,
+      todo.options.isHost ? me : null,
+      'video',
+    );
+  }, [attachChannel, startTimers, openSession, me]);
 
   /** Backs out of the green room / lobby without ever connecting. */
   const cancelPrejoin = useCallback(() => {
@@ -1816,8 +1913,10 @@ export function useCall(
 
       startTimers();
       attachChannel(key);
+
+      void openSession(key, code || null, options?.isHost ? me : null, nextKind);
     },
-    [me, getMedia, attachChannel, startTimers],
+    [me, getMedia, attachChannel, startTimers, openSession],
   );
 
   const startCall = useCallback(
@@ -2272,6 +2371,9 @@ export function useCall(
     kind,
     roomId,
     roomCode,
+    sessionId,
+    chatMessages,
+    sendChat,
     isHost,
     peerName,
     connectedAt,

@@ -2110,6 +2110,18 @@ img {
   }
 }
 
+/* In-call Chat + Caremunicate Docs reuse the participants slide-over chrome;
+   these are the extras. */
+.call-chat,
+.call-docs {
+  align-content: start;
+}
+
+.call-docs-textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ---------------------------------------------------------------------------
    Meeting settings / security — switch-style toggles + password rows.
    Logical properties only, so everything mirrors under [dir='rtl'].

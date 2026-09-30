@@ -60,6 +60,16 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
 - Lobby / password / lock / kick policies (client-enforced, signalled over the
   realtime channel).
 - Caps 720p / 30fps / 900 kbps, spotlight guard, adaptive 720→480→360→audio.
+- **Persisted session**: `call_sessions` is opened on join and closed
+  (`ended_at`) on teardown. In-call chat lives in its `chat_log` JSONB, appended
+  by the `append_call_message` RPC (never a client read-modify-write) and streamed
+  over a DEDICATED channel — never the `call:` signaling one.
+- **Caremunicate Docs**: `clinical_docs` is one row per
+  `(call_session_id, author_id)`. `edit_mode` is chosen at creation and is
+  IMMUTABLE; a `meeting_only` doc locks when its session ends — enforced by RLS,
+  mirrored in the panel. There is no `is_finalized` flag.
+- Chat + Docs are the CallLayer's side panels (at most one open); Docs is
+  provider-only, Chat is shared.
 
 ## Z-scale
 
@@ -87,7 +97,10 @@ clinic)` ·
 max / personal)` — maintained in Supabase, not in this repo ·
 `appointments(+buffer_minutes, reminder_sent)` · `availability` ·
 `emergency_alerts` · `hospitals` ·
-`doctor_favorites` · bucket `verification-docs` (private).
+`doctor_favorites` · `call_sessions(room_key, participant_ids, chat_log,
+has_recording, recording_url, ended_at)` · `clinical_docs(call_session_id,
+author_id, content, edit_mode)` · buckets `verification-docs`,
+`call-recordings` (private).
 
 ## Booking & appointments — the request flow
 
