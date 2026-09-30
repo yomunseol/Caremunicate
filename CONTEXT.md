@@ -70,6 +70,12 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
   mirrored in the panel. There is no `is_finalized` flag.
 - Chat + Docs are the CallLayer's side panels (at most one open); Docs is
   provider-only, Chat is shared.
+- **Quality dot**: the top-bar indicator is driven by measured inbound packet
+  loss/jitter from `getStats()` (good/fair/poor), not by pending ICE state.
+- **Recording**: consent-gated; `MediaRecorder` mixes local + remote audio (an
+  `AudioContext` destination) plus the local camera track. The blob is uploaded
+  to the `call-recordings` bucket and `recording_url` holds the **Storage path**
+  — never a `blob:` URL.
 
 ## Z-scale
 

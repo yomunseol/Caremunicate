@@ -83,6 +83,12 @@ const REACTION_MS = 2_000;
 /** Per-peer diagnostics poll (connection + inbound/outbound video). */
 const PEER_STATS_INTERVAL_MS = 4_000;
 
+/** Inbound loss ratio / jitter (seconds) thresholds that drive the quality dot. */
+const LOSS_FAIR = 0.03;
+const LOSS_POOR = 0.08;
+const JITTER_FAIR = 0.05;
+const JITTER_POOR = 0.12;
+
 /** Connected-but-zero-frames must persist this long before we blame the video. */
 const VIDEO_SILENT_MS = 5_000;
 
@@ -1363,11 +1369,6 @@ export function useCall(
     if (heartbeat.current === null) {
       heartbeat.current = window.setInterval(() => {
         send(EV.heartbeat, { kind: kindRef.current });
-        let pending = 0;
-        for (const peer of peers.current.values()) {
-          pending += Number(peer.pc.connectionState !== 'connected');
-        }
-        setQuality(pending === 0 ? 'good' : pending === 1 ? 'fair' : 'poor');
       }, HEARTBEAT_MS);
     }
   }, [send, closePeer]);
@@ -2234,6 +2235,9 @@ export function useCall(
 
     const poll = async () => {
       const collected: Record<string, PeerStats> = {};
+      // Worst inbound loss ratio + jitter across every peer this tick.
+      let worstLoss = 0;
+      let worstJitter = 0;
 
       for (const [id, peer] of peers.current) {
         const stats: PeerStats = {
@@ -2260,17 +2264,34 @@ export function useCall(
               bytesReceived?: number;
               frameWidth?: number;
               frameHeight?: number;
+              packetsLost?: number;
+              packetsReceived?: number;
+              jitter?: number;
             };
 
             if (record.type === 'outbound-rtp' && record.kind === 'video') {
               stats.outboundFrames = Number(record.framesEncoded ?? 0);
               stats.outboundBytes = Number(record.bytesSent ?? 0);
             }
-            if (record.type === 'inbound-rtp' && record.kind === 'video') {
-              stats.inboundFrames = Number(record.framesDecoded ?? 0);
-              stats.inboundBytes = Number(record.bytesReceived ?? 0);
-              if (record.frameWidth) stats.frameWidth = Number(record.frameWidth);
-              if (record.frameHeight) stats.frameHeight = Number(record.frameHeight);
+
+            // Audio carries the cleanest loss/jitter signal, so read it for the
+            // quality dot on BOTH kinds; video-only fields stay video-only.
+            if (record.type === 'inbound-rtp') {
+              const lost = Number(record.packetsLost ?? 0);
+              const received = Number(record.packetsReceived ?? 0);
+              if (received + lost > 0) {
+                const loss = lost / (received + lost);
+                if (loss > worstLoss) worstLoss = loss;
+              }
+              const jitter = Number(record.jitter ?? 0);
+              if (jitter > worstJitter) worstJitter = jitter;
+
+              if (record.kind === 'video') {
+                stats.inboundFrames = Number(record.framesDecoded ?? 0);
+                stats.inboundBytes = Number(record.bytesReceived ?? 0);
+                if (record.frameWidth) stats.frameWidth = Number(record.frameWidth);
+                if (record.frameHeight) stats.frameHeight = Number(record.frameHeight);
+              }
             }
           });
         } catch (error) {
@@ -2296,6 +2317,15 @@ export function useCall(
         }
         return merged;
       });
+
+      // The dot: worst-peer inbound loss/jitter, on this same cadence.
+      const nextQuality: CallQuality =
+        worstLoss >= LOSS_POOR || worstJitter >= JITTER_POOR
+          ? 'poor'
+          : worstLoss >= LOSS_FAIR || worstJitter >= JITTER_FAIR
+            ? 'fair'
+            : 'good';
+      setQuality((previous) => (previous === nextQuality ? previous : nextQuality));
     };
 
     void poll();

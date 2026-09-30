@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Circle,
   FileText,
   Hand,
   LayoutGrid,
@@ -14,6 +15,7 @@ import {
   PhoneOff,
   Settings,
   Smile,
+  Square,
   Users,
   Video,
   VideoOff,
@@ -21,6 +23,9 @@ import {
 } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useActiveSpeaker } from '../hooks/useActiveSpeaker';
+import { useCallRecording } from '../hooks/useCallRecording';
+import { supabase } from '../lib/supabase';
+import { setCallSessionRecording } from '../lib/callSessions';
 import type { PeerConnState } from '../hooks/useCall';
 import { looksLikeUuid, resolveRoom } from '../lib/callRooms';
 import { playHandChime, playJoinChime, playLeaveChime } from '../lib/chime';
@@ -203,6 +208,7 @@ export default function CallLayer() {
     status,
     kind,
     roomCode,
+    sessionId,
     personal,
     isHost,
     peerName,
@@ -252,6 +258,11 @@ export default function CallLayer() {
   const { user } = useAuth();
   const role = String(user?.user_metadata?.role ?? '');
   const canUseDocs = isProvider(role);
+
+  // Recording: consent-gated, mixed locally, uploaded to Storage on stop.
+  const { recording, start: beginRecording, stop: endRecording } = useCallRecording(localStream, peers);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [savingRecording, setSavingRecording] = useState(false);
 
   const emergency = kind === 'emergency';
   const incomingPhase = status === 'incoming' && Boolean(incoming);
@@ -388,6 +399,36 @@ export default function CallLayer() {
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
+
+  // ---- recording -----------------------------------------------------------
+  const stopAndSaveRecording = useCallback(async () => {
+    const blob = await endRecording();
+    if (!blob || !sessionId || !user) return;
+    setSavingRecording(true);
+    try {
+      // A Storage path, never a blob: URL — it has to survive a refresh.
+      const path = `${user.id}/${sessionId}-${Date.now()}.webm`;
+      const { error: uploadError } = await supabase.storage
+        .from('call-recordings')
+        .upload(path, blob, { upsert: true, contentType: blob.type || 'video/webm' });
+      if (uploadError) {
+        console.error('CALL ERROR:', uploadError.message);
+        notify('recording-failed');
+        return;
+      }
+      await setCallSessionRecording(sessionId, path);
+    } finally {
+      setSavingRecording(false);
+    }
+  }, [endRecording, sessionId, user, notify]);
+
+  const onRecordClick = useCallback(() => {
+    if (recording) {
+      void stopAndSaveRecording();
+      return;
+    }
+    setConsentOpen(true);
+  }, [recording, stopAndSaveRecording]);
 
   // ---- keyboard shortcuts --------------------------------------------------
   useEffect(() => {
@@ -541,6 +582,8 @@ export default function CallLayer() {
                   ? t('call.lineClosed')
                   : notice === 'continue-in-chat'
                   ? t('chat.messages')
+                  : notice === 'recording-failed'
+                  ? t('call.recordingFailed')
                   : t('call.ended');
 
   const selfTileProps = {
@@ -644,9 +687,28 @@ export default function CallLayer() {
               ) : null}
 
               {duration ? <span style={styles.timer} dir="ltr">{duration}</span> : null}
+              {recording ? (
+                <span style={styles.recordingChip} role="status">
+                  <span style={styles.recordingDot} aria-hidden="true" />
+                  {t('call.recording')}
+                </span>
+              ) : null}
             </div>
 
             <div style={styles.topRight}>
+              {/* Network indicator — coloured from measured inbound loss/jitter. */}
+              <span
+                className="call-quality-dot"
+                data-quality={quality}
+                style={styles.qualityDot}
+                role="status"
+                aria-label={t(
+                  `call.quality${quality === 'good' ? 'Good' : quality === 'fair' ? 'Fair' : 'Poor'}`,
+                )}
+                title={t(
+                  `call.quality${quality === 'good' ? 'Good' : quality === 'fair' ? 'Fair' : 'Poor'}`,
+                )}
+              />
               <button
                 type="button"
                 className="call-chip"
@@ -874,6 +936,20 @@ export default function CallLayer() {
                 >
                   <MonitorUp size={19} />
                 </button>
+
+                {canUseDocs ? (
+                  <button
+                    type="button"
+                    onClick={onRecordClick}
+                    disabled={savingRecording}
+                    title={recording ? t('call.stopRecording') : t('call.startRecording')}
+                    aria-label={recording ? t('call.stopRecording') : t('call.startRecording')}
+                    aria-pressed={recording}
+                    style={{ ...styles.circleButton, ...(recording ? styles.circleRecord : null) }}
+                  >
+                    {recording ? <Square size={19} /> : <Circle size={19} />}
+                  </button>
+                ) : null}
               </div>
 
               <span style={styles.clusterDivider} aria-hidden="true" />
@@ -983,6 +1059,29 @@ export default function CallLayer() {
           ) : null}
         </div>
       ) : null}
+
+          {consentOpen ? (
+            <div style={styles.backdrop} role="dialog" aria-modal="true" aria-label={t('call.recordingConsent')}>
+              <div style={styles.consentCard}>
+                <p style={styles.consentText}>{t('call.recordingConsent')}</p>
+                <div style={styles.consentActions}>
+                  <button type="button" className="ghost-button" onClick={() => setConsentOpen(false)}>
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => {
+                      setConsentOpen(false);
+                      beginRecording();
+                    }}
+                  >
+                    {t('call.startRecording')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {participantsOpen ? <CallParticipantsPanel onClose={() => setParticipantsOpen(false)} /> : null}
 
@@ -1226,6 +1325,33 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 800,
   },
   connDot: { position: 'absolute', insetBlockStart: '0.5rem', insetInlineEnd: '0.5rem', width: '0.45rem', height: '0.45rem', borderRadius: '50%' },
+  qualityDot: { width: '0.6rem', height: '0.6rem', borderRadius: '50%', display: 'inline-block', flexShrink: 0 },
+  circleRecord: { background: 'rgba(224, 101, 90, 0.9)', color: '#fff' },
+  recordingChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+    paddingInline: '0.5rem',
+    paddingBlock: '0.15rem',
+    borderRadius: '999px',
+    background: 'rgba(224, 101, 90, 0.22)',
+    color: '#ffd9d4',
+    fontSize: '0.7rem',
+    fontWeight: 800,
+  },
+  recordingDot: { width: '0.45rem', height: '0.45rem', borderRadius: '50%', background: '#e0655a' },
+  consentCard: {
+    display: 'grid',
+    gap: '0.9rem',
+    width: 'min(26rem, 100%)',
+    padding: '1.25rem',
+    borderRadius: '1.1rem',
+    background: '#f7fdf9',
+    border: '1px solid rgba(15, 58, 50, 0.12)',
+    boxShadow: '0 28px 64px rgba(6, 26, 22, 0.4)',
+  },
+  consentText: { margin: 0, color: '#133b35', fontSize: '0.92rem', lineHeight: 1.5 },
+  consentActions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' },
   silentBadge: {
     position: 'absolute',
     insetBlockStart: '0.5rem',

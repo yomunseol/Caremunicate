@@ -2122,6 +2122,11 @@ img {
   cursor: not-allowed;
 }
 
+/* Top-bar network indicator: green / amber / red from measured loss + jitter. */
+.call-quality-dot[data-quality='good'] { background: #3ea985; }
+.call-quality-dot[data-quality='fair'] { background: #e0a13c; }
+.call-quality-dot[data-quality='poor'] { background: #e0655a; }
+
 /* ---------------------------------------------------------------------------
    Meeting settings / security — switch-style toggles + password rows.
    Logical properties only, so everything mirrors under [dir='rtl'].
