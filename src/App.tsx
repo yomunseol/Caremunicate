@@ -15,6 +15,8 @@ import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
 import HospitalMap from './components/HospitalMap';
 import DoctorList from './components/DoctorList';
+import MyCare from './components/MyCare';
+import PatientsList from './components/PatientsList';
 import VerificationCenter from './components/VerificationCenter';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import NotificationBell from './components/NotificationBell';
@@ -49,6 +51,8 @@ type RouteKey =
   | 'hospitals'
   | 'doctors'
   | 'verify'
+  | 'care'
+  | 'patients'
   | 'reset';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
@@ -107,7 +111,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -334,7 +338,9 @@ function App() {
         nextRoute === 'calendar' ||
         nextRoute === 'hospitals' ||
         nextRoute === 'doctors' ||
-        nextRoute === 'verify') &&
+        nextRoute === 'verify' ||
+        nextRoute === 'care' ||
+        nextRoute === 'patients') &&
       (!currentUser || pending2FA)
     ) {
       nextRoute = 'login';
@@ -1226,6 +1232,19 @@ function App() {
             <DashboardOverview role={profileRole} planName={currentPlanOption?.name ?? ''} />
 
             <div className="profile-sidebar">
+              {/* The dashboard sidebar's entry into the care-plan feature:
+                  patients open My Care, providers open My Patients. */}
+              <div className="panel">
+                <button
+                  type="button"
+                  className="primary-button"
+                  style={{ width: '100%' }}
+                  onClick={() => navigate(isProvider(profileRole) ? 'patients' : 'care')}
+                >
+                  {isProvider(profileRole) ? t('care.myPatients') : t('care.myCare')}
+                </button>
+              </div>
+
               <TwoFactorSetup />
 
               <div className="panel">
@@ -1280,6 +1299,18 @@ function App() {
         {route === 'verify' && (
           <ProtectedRoute>
             <VerificationCenter />
+          </ProtectedRoute>
+        )}
+
+        {route === 'care' && (
+          <ProtectedRoute>
+            <MyCare />
+          </ProtectedRoute>
+        )}
+
+        {route === 'patients' && (
+          <ProtectedRoute>
+            <PatientsList />
           </ProtectedRoute>
         )}
 

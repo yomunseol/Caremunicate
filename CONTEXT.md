@@ -105,8 +105,10 @@ max / personal)` — maintained in Supabase, not in this repo ·
 `emergency_alerts` · `hospitals` ·
 `doctor_favorites` · `call_sessions(room_key, participant_ids, chat_log,
 has_recording, recording_url, ended_at)` · `clinical_docs(call_session_id,
-author_id, content, edit_mode)` · buckets `verification-docs`,
-`call-recordings` (private).
+author_id, content, edit_mode)` · `care_plans(patient_id, provider_id, title,
+status)` · `care_plan_tasks(plan_id, instruction, metric_type, frequency,
+goal_count, goal_unit)` · `care_plan_logs(task_id, patient_id, log_date,
+value_*)` · buckets `verification-docs`, `call-recordings` (private).
 
 ## Booking & appointments — the request flow
 
@@ -197,6 +199,23 @@ author_id, content, edit_mode)` · buckets `verification-docs`,
   on a successful send. `RESEND_API_KEY` / `RESEND_FROM` are Supabase function
   secrets — never `VITE_`-prefixed, never in the bundle. `src/lib/reminders.ts`
   builds the payload client-side and does not send.
+
+## Care Plans — `#care` + `#patients`
+
+- The dashboard sidebar (`.profile-sidebar`) link opens `#care` for a patient and
+  `#patients` for a provider. There is **no left sidebar** — navigation is the
+  top bar plus the dashboard's side column.
+- `#patients` is the first doctor-facing patient profile: known patients are
+  derived from existing appointments + conversations (no assignment table), and
+  the detail panel has Overview / Care Plans tabs.
+- Tables `care_plans` / `care_plan_tasks` / `care_plan_logs`; creation is the
+  atomic `create_care_plan` RPC. One log per `(task_id, log_date)`.
+- Task model: `metric_type` (number|boolean) + `frequency` (daily|weekly) + a
+  configurable `goal_count`/`goal_unit` (day|week). Compliance reads
+  "Task completed X/Y days this week" (or weeks).
+- RLS cannot scope a plan to a care team — no provider↔patient assignment model
+  exists, so any provider may create a plan for any `patient_id` (the same
+  documented trade-off as `emergency_alerts`).
 
 ## Time
 

@@ -2128,6 +2128,60 @@ img {
 .call-quality-dot[data-quality='poor'] { background: #e0655a; }
 
 /* ---------------------------------------------------------------------------
+   Care Plans — patient checklist + provider compliance summary.
+   --------------------------------------------------------------------------- */
+.care-muted { margin: 0; color: var(--text-muted, #557b76); font-size: 0.84rem; }
+
+.care-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
+
+.care-task {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  border-radius: 0.8rem;
+  background: #fff;
+}
+/* Logged today: the mint wash is the day's tick. */
+.care-task.is-done {
+  background: var(--accent-soft, rgba(62, 169, 133, 0.14));
+  border-color: rgba(62, 169, 133, 0.4);
+}
+/* The provider's summary row: instruction + sentence + a progress bar. */
+.care-task.is-summary { grid-template-columns: minmax(0, 1fr) auto; }
+
+.care-number { width: 6rem; }
+.care-log { padding-inline: 0.85rem; display: inline-flex; align-items: center; gap: 0.35rem; }
+
+.care-progress {
+  grid-column: 1 / -1;
+  display: block;
+  block-size: 6px;
+  border-radius: 999px;
+  background: rgba(62, 169, 133, 0.14);
+  overflow: hidden;
+}
+.care-progress-fill {
+  display: block;
+  block-size: 100%;
+  inline-size: 0;
+  border-radius: 999px;
+  background: var(--accent, #3ea985);
+}
+
+/* The create-plan task row: instruction · type · frequency · goal · remove. */
+.care-plan-row { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; }
+.care-goal-count { width: 4.5rem; }
+.care-goal-unit { width: auto; }
+
+@media (max-width: 720px) {
+  .care-task { grid-template-columns: minmax(0, 1fr); }
+  .care-plan-row { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ---------------------------------------------------------------------------
    Meeting settings / security — switch-style toggles + password rows.
    Logical properties only, so everything mirrors under [dir='rtl'].
    --------------------------------------------------------------------------- */

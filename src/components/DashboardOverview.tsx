@@ -10,6 +10,7 @@ import EmergencyAlertBanner from './EmergencyAlertBanner';
 import EmergencyCard from './EmergencyCard';
 import VideoCallSheet from './VideoCallSheet';
 import BookingFlow, { type BookableProvider } from './BookingFlow';
+import CareChecklist from './CareChecklist';
 
 // ---------------------------------------------------------------------------
 // Dashboard overview — the left column of the profile dashboard.
@@ -282,6 +283,14 @@ export default function DashboardOverview({ role = '', planName = '' }: Dashboar
       {/* ------------------------------- PATIENT ------------------------------ */}
       {!provider ? (
         <>
+          {/* Today's Checklist leads the patient dashboard — the tasks due today. */}
+          {user ? (
+            <div className="panel">
+              <div className="eyebrow">{t('care.todaysChecklist')}</div>
+              <CareChecklist patientId={user.id} onlyToday />
+            </div>
+          ) : null}
+
           <div className="panel">
             <div className="eyebrow">{t('dash.careTeamTitle')}</div>
             {careTeam ? (
