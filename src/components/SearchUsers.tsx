@@ -3,6 +3,7 @@ import { Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
 import { roleLabelKey } from '../lib/roles';
+import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 
 export interface SearchUserResult {
@@ -108,7 +109,9 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
     try {
       await onPick(user);
     } catch (err) {
-      setPickError(err instanceof Error ? err.message : t('chat.startFailed'));
+      // A Supabase PostgrestError is NOT an Error instance — describeError reads
+      // its code/message so the real reason is never swallowed.
+      setPickError(describeError(err));
     } finally {
       setBusyId(null);
     }

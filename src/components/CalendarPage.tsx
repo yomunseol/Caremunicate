@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
 import {
@@ -66,7 +67,7 @@ export default function CalendarPage() {
   const { notify } = useToast();
   const { user } = useAuth();
 
-  const [role, setRole] = useState('');
+  const { role, provider } = useRole();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [people, setPeople] = useState<Map<string, PersonInfo>>(new Map());
   const [providers, setProviders] = useState<PersonInfo[]>([]);
@@ -80,28 +81,14 @@ export default function CalendarPage() {
   /** The provider's saved slot length — the default duration for a new block. */
   const [slotMinutes, setSlotMinutes] = useState(30);
 
-  const side: Side = isProvider(role) ? 'provider' : 'patient';
+  const side: Side = provider ? 'provider' : 'patient';
 
+  // The stored choice wins; otherwise the role default — providers open on the
+  // week grid, patients on the schedule list.
   useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (!user?.id) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      const next = String((data as { role?: string } | null)?.role ?? user.user_metadata?.role ?? '');
-      setRole(next);
-      // The stored choice wins; otherwise the role default — providers open on
-      // the week grid, patients on the schedule list.
-      setView(readStoredView(user.id) ?? (isProvider(next) ? 'week' : 'schedule'));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, user?.user_metadata?.role]);
+    if (!user?.id) return;
+    setView(readStoredView(user.id) ?? (provider ? 'week' : 'schedule'));
+  }, [user?.id, provider]);
 
   // Persist the active view per user.
   useEffect(() => {

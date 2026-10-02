@@ -15,6 +15,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
@@ -281,7 +282,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
   const { t, tString } = useLang();
 
-  const effectiveRole = (role || String(user?.user_metadata?.role ?? '')).toLowerCase();
+  const { role: profileRole } = useRole();
+  const effectiveRole = (role || profileRole).toLowerCase();
   // Provider accounts (doctor / department / hospital) get the network heading.
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 

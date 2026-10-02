@@ -29,6 +29,9 @@ single Resend key for reminder email.
 
 `is_provider()` = doctor / department / hospital (`src/lib/roles.ts`).
 Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
+**The role comes from `useRole()`** (`src/context/RoleContext.tsx`), which reads
+`profiles.role` once (metadata is only the pre-load fallback). Never read
+`user_metadata.role` directly — it goes stale and silently breaks every gate.
 
 ## Plans — two families
 

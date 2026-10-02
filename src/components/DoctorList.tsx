@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { useToast } from '../context/ToastContext';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { resolveDisplayName } from '../lib/displayName';
@@ -34,9 +35,9 @@ export default function DoctorList() {
   const { notify } = useToast();
   const { t, tString } = useLang();
 
-  const role = String(user?.user_metadata?.role ?? '').toLowerCase();
+  const { role, provider } = useRole();
   // Favourites are a patient concept; providers see the directory with no tabs.
-  const isPatient = !isProvider(role);
+  const isPatient = !provider;
 
   const [doctors, setDoctors] = useState<DoctorEntry[]>([]);
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(() => new Set());

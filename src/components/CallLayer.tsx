@@ -31,6 +31,7 @@ import { looksLikeUuid, resolveRoom } from '../lib/callRooms';
 import { playHandChime, playJoinChime, playLeaveChime } from '../lib/chime';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
@@ -256,8 +257,7 @@ export default function CallLayer() {
 
   // Who is looking at this layer — the Docs panel is provider-only.
   const { user } = useAuth();
-  const role = String(user?.user_metadata?.role ?? '');
-  const canUseDocs = isProvider(role);
+  const { provider: canUseDocs } = useRole();
 
   // Recording: consent-gated, mixed locally, uploaded to Storage on stop.
   const { recording, start: beginRecording, stop: endRecording } = useCallRecording(localStream, peers);

@@ -5,6 +5,7 @@ import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 're
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed, MapPin, Plus, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { useToast } from '../context/ToastContext';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
@@ -31,8 +32,8 @@ import {
 
 const MINT = '#52b788';
 const MINT_DARK = '#216e5d';
-const DEFAULT_CENTER: [number, number] = [30, 0];
-const DEFAULT_ZOOM = 2;
+const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
+const DEFAULT_ZOOM = 10;
 const FOCUS_ZOOM = 14;
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
@@ -95,9 +96,8 @@ export default function HospitalMap() {
   const { notify } = useToast();
   const { t, tString } = useLang();
 
-  const role = String(user?.user_metadata?.role ?? '').toLowerCase();
   // Adding a hospital is a provider action (doctor / department / hospital).
-  const provider = isProvider(role);
+  const { provider } = useRole();
 
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +121,13 @@ export default function HospitalMap() {
   const [geoError, setGeoError] = useState('');
 
   const [focus, setFocus] = useState<{ lat: number; lon: number; key: string } | null>(null);
+  /** Page-level filter: narrows the list AND the pins by hospital name. */
+  const [nameQuery, setNameQuery] = useState('');
+
+  const needle = nameQuery.trim().toLowerCase();
+  const visible = needle
+    ? hospitals.filter((hospital) => hospital.name.toLowerCase().includes(needle))
+    : hospitals;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -417,6 +424,14 @@ export default function HospitalMap() {
       </div>
 
       <div style={styles.toolbar}>
+        <input
+          className="input"
+          style={styles.search}
+          value={nameQuery}
+          placeholder={t('hospital.search')}
+          aria-label={t('hospital.search')}
+          onChange={(event) => setNameQuery(event.target.value)}
+        />
         {loading ? (
           <span style={styles.muted} aria-busy="true">{t('hospital.loading')}</span>
         ) : (
@@ -441,7 +456,7 @@ export default function HospitalMap() {
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution={t('places.attribution')}
           />
-          {hospitals.map((hospital) => (
+          {visible.map((hospital) => (
             <Marker
               key={hospital.id}
               position={[hospital.latitude, hospital.longitude]}
@@ -466,9 +481,14 @@ export default function HospitalMap() {
         <p style={styles.muted}>{t('hospital.empty')}</p>
       ) : null}
 
+      {/* Filtered to nothing: say so rather than show a blank list. */}
+      {!loading && !loadError && hospitals.length > 0 && visible.length === 0 ? (
+        <p style={styles.muted}>{t('hospital.noMatch')}</p>
+      ) : null}
+
       {hospitals.length > 0 ? (
         <ul style={styles.list}>
-          {hospitals.map((hospital) => (
+          {visible.map((hospital) => (
             <li key={hospital.id} style={styles.card}>
               <MapPin size={16} aria-hidden="true" style={styles.cardIcon} />
               <div style={styles.cardCopy}>
@@ -510,7 +530,8 @@ const styles: Record<string, CSSProperties> = {
   muted: { margin: 0, color: '#557b76', fontSize: '0.84rem', lineHeight: 1.5 },
   error: { margin: 0, color: '#9c3636', fontSize: '0.84rem', fontWeight: 600, lineHeight: 1.5 },
   mapWrap: { position: 'relative', isolation: 'isolate', width: '100%' },
-  mapCanvas: { width: '100%', height: 460, borderRadius: '1rem', background: '#fff' },
+  search: { maxWidth: '22rem' },
+  mapCanvas: { width: '100%', height: 500, borderRadius: '1rem', background: '#fff' },
   list: {
     listStyle: 'none',
     margin: 0,

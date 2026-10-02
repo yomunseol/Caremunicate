@@ -250,7 +250,9 @@ export default function FloatingChatWidget() {
     }
 
     lastSeenRef.current = Date.now();
-    openThread(conversationId, resolveDisplayName(user.username, user.email, t('chat.participant')), user.role);
+    // The widget is triage; the room itself is the full-page chat route.
+    setIsOpen(false);
+    window.location.hash = `#chat/${conversationId}`;
   };
 
   const closeWidget = () => {

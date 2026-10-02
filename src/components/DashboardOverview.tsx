@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Calendar, CheckCircle2, MapPin, MessageCircle, ShieldCheck, Video, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { supabase } from '../lib/supabase';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
@@ -65,7 +66,9 @@ export default function DashboardOverview({ role = '', planName = '' }: Dashboar
   const { user } = useAuth();
   const { t } = useLang();
 
-  const effectiveRole = (role || String(user?.user_metadata?.role ?? '')).toLowerCase();
+  const { role: profileRole } = useRole();
+  // profiles.role wins (metadata can be stale); the prop is the caller's read.
+  const effectiveRole = (role || profileRole).toLowerCase();
   // Provider-side cards cover doctor, department and hospital accounts.
   const provider = isProvider(effectiveRole);
   const displayName = String(user?.user_metadata?.fullName ?? user?.email ?? '');

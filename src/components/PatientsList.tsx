@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useRole } from '../context/RoleContext';
 import { useLang } from '../i18n';
 import { isProvider, roleLabelKey } from '../lib/roles';
 import { listKnownPatients } from '../lib/carePlans';
@@ -16,8 +17,7 @@ export default function PatientsList() {
   const { user } = useAuth();
   const { t } = useLang();
 
-  const role = String(user?.user_metadata?.role ?? '');
-  const provider = isProvider(role);
+  const { provider } = useRole();
 
   const [patients, setPatients] = useState<PersonInfo[]>([]);
   const [selected, setSelected] = useState<PersonInfo | null>(null);
