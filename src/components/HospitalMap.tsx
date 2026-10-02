@@ -35,6 +35,10 @@ const MINT_DARK = '#216e5d';
 const DEFAULT_CENTER: [number, number] = [37.5665, 126.978];
 const DEFAULT_ZOOM = 10;
 const FOCUS_ZOOM = 14;
+/** The modal's pick map opens on a city-level view, not the country view. */
+const PICK_DEFAULT_ZOOM = 12;
+/** Fallback search centre (Seoul) when the browser has no location. */
+const SEOUL: LatLon = { lat: DEFAULT_CENTER[0], lon: DEFAULT_CENTER[1] };
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
 const pinSvg = (fill: string): string => `
@@ -76,6 +80,34 @@ function MapFocus({ target }: { target: { lat: number; lon: number; key: string 
     if (!target || applied.current === target.key) return;
     applied.current = target.key;
     map.flyTo([target.lat, target.lon], Math.max(map.getZoom(), FOCUS_ZOOM), { duration: 0.6 });
+  }, [map, target]);
+
+  return null;
+}
+
+/** The pick map inside the dialog: re-measure after the portal lays out, and
+ *  follow the selected point so a picked result is actually on screen. */
+function PickMapFocus({ target }: { target: LatLon | null }) {
+  const map = useMap();
+  const applied = useRef<string | null>(null);
+
+  // A portaled dialog measures late — invalidate on the next frame AND shortly
+  // after, so the tiles are never stretched from a zero-size container.
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => map.invalidateSize());
+    const id = window.setTimeout(() => map.invalidateSize(), 180);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(id);
+    };
+  }, [map]);
+
+  useEffect(() => {
+    if (!target) return;
+    const key = `${target.lat},${target.lon}`;
+    if (applied.current === key) return;
+    applied.current = key;
+    map.flyTo([target.lat, target.lon], Math.max(map.getZoom(), PICK_DEFAULT_ZOOM), { duration: 0.5 });
   }, [map, target]);
 
   return null;
@@ -203,12 +235,10 @@ export default function HospitalMap() {
   const handleSearch = () => {
     const needle = query.trim();
     if (!needle) return;
-    if (center) {
-      void runSearch(needle, center);
-    } else {
-      // Overpass needs a centre; get one, then search without a second click.
-      requestLocation((at) => void runSearch(needle, at));
-    }
+    // Overpass needs a centre — never block the search on geolocation. Falling
+    // back to the default centre keeps a Seoul hospital reachable even when the
+    // browser refuses a location.
+    void runSearch(needle, center ?? SEOUL);
   };
 
   const pickResult = (place: OsmPlace) => {
@@ -350,7 +380,7 @@ export default function HospitalMap() {
             {geoError ? <p role="alert" style={styles.error}>{geoError}</p> : null}
             {searchError ? <p role="alert" style={styles.error}>{searchError}</p> : null}
             {!searching && !searchError && searched && results.length === 0 ? (
-              <p style={styles.muted}>{t('places.noResults')}</p>
+              <p style={styles.muted}>{t('hospital.noResultsHint')}</p>
             ) : null}
             {results.length > 0 ? (
               <ul style={styles.results}>
@@ -377,7 +407,7 @@ export default function HospitalMap() {
             <div dir="ltr" style={styles.pickMapWrap}>
               <MapContainer
                 center={draft ? [draft.lat, draft.lon] : DEFAULT_CENTER}
-                zoom={draft ? FOCUS_ZOOM : DEFAULT_ZOOM}
+                zoom={draft ? FOCUS_ZOOM : PICK_DEFAULT_ZOOM}
                 scrollWheelZoom
                 style={styles.pickMapCanvas}
               >
@@ -386,6 +416,7 @@ export default function HospitalMap() {
                   attribution={t('places.attribution')}
                 />
                 {draft ? <Marker position={[draft.lat, draft.lon]} icon={draftIcon} /> : null}
+                <PickMapFocus target={draft} />
                 <PickOnMap onPick={dropPin} />
                 <MapFocus target={focus} />
               </MapContainer>
@@ -590,6 +621,6 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(82, 183, 136, 0.08)',
   },
   pickMapWrap: { position: 'relative', isolation: 'isolate', width: '100%' },
-  pickMapCanvas: { width: '100%', height: 220, borderRadius: '0.8rem', background: '#fff' },
+  pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
 };

@@ -2171,14 +2171,31 @@ img {
   background: var(--accent, #3ea985);
 }
 
-/* The create-plan task row: instruction · type · frequency · goal · remove. */
-.care-plan-row { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; }
-.care-goal-count { width: 4.5rem; }
-.care-goal-unit { width: auto; }
+/* The create-plan task row: instruction · type · frequency · goal · unit · ×.
+   The instruction takes the remaining ~40%; the selects are fixed so they can
+   never crush together; the × is a 44px touch target. */
+.care-plan-row { grid-template-columns: minmax(0, 1fr) 120px 120px 72px 72px 44px; }
+.care-goal-count { width: 100%; }
+.care-goal-unit { width: 100%; }
+.care-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border-radius: 999px;
+}
 
 @media (max-width: 720px) {
   .care-task { grid-template-columns: minmax(0, 1fr); }
+  /* Stack the task row; every control fills the width so nothing overflows. */
   .care-plan-row { grid-template-columns: minmax(0, 1fr); }
+  .care-plan-row .input,
+  .care-plan-row .select,
+  .care-plan-row .care-remove { width: 100%; }
+  .care-plan-row .care-remove { min-width: 0; }
 }
 
 /* ---------------------------------------------------------------------------

@@ -85,11 +85,20 @@ export async function addHospital(input: {
 const sanitizeQuery = (value: string): string =>
   value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 
-/** Named medical places within the search radius of a centre. */
+/**
+ * Named medical places within the search radius of a centre.
+ *
+ * The two medical-tag clauses rank true facilities first; the `name:en` and
+ * broad `name` clauses are the safety net so an OSM element whose tags differ
+ * (or that is named in another script) still resolves. Results are de-duped by
+ * element id and capped at 20 by the caller.
+ */
 const buildSearchQuery = (needle: string, at: LatLon): string => `[out:json][timeout:25];
 (
   nwr["name"~"${needle}",i]["amenity"~"hospital|clinic|doctors"](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
   nwr["name"~"${needle}",i]["healthcare"~"hospital|clinic|doctor"](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
+  nwr["name:en"~"${needle}",i](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
+  nwr["name"~"${needle}",i](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
 );
 out center 20;`;
 

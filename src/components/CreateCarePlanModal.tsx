@@ -133,31 +133,30 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                 <option value="daily">{t('care.freqDaily')}</option>
                 <option value="weekly">{t('care.freqWeekly')}</option>
               </select>
-              <span style={styles.goal}>
-                <input
-                  className="input care-goal-count"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={row.goal_count}
-                  aria-label={t('care.goal')}
-                  onChange={(event) =>
-                    patch(index, { goal_count: Math.min(31, Math.max(1, Number(event.target.value) || 1)) })
-                  }
-                />
-                <select
-                  className="select care-goal-unit"
-                  value={row.goal_unit}
-                  aria-label={t('care.goal')}
-                  onChange={(event) => patch(index, { goal_unit: event.target.value as GoalUnit })}
-                >
-                  <option value="day">{t('care.goalDays')}</option>
-                  <option value="week">{t('care.goalWeeks')}</option>
-                </select>
-              </span>
+              {/* Goal count + unit are direct grid children, one track each. */}
+              <input
+                className="input care-goal-count"
+                type="number"
+                min={1}
+                max={31}
+                value={row.goal_count}
+                aria-label={t('care.goal')}
+                onChange={(event) =>
+                  patch(index, { goal_count: Math.min(31, Math.max(1, Number(event.target.value) || 1)) })
+                }
+              />
+              <select
+                className="select care-goal-unit"
+                value={row.goal_unit}
+                aria-label={t('care.goal')}
+                onChange={(event) => patch(index, { goal_unit: event.target.value as GoalUnit })}
+              >
+                <option value="day">{t('care.goalDays')}</option>
+                <option value="week">{t('care.goalWeeks')}</option>
+              </select>
               <button
                 type="button"
-                className="ghost-button"
+                className="ghost-button care-remove"
                 aria-label={t('common.close')}
                 onClick={() => setRows((previous) => previous.filter((_, i) => i !== index))}
               >
@@ -170,6 +169,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
         <button
           type="button"
           className="ghost-button"
+          style={styles.addTask}
           onClick={() => setRows((previous) => [...previous, emptyRow()])}
         >
           <Plus size={15} aria-hidden="true" /> {t('care.addTask')}
@@ -230,9 +230,9 @@ const styles: Record<string, CSSProperties> = {
   taskList: { display: 'grid', gap: '0.6rem' },
   taskRow: {
     display: 'grid',
-    gap: '0.5rem',
+    gap: '0.75rem',
     alignItems: 'center',
   },
-  goal: { display: 'inline-flex', gap: '0.3rem', alignItems: 'center' },
+  addTask: { width: '100%', marginBlockStart: '0.75rem' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' },
 };
