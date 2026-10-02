@@ -1750,10 +1750,26 @@ img {
 .footer {
   max-width: 1220px;
   margin: 0 auto;
-  padding: 1.25rem clamp(1rem, 3vw, 2rem) 2rem;
-  color: var(--text-muted);
+  padding-block: 2rem;
+  padding-inline: clamp(1rem, 3vw, 2rem);
+  text-align: center;
+  color: rgba(27, 67, 50, 0.7);
   font-size: 0.92rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(82, 183, 136, 0.3);
+}
+
+.footer p {
+  margin: 0;
+}
+
+.footer-link {
+  color: #52b788;
+  font-weight: 500;
+}
+
+.footer-link:hover,
+.footer-link:focus-visible {
+  text-decoration: underline;
 }
 
 @keyframes fadeInUp {

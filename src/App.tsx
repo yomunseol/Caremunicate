@@ -1375,7 +1375,17 @@ function App() {
       <FloatingChatWidget />
 
       <footer className="footer">
-        <p>{t('footer.tagline')}</p>
+        <p dir="ltr">
+          2026 Yomunseol • Also building{' '}
+          <a
+            className="footer-link"
+            href="https://lancerments.vercel.app"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            LancerMents
+          </a>
+        </p>
       </footer>
     </div>
   );
