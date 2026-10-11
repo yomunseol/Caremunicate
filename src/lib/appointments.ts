@@ -428,6 +428,22 @@ const SCHEMA_MISMATCH = new Set(['42703', '42P10', 'PGRST204', 'PGRST100']);
 const schemaMismatch = (code: string | null | undefined): boolean =>
   SCHEMA_MISMATCH.has(String(code ?? ''));
 
+/** Codes that mean the FUNCTION ITSELF is absent (a missing RPC, not a table). */
+const MISSING_FUNCTION = new Set(['PGRST202', '42883']);
+
+/**
+ * A loud, self-identifying code for a missing server function — never a bare
+ * status. PGRST202 (not in the PostgREST schema cache) is the booking-flow
+ * failure mode; it is surfaced verbatim by the inline banner / toast.
+ */
+const missingFunctionMessage = (
+  fnName: string,
+  error: { code?: string | null; message?: string | null },
+): string | null =>
+  MISSING_FUNCTION.has(String(error.code ?? ''))
+    ? `server function missing: ${fnName} (${error.code})`
+    : null;
+
 /**
  * The DB overlap guard raises SQLSTATE 23P01 (exclusion_violation) with the
  * message `appointment_overlap`. Both map to ONE friendly, translated key.
@@ -650,7 +666,9 @@ export const requestAppointment = async (payload: {
     console.error('CALENDAR ERROR:', error.message);
     return {
       ok: false,
-      code: isOverlapError(error) ? OVERLAP_MESSAGE_KEY : error.code ?? error.message,
+      code:
+        missingFunctionMessage('request_appointment', error) ??
+        (isOverlapError(error) ? OVERLAP_MESSAGE_KEY : error.code ?? error.message),
     };
   }
 
@@ -672,7 +690,10 @@ export const respondToAppointment = async (
 
   if (error) {
     console.error('CALENDAR ERROR:', error.message);
-    return { ok: false, code: error.code ?? error.message };
+    return {
+      ok: false,
+      code: missingFunctionMessage('respond_appointment', error) ?? error.code ?? error.message,
+    };
   }
   return { ok: true };
 };
@@ -697,7 +718,8 @@ export const approveAppointment = async (
     if (!error) return { ok: true, code };
 
     console.error('CALENDAR ERROR:', error.message);
-    lastCode = error.code ?? error.message;
+    lastCode =
+      missingFunctionMessage('respond_appointment', error) ?? error.code ?? error.message;
     if (error.code !== '23505') break;
   }
 

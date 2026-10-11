@@ -134,6 +134,17 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
 - Calendar views are **Week / Month / Schedule only** (the Day view was
   deleted). Week owns the viewport — body scroll locked, one internal scroller,
   48px rows, sticky 40px header. Month cells are a fixed 112px.
+- **CF-1**: the three booking RPCs (`request_appointment`, `respond_appointment`,
+  `create_appointment_room`) are now defined in-repo by
+  `202609250003_calendar_booking_repair.sql` — they were previously assumed but
+  never migrated, so booking reached PostgREST with no such function ⇒
+  **PGRST202** (function-not-found, NOT table-not-found). That migration also
+  reconciles the column drift (both `provider_id`/`host_id`, `slot_minutes`/
+  `slot_min`, `end_at`/`duration_min`), adds `'requested'` to the status CHECK,
+  grants, RLS, and ends with `notify pgrst, 'reload schema'`. A missing RPC is
+  surfaced as `server function missing: <fn> (<code>)`, never a bare status.
+- `availability` upsert requires `UNIQUE(host_id, weekday, start_time)`;
+  `appointments.room_code` needs `UNIQUE` for the fresh-code retry.
 
 ## Hospitals map — `/hospitals`
 
