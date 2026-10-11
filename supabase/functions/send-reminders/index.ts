@@ -9,7 +9,7 @@
 // is still false, emails the patient through Resend, and flips the flag ONLY
 // after a successful send, so a failed row is retried on the next run.
 
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -25,6 +25,23 @@ const json = (body: unknown, status = 200): Response =>
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+
+/**
+ * CR3 sibling audit: a failed reminder is written to public.email_log so it is
+ * diagnosable, instead of vanishing into the function logs. `profiles` carries
+ * no locale column, so reminders are English-only — the locale is recorded
+ * explicitly as 'en' (the same value the fallback would resolve to).
+ */
+const logFailure = async (
+  supabase: SupabaseClient,
+  email: string,
+  error: string,
+): Promise<void> => {
+  const { error: logError } = await supabase
+    .from('email_log')
+    .insert({ email, type: 'appointment_reminder', locale: 'en', error });
+  if (logError) console.error('send-reminders: email_log insert failed', logError.message);
+};
 
 /** The appointment start, in the mailer's fixed English for the cron. */
 const whenLabel = (startAt: string): string => {
@@ -102,6 +119,7 @@ Deno.serve(async () => {
     const to = String(patient?.email ?? '');
     if (!to) {
       failed += 1;
+      await logFailure(supabase, '', 'no_recipient_email');
       continue;
     }
 
@@ -128,7 +146,9 @@ Deno.serve(async () => {
 
     if (!response.ok) {
       failed += 1;
-      console.error('send-reminders: resend failed', response.status, await response.text());
+      const detail = await response.text();
+      console.error('send-reminders: resend failed', response.status, detail);
+      await logFailure(supabase, to, `resend_${response.status}: ${detail}`);
       continue;
     }
 

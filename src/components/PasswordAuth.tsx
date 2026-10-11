@@ -70,22 +70,20 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     window.location.href = '/#profile';
   };
 
-  // Sends (or resends) the email OTP. Fault-tolerant by design: a send error
-  // does NOT throw or dead-end — it surfaces a yellow notice and returns false
-  // so the caller still shows the 6-digit code entry view. A code may have
-  // arrived even when the API reported a failure.
+  // Sends (or resends) the email code through the first-party CR3 path. The
+  // locale is passed EXPLICITLY from UI state; the function always falls back to
+  // English for an unknown locale, so no locale can silence the code. The
+  // boolean is authoritative (the function logs and returns false on failure
+  // instead of raising), and a false still surfaces a yellow notice without
+  // dead-ending the code-entry view.
   const sendEmailCode = async (): Promise<boolean> => {
-    const { data, error: otpError } = await supabaseMemory.auth.signInWithOtp({
-      email: email.trim(),
-      options: {
-        shouldCreateUser: false,
-        data: { locale },
-      },
+    const { data, error: sendError } = await supabaseMemory.rpc('request_2fa_code', {
+      p_locale: locale,
     });
-    console.log('Branch C (email): signInWithOtp response:', { data, error: otpError });
+    console.log('Branch C (email): request_2fa_code response:', { data, error: sendError });
 
-    if (otpError) {
-      console.log('OTP send error:', otpError);
+    if (sendError || data !== true) {
+      console.log('2FA code send error:', sendError);
       setSendNotice(t('tfa.sendError'));
       return false;
     }
@@ -350,43 +348,36 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     console.log('Verification attempt started');
 
     try {
-      const { data, error } = await supabaseMemory.auth.verifyOtp({
+      // CR3: the code lives only in our own store (request_2fa_code hashed it),
+      // so it is checked by verify_2fa_code — never native verifyOtp.
+      const { data: verified, error } = await supabaseMemory.rpc('verify_2fa_code', {
+        p_code: token,
+      });
+      console.log('Email code verify response:', { verified, error });
+
+      if (error || verified !== true) {
+        setError(t('login.err.unableVerify'));
+        setCode('');
+        return;
+      }
+
+      // The password already verified in step 1 on the memory client, so a
+      // persistent sign-in here creates the real session — no tokens to promote.
+      const persistent = await supabase.auth.signInWithPassword({
         email: email.trim(),
-        token,
-        type: 'email',
+        password,
       });
-      console.log('Email OTP Verify Response:', { data, error });
+      console.log('Branch C (email): code verified. Persistent session:', {
+        data: persistent.data,
+        error: persistent.error,
+      });
 
-      if (error) {
-        setError(error.message);
+      if (persistent.error) {
+        setError(persistent.error.message);
         setCode('');
         return;
       }
 
-      if (!data.session) {
-        // Fail closed: no session returned means no persistent session to create.
-        setError(t('login.err.emailNoSession'));
-        setCode('');
-        return;
-      }
-
-      // Promote the memory-only session into the real persistent client.
-      const sessionResult = await supabase.auth.setSession({
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-      });
-      console.log('Branch C (email): email code verified. Persistent session set:', {
-        data: sessionResult.data,
-        error: sessionResult.error,
-      });
-
-      if (sessionResult.error) {
-        setError(sessionResult.error.message);
-        setCode('');
-        return;
-      }
-
-      console.log('Session created successfully:', data.session);
       console.log('2FA complete, persistent session created');
 
       // Clear all pending-2FA state so the app treats the user as fully

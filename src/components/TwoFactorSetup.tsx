@@ -161,7 +161,7 @@ async function getUserId(): Promise<string> {
 }
 
 export default function TwoFactorSetup() {
-  const { t } = useLang();
+  const { t, locale } = useLang();
   const [method, setMethod] = useState<TwoFactorMethod>('none');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -302,18 +302,14 @@ export default function TwoFactorSetup() {
     return true;
   };
 
-  // Sends (or resends) the email OTP. Fault-tolerant: a send error surfaces a
-  // yellow notice and returns false, but the caller still opens the code-entry
-  // view — a code may arrive even when the API reported a failure.
+  // Sends (or resends) the email code through the first-party CR3 path. The
+  // locale comes from UI state; unknown locales fall back to English server-side,
+  // and a failure logs to email_log instead of raising.
   const sendEmailCode = async (): Promise<boolean> => {
-    const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
-    const { data, error } = await supabase.auth.signInWithOtp({
-      email: userEmail,
-      options: { shouldCreateUser: false },
-    });
-    console.log('[2FA] email OTP send response:', { data, error });
+    const { data, error } = await supabase.rpc('request_2fa_code', { p_locale: locale });
+    console.log('[2FA] request_2fa_code response:', { data, error });
 
-    if (error) {
+    if (error || data !== true) {
       console.log('OTP send error:', error);
       setSendNotice(t('tfa.sendError'));
       return false;
@@ -430,16 +426,12 @@ export default function TwoFactorSetup() {
     setLoading(true);
     setError('');
 
-    const userEmail = (await supabase.auth.getUser()).data.user?.email ?? '';
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: userEmail,
-      token,
-      type: 'email',
-    });
-    console.log('[2FA] email OTP verify response:', { data, error });
+    // CR3: verify against the server-generated code, not native verifyOtp.
+    const { data: verified, error } = await supabase.rpc('verify_2fa_code', { p_code: token });
+    console.log('[2FA] verify_2fa_code response:', { verified, error });
 
-    if (error) {
-      setError(error.message);
+    if (error || verified !== true) {
+      setError(t('login.err.unableVerify'));
       setLoading(false);
       return;
     }

@@ -111,7 +111,9 @@ has_recording, recording_url, ended_at)` · `clinical_docs(call_session_id,
 author_id, content, edit_mode)` · `care_plans(patient_id, provider_id, title,
 status)` · `care_plan_tasks(plan_id, instruction, metric_type, frequency,
 goal_count, goal_unit)` · `care_plan_logs(task_id, patient_id, log_date,
-value_*)` · buckets `verification-docs`, `call-recordings` (private).
+value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
+`email_log(email, type, locale, error)` · buckets `verification-docs`,
+`call-recordings` (private).
 
 ## Booking & appointments — the request flow
 
@@ -202,6 +204,30 @@ value_*)` · buckets `verification-docs`, `call-recordings` (private).
   on a successful send. `RESEND_API_KEY` / `RESEND_FROM` are Supabase function
   secrets — never `VITE_`-prefixed, never in the bundle. `src/lib/reminders.ts`
   builds the payload client-side and does not send.
+
+## Email & 2FA (CR3)
+
+- **Email-code 2FA is first-party**, not Supabase's hosted OTP.
+  `request_2fa_code(p_locale)` (SECURITY DEFINER, pg_net → Resend) generates a
+  6-digit code, stores only its bcrypt hash in `email_otp_codes(user_id,
+  code_hash, expires_at, attempts)` (10-min TTL, 5 attempts, 30s cooldown), and
+  emails it from a **jsonb template map covering all 10 locales**. Lookup is
+  `COALESCE(map -> locale, map -> 'en')`, so an unknown / NULL / garbage locale
+  ALWAYS sends English — never NULL, never a silent abort. The payload is
+  `jsonb_build_object(...)`, never string concatenation.
+- `verify_2fa_code(p_code)` checks the hash and returns a boolean; on success the
+  login flow creates the persistent session by re-running `signInWithPassword`
+  (the password already passed the Session Trap) — there is no token to promote.
+  Both RPCs are granted to `authenticated` only.
+- **Never raise email failures into the UI.** A failed send is written to
+  `email_log(email, type, locale, error)` and the function returns `false`; the
+  client reads the boolean and shows an inline notice. The locale is passed
+  EXPLICITLY from UI state (the language switcher's value), never from a cookie.
+- Resend needs a DB-side setting for the DB-side send:
+  `alter database postgres set app.resend_api_key = '<key>'` (optional
+  `app.resend_from`). Separate from the Edge Function's `RESEND_API_KEY`.
+- **Sibling**: `send-reminders` records failures in the same `email_log`. It is
+  English-only because `profiles` carries no locale column.
 
 ## Care Plans — `#care` + `#patients`
 
