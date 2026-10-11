@@ -43,6 +43,8 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [recoveryError, setRecoveryError] = useState('');
   const [recoverySent, setRecoverySent] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
+  // 60s cooldown on the recovery email, counted down one second at a time.
+  const [recoveryCooldown, setRecoveryCooldown] = useState(0);
 
   // Clear any partially-persisted session from a previous attempt whenever the
   // component mounts (arriving at the login screen) or the view resets.
@@ -59,6 +61,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendIn]);
+
+  // Tick the recovery-email cooldown down to zero.
+  useEffect(() => {
+    if (recoveryCooldown <= 0) return;
+    const timer = setTimeout(() => setRecoveryCooldown((seconds) => seconds - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [recoveryCooldown]);
 
   // Final step for every no-2FA success path. Clear any pending flag, then
   // hard-redirect: a full page load bypasses any React state that may not have
@@ -410,8 +419,9 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
-  // Sends the Supabase recovery email. A rate limit is reported as a friendly
-  // retry-later line — never as a raw status code.
+  // Sends the Supabase recovery email. The error is surfaced verbatim (the raw
+  // Supabase message) so failures are diagnosable; START of a 60s cooldown on
+  // success.
   const sendRecovery = async () => {
     const address = (recoveryEmail || email).trim();
     if (!address) {
@@ -429,16 +439,12 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       if (resetError) {
         console.log('Recovery email error:', resetError);
-        const status = (resetError as { status?: number }).status;
-        const rateLimited =
-          status === 429 || /rate limit|too many/i.test(resetError.message ?? '');
-        setRecoveryError(
-          rateLimited ? 'Too many attempts. Please try again later.' : t('errors.somethingWrong'),
-        );
+        setRecoveryError(resetError.message);
         return;
       }
 
       setRecoverySent(true);
+      setRecoveryCooldown(60);
     } finally {
       setRecoveryBusy(false);
     }
@@ -650,9 +656,24 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           {recoveryOpen ? (
             <div style={styles.recoveryPanel}>
               {recoverySent ? (
-                <p style={styles.recoveryDone} role="status">
-                  <Mail size={16} aria-hidden="true" /> {t('auth.recoverySent')}
-                </p>
+                <>
+                  <p style={styles.recoveryDone} role="status">
+                    <Mail size={16} aria-hidden="true" /> {t('auth.recoverySent')}
+                  </p>
+                  <button
+                    type="button"
+                    style={{
+                      ...styles.ghostButton,
+                      ...(recoveryCooldown > 0 || recoveryBusy ? styles.resendButtonDisabled : null),
+                    }}
+                    onClick={() => void sendRecovery()}
+                    disabled={recoveryCooldown > 0 || recoveryBusy}
+                  >
+                    {recoveryCooldown > 0
+                      ? t('tfa.resendIn', { seconds: recoveryCooldown })
+                      : t('reset.send')}
+                  </button>
+                </>
               ) : (
                 <>
                   <div style={styles.field}>
@@ -675,14 +696,14 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
                     <p style={styles.error} role="alert">{recoveryError}</p>
                   ) : null}
 
-                  {/* Not supplied by the spec — needs its 10-locale string. */}
+                  {/* Label supplied in the CR4 spec. */}
                   <button
                     type="button"
                     style={styles.ghostButton}
                     onClick={() => void sendRecovery()}
                     disabled={recoveryBusy}
                   >
-                    Send recovery email
+                    {t('reset.send')}
                   </button>
                 </>
               )}

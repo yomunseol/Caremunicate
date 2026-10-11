@@ -681,6 +681,13 @@ const translations = {
     'doctors.save': 'Save doctor',
     'doctors.removeSaved': 'Remove from favorites',
     'auth.msg.accountCreated': 'Account created. Please sign in.',
+    'reset.invalidLink': "This reset link is invalid or expired.",
+    'reset.requestNew': "Request a new link",
+    'reset.send': "Send recovery email",
+    'reset.strength.weak': "Weak",
+    'reset.strength.fair': "Fair",
+    'reset.strength.strong': "Strong",
+    'reset.success': "Password updated. Taking you to your dashboard…",
   },
 
   fr: {
@@ -1328,6 +1335,13 @@ const translations = {
     'doctors.save': 'Enregistrer le médecin',
     'doctors.removeSaved': 'Retirer des favoris',
     'auth.msg.accountCreated': 'Compte créé. Veuillez vous connecter.',
+    'reset.invalidLink': "Ce lien de réinitialisation est invalide ou expiré.",
+    'reset.requestNew': "Demander un nouveau lien",
+    'reset.send': "Envoyer l'e-mail de récupération",
+    'reset.strength.weak': "Faible",
+    'reset.strength.fair': "Moyen",
+    'reset.strength.strong': "Fort",
+    'reset.success': "Mot de passe mis à jour. Redirection vers votre tableau de bord…",
   },
 
   es: {
@@ -1970,6 +1984,13 @@ const translations = {
     'doctors.save': 'Guardar médico',
     'doctors.removeSaved': 'Quitar de favoritos',
     'auth.msg.accountCreated': 'Cuenta creada. Inicia sesión.',
+    'reset.invalidLink': "Este enlace de restablecimiento no es válido o ha caducado.",
+    'reset.requestNew': "Solicitar un enlace nuevo",
+    'reset.send': "Enviar correo de recuperación",
+    'reset.strength.weak': "Débil",
+    'reset.strength.fair': "Media",
+    'reset.strength.strong': "Fuerte",
+    'reset.success': "Contraseña actualizada. Te llevamos a tu panel…",
   },
 
   ko: {
@@ -2597,6 +2618,13 @@ const translations = {
     'doctors.save': '의사 저장',
     'doctors.removeSaved': '즐겨찾기에서 제거',
     'auth.msg.accountCreated': '계정이 생성되었습니다. 로그인해 주세요.',
+    'reset.invalidLink': "이 재설정 링크는 유효하지 않거나 만료되었습니다.",
+    'reset.requestNew': "새 링크 요청",
+    'reset.send': "복구 이메일 보내기",
+    'reset.strength.weak': "약함",
+    'reset.strength.fair': "보통",
+    'reset.strength.strong': "강함",
+    'reset.success': "비밀번호가 변경되었습니다. 대시보드로 이동합니다…",
   },
 
   zh: {
@@ -3217,6 +3245,13 @@ const translations = {
     'doctors.save': '收藏医生',
     'doctors.removeSaved': '取消收藏',
     'auth.msg.accountCreated': '账户已创建。请登录。',
+    'reset.invalidLink': "此重置链接无效或已过期。",
+    'reset.requestNew': "请求新链接",
+    'reset.send': "发送恢复邮件",
+    'reset.strength.weak': "弱",
+    'reset.strength.fair': "中",
+    'reset.strength.strong': "强",
+    'reset.success': "密码已更新。正在前往您的控制台…",
   },
 
   pt: {
@@ -3858,6 +3893,13 @@ const translations = {
     'doctors.save': 'Guardar médico',
     'doctors.removeSaved': 'Remover dos favoritos',
     'auth.msg.accountCreated': 'Conta criada. Inicie sessão.',
+    'reset.invalidLink': "Este link de redefinição é inválido ou expirou.",
+    'reset.requestNew': "Solicitar um novo link",
+    'reset.send': "Enviar e-mail de recuperação",
+    'reset.strength.weak': "Fraca",
+    'reset.strength.fair': "Média",
+    'reset.strength.strong': "Forte",
+    'reset.success': "Senha atualizada. Levando você ao seu painel…",
   },
 
   de: {
@@ -4503,6 +4545,13 @@ const translations = {
     'doctors.save': 'Arzt speichern',
     'doctors.removeSaved': 'Aus Favoriten entfernen',
     'auth.msg.accountCreated': 'Konto erstellt. Bitte melden Sie sich an.',
+    'reset.invalidLink': "Dieser Zurücksetzungslink ist ungültig oder abgelaufen.",
+    'reset.requestNew': "Neuen Link anfordern",
+    'reset.send': "Wiederherstellungs-E-Mail senden",
+    'reset.strength.weak': "Schwach",
+    'reset.strength.fair': "Mittel",
+    'reset.strength.strong': "Stark",
+    'reset.success': "Passwort aktualisiert. Du wirst zu deinem Dashboard weitergeleitet…",
   },
 
   it: {
@@ -5144,6 +5193,13 @@ const translations = {
     'doctors.save': 'Salva medico',
     'doctors.removeSaved': 'Rimuovi dai preferiti',
     'auth.msg.accountCreated': 'Account creato. Accedi.',
+    'reset.invalidLink': "Questo link di reimpostazione non è valido o è scaduto.",
+    'reset.requestNew': "Richiedi un nuovo link",
+    'reset.send': "Invia email di recupero",
+    'reset.strength.weak': "Debole",
+    'reset.strength.fair': "Media",
+    'reset.strength.strong': "Forte",
+    'reset.success': "Password aggiornata. Ti stiamo portando alla tua dashboard…",
   },
 
   ar: {
@@ -5779,6 +5835,13 @@ const translations = {
     'doctors.save': 'حفظ الطبيب',
     'doctors.removeSaved': 'إزالة من المفضلة',
     'auth.msg.accountCreated': 'تم إنشاء الحساب. يرجى تسجيل الدخول.',
+    'reset.invalidLink': "رابط إعادة التعيين هذا غير صالح أو منتهي الصلاحية.",
+    'reset.requestNew': "طلب رابط جديد",
+    'reset.send': "إرسال بريد الاسترداد",
+    'reset.strength.weak': "ضعيفة",
+    'reset.strength.fair': "متوسطة",
+    'reset.strength.strong': "قوية",
+    'reset.success': "تم تحديث كلمة المرور. جارٍ نقلك إلى لوحة التحكم…",
   },
 
   he: {
@@ -6406,6 +6469,13 @@ const translations = {
     'doctors.save': 'שמור רופא',
     'doctors.removeSaved': 'הסר מהמועדפים',
     'auth.msg.accountCreated': 'החשבון נוצר. נא להתחבר.',
+    'reset.invalidLink': "קישור האיפוס הזה אינו תקף או שפג תוקפו.",
+    'reset.requestNew': "בקשת קישור חדש",
+    'reset.send': "שליחת אימייל שחזור",
+    'reset.strength.weak': "חלשה",
+    'reset.strength.fair': "בינונית",
+    'reset.strength.strong': "חזקה",
+    'reset.success': "הסיסמה עודכנה. מעבירים אותך ללוח הבקרה…",
   },
 };
 

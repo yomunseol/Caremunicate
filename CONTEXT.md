@@ -229,6 +229,24 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
 - **Sibling**: `send-reminders` records failures in the same `email_log`. It is
   English-only because `profiles` carries no locale column.
 
+## Password recovery (CR4)
+
+- Login's "Forgot password?" opens an inline panel (no route change):
+  `resetPasswordForEmail(email, { redirectTo: `${origin}/reset-password` })`,
+  the raw Supabase error shown inline, and a 60s resend cooldown on success.
+- `/reset-password` is a **public** route — never behind `ProtectedRoute`
+  (the equivalent of a Next middleware exemption) — detected by
+  `isResetPasswordPath()` in `App.tsx` and rendered as the `reset` RouteKey. It
+  waits up to 3s for the `detectSessionInUrl` exchange, watching BOTH
+  `getSession()` and `onAuthStateChange` (`PASSWORD_RECOVERY` / `SIGNED_IN`) so
+  the one-shot read cannot lose the race. No session after 3s → invalid-link
+  card → back to `#login`. A session → strength bar + confirm →
+  `updateUser({ password })` → success card → `#profile` (the repo's post-auth
+  route; the recovery session becomes the real one, no sign-out).
+- A failed `updateUser` writes `email_log(type = 'recovery-ui')`. `email_log`
+  carries ONE RLS INSERT policy allowing authenticated rows of type
+  `recovery-ui` only.
+
 ## Care Plans — `#care` + `#patients`
 
 - The dashboard sidebar (`.profile-sidebar`) link opens `#care` for a patient and
