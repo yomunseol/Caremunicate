@@ -1,6 +1,11 @@
 # Caremunicate — project handoff & context
 
-> **This is the live context file — read it before touching anything.**
+> **`CONTEXT.md` is the canonical context file — read it first.**
+> This file is the older handoff. Its architecture sections are **superseded**
+> by `CONTEXT.md`; treat the two as the source of truth only where `CONTEXT.md`
+> is silent — the migration order table (§3), the code map (§4), the auth
+> "Session Trap" flow (§6), the verification recipes (§9) and the open items
+> (§10).
 > Rewritten 2026-09-13. The previous revision (written after `f6eeb6d`) is
 > superseded: the call system, the code engine, the Overpass proxy and the
 > doctor-verification half it listed as "pending" are all built now.
