@@ -36,6 +36,19 @@ const normalizeResult = (row: SearchUserRow): SearchUserResult => ({
   role: row.role ?? '',
 });
 
+// Surface the RAW cause inline (never a silent fail, never "[object Object]").
+// A Supabase PostgREST error is not an Error instance: it carries .message and
+// .code, so read those first (message is the human text — e.g. the 42703
+// "column profiles.email does not exist" — with the code appended for triage).
+const rawErrorText = (err: unknown, fallback: string): string => {
+  const failure = err as { code?: unknown; message?: unknown } | null;
+  const message = typeof failure?.message === 'string' ? failure.message : '';
+  const code = failure?.code ? String(failure.code) : '';
+  if (message) return code ? `${message} (${code})` : message;
+  if (err instanceof Error) return err.message;
+  return describeError(err) || fallback;
+};
+
 // Open search backed by the SECURITY DEFINER SQL function search_users(), which
 // safely resolves matching users (by email or name) without exposing profiles
 // to direct client-side reads (profiles RLS stays strict). The function's
@@ -89,7 +102,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
       } catch (err) {
         if (!cancelled) {
           console.error('[chat] user search failed:', err);
-          setError(err instanceof Error ? err.message : t('chat.searchFailed'));
+          setError(rawErrorText(err, t('chat.searchFailed')));
           setSearched(true);
         }
       } finally {
@@ -109,9 +122,9 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
     try {
       await onPick(user);
     } catch (err) {
-      // A Supabase PostgrestError is NOT an Error instance — describeError reads
-      // its code/message so the real reason is never swallowed.
-      setPickError(describeError(err));
+      // A Supabase PostgrestError is NOT an Error instance — rawErrorText reads
+      // its message/code so the real reason is never swallowed.
+      setPickError(rawErrorText(err, t('chat.searchFailed')));
     } finally {
       setBusyId(null);
     }
