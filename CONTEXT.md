@@ -100,8 +100,11 @@ tiles. Meet skin + Zoom muscles for the call UI.
 
 ## DB summary
 
-`profiles(role, plan, is_admin, verification_status, call_prefs, specialty,
-clinic)` ·
+`profiles(user_id, username, email, role, plan, is_admin, verification_status,
+call_prefs, specialty, clinic)` ·
+`conversations(id, type, name, created_by, created_at, direct_key)` ·
+`conversation_participants(conversation_id, user_id, role, joined_at)` ·
+`messages(id, conversation_id, sender_id, content, created_at)` ·
 `call_rooms(code, host, status, lobby / password / lock / share / autoMute /
 max / personal)` — maintained in Supabase, not in this repo ·
 `appointments(+buffer_minutes, reminder_sent)` · `availability` ·
@@ -145,6 +148,18 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   surfaced as `server function missing: <fn> (<code>)`, never a bare status.
 - `availability` upsert requires `UNIQUE(host_id, weekday, start_time)`;
   `appointments.room_code` needs `UNIQUE` for the fresh-code retry.
+- **CF-1 amend (legacy mirror)**: `202609250003_calendar_booking_repair.sql` now
+  drops `create_appointment_room(uuid,text)` and `provider_busy_slots(uuid)`
+  before redefining them, adds `appointments.start_at` to the ALTER block, and
+  appends an `appointments_mirror` BEFORE INSERT/UPDATE trigger that coalesces
+  the legacy column spellings — `doctor_id` ↔ `provider_id`/`host_id`,
+  `start_time`/`end_time` ↔ `start_at`/`end_at`, `meeting_code` ↔ `room_code`,
+  `notes` ↔ `note` — plus a backfill `UPDATE` and
+  `alter column doctor_id drop not null`. **This presumes the LIVE table already
+  carries those legacy columns**: none of them is declared anywhere in this
+  repo's migrations, and `coalesce(end_time, end_at)` only type-checks when both
+  are `timestamptz`. On a table without them the appended block fails with
+  **42703** at `alter column doctor_id`. Founder-run, unverified from the repo.
 
 ## Hospitals map — `/hospitals`
 
@@ -174,6 +189,58 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   (`isProvider` gates it).
 - RLS: a favourite belongs to its patient only — select/insert/delete all gate on
   `patient_id = auth.uid()`.
+
+## Chat — direct conversations (`#chat`, floating widget)
+
+- Three tables: `conversations(id, type, name, created_by, created_at,
+  direct_key)`, `conversation_participants(conversation_id, user_id, role,
+  joined_at)` (composite PK on `(conversation_id, user_id)`), and
+  `messages(id, conversation_id, sender_id, content, created_at)`.
+- **`create_direct_conversation(p_user_a, p_user_b)` is the ONLY creation path.**
+  RLS has NO insert policies on `conversations` / `conversation_participants`, so
+  direct table inserts are impossible. The function is SECURITY DEFINER, checks
+  `auth.uid()` is one of the two parties, and snapshots each side's role
+  (`profiles.role`, else auth metadata) into `conversation_participants.role`.
+  The snapshot CHECK allows exactly `patient | doctor | hospital` — **a
+  `department` account cannot be a chat participant** (the constraint predates
+  the role).
+- **Idempotent by construction (CF-2).** `conversations.direct_key` holds the
+  sorted pair `least(uuid):greatest(uuid)` behind a partial `UNIQUE` index
+  (`where direct_key is not null`). The RPC reads `direct_key` first, takes
+  `pg_advisory_xact_lock`, re-reads, and on `unique_violation` re-selects and
+  returns the existing row — so the same patient+doctor pair can never
+  duplicate, even under a concurrent double-click. Existing direct threads are
+  backfilled from their two participants.
+- Messages are append-only (no UPDATE/DELETE policies). Membership is tested
+  only through `is_conversation_participant(id)` (SECURITY DEFINER, keyed on
+  `auth.uid()`); an INSERT requires `sender_id = auth.uid()`. No direct INSERT
+  policy exists on `messages` beyond that.
+- **UI.** One floating widget (`FloatingChatWidget`, fixed bottom-end,
+  `z-index: 50`) owns Inbox (`ChatList`) + New Chat (`SearchUsers`); a thread
+  renders inline or on the `#chat/<conversationId>` route (`ChatWindow` +
+  `useRealtimeChat`). Dashboard cards open the widget through the
+  `caremunicate:open-chat` window event — the widget is the single owner of chat
+  state, no surface re-implements creation.
+- `SearchUsers` resolves people through the SECURITY DEFINER `search_users()`
+  RPC — **never** a direct `profiles` read (profiles RLS stays strict) — matching
+  by **email or username**. `search_users` is maintained in Supabase, NOT in this
+  repo; its returned shape (`user_id`/`id`, `username`/`email`) is normalized in
+  the client so the UI does not depend on exact column names.
+- **Failure copy is the RAW database message, inline** (`message (code)`, e.g.
+  `column profiles.email does not exist (42703)`) for both the search and the
+  pick — never a silent fail, never a bare status code. Implemented by
+  `rawErrorText()` in `SearchUsers.tsx`.
+- **CF-2 (chat-creation 42703).** `202609250004_chat_creation_repair.sql`.
+  Diagnosis: the creation path finds the peer via `search_users()`, which matches
+  BY EMAIL (UI copy: "Search any patient or doctor by email"), and the dashboard
+  / chat list / calendar / notifications all `select ... email` from `profiles` —
+  but no migration ever added that column ⇒ **42703 undefined_column** the moment
+  a chat is started. Fix: add `profiles.email` (idempotent), backfill it from
+  `auth.users`, keep it populated with the `profiles_fill_email` BEFORE
+  INSERT/UPDATE trigger, index `lower(email)`, and add the `direct_key`
+  idempotency key above. Ends with `notify pgrst, 'reload schema'`. The code's
+  intent (email lives on `profiles`) is authoritative; the column was the gap.
+  Founder-run, unverified from the repo.
 
 ## Notifications
 
