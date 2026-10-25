@@ -3365,6 +3365,79 @@ img {
 .cal-field { display: grid; gap: 0.2rem; font-size: 0.72rem; font-weight: 700; color: var(--text-muted, #557b76); }
 .cal-field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.45rem; }
 
+/* CF-4 — ad-hoc time fallback + guest combobox. */
+.cal-hint {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-muted, #557b76);
+}
+
+.cal-inline-cta { justify-self: start; }
+
+.cal-combo-list {
+  list-style: none;
+  margin: 0.2rem 0 0;
+  padding: 0.25rem;
+  max-height: 11rem;
+  overflow-y: auto;
+  border-radius: 0.7rem;
+  background: #fff;
+  border: 1px solid var(--cal-line-strong, rgba(15, 58, 50, 0.16));
+  box-shadow: 0 12px 28px rgba(9, 40, 34, 0.14);
+}
+
+.cal-combo-list li { margin: 0; }
+
+.cal-combo-list button {
+  display: block;
+  width: 100%;
+  text-align: start;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text, #133b35);
+  cursor: pointer;
+}
+
+.cal-combo-list button:hover,
+.cal-combo-list button[aria-selected='true'] {
+  background: rgba(62, 169, 133, 0.14);
+}
+
+/* ---- Built-in messenger panel (FloatingChatWidget) ----------------------- */
+/* Box sizing lives here (NOT inline) so the <md bottom-sheet can override it. */
+.chat-widget-panel {
+  width: 350px;
+  max-width: calc(100vw - 2rem);
+  height: 500px;
+  max-height: calc(100vh - 7rem);
+  border-radius: 18px;
+}
+
+/* Mobile: a bottom sheet — 70vh, rounded top edge. */
+@media (max-width: 767px) {
+  .chat-widget-panel {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    height: 70vh;
+    max-height: 70vh;
+    border-radius: 1rem 1rem 0 0;
+    z-index: 60;
+  }
+}
+
 /* Mobile: 48px targets and a scrollable grid. */
 @media (max-width: 720px) {
   .cal-seg, .cal-today, .cal-toolbar-create, .cal-icon-btn { min-height: 44px; }

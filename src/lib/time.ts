@@ -107,6 +107,50 @@ export const fmtDateTime = (
   }
 };
 
+/**
+ * A compact, LOCALE-AWARE "time ago" label — "2h" in en, "2시간" in ko — via
+ * Intl.RelativeTimeFormat so no hardcoded English abbreviation can leak into a
+ * localized surface. Beyond ~a month it falls back to a short date. Returns ''
+ * for an unparseable value, and `justNow` (a translated label) under 45s.
+ */
+export const relativeTime = (
+  value: string | number | Date | null | undefined,
+  locale: string,
+  justNow: string,
+  tag = 'relativeTime',
+): string => {
+  const date = parseDate(value, tag);
+  if (!date) return '';
+  const seconds = (Date.now() - date.getTime()) / 1000;
+  if (Math.abs(seconds) < 45) return justNow;
+
+  if (Math.abs(seconds) >= 2_629_800) {
+    try {
+      return new Intl.DateTimeFormat(locale, { month: 'short', day: 'numeric' }).format(date);
+    } catch {
+      return '';
+    }
+  }
+
+  const ladder: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ['minute', 60],
+    ['hour', 3_600],
+    ['day', 86_400],
+    ['week', 604_800],
+  ];
+  const [unit, unitSeconds] =
+    [...ladder].reverse().find(([, secs]) => Math.abs(seconds) >= secs) ?? ladder[0];
+
+  try {
+    return new Intl.RelativeTimeFormat(locale, { numeric: 'auto', style: 'short' }).format(
+      -Math.round(seconds / unitSeconds),
+      unit,
+    );
+  } catch {
+    return justNow;
+  }
+};
+
 /** A new Date offset by whole minutes — the only place we call new Date(n). */
 export const addMinutesToDate = (date: Date, minutes: number): Date =>
   new Date(date.getTime() + minutes * 60_000);

@@ -174,13 +174,16 @@ export default function CalendarPage() {
   const refresh = useCallback(() => setRefreshKey((key) => key + 1), []);
 
   const counterpartFor = useCallback(
-    (appointment: Appointment): PersonInfo =>
-      people.get(side === 'patient' ? appointment.provider_id : appointment.patient_id) ?? {
-        id: '',
-        name: '',
-        role: '',
-        verified: false,
-      },
+    (appointment: Appointment): PersonInfo => {
+      const key = side === 'patient' ? appointment.provider_id : appointment.patient_id;
+      const person = key ? people.get(key) : undefined;
+      if (person) return person;
+      // A GUEST booking has no patient profile — show the name it was booked with.
+      if (side === 'provider' && !appointment.patient_id && appointment.guest_name) {
+        return { id: '', name: appointment.guest_name, role: '', verified: false };
+      }
+      return { id: '', name: '', role: '', verified: false };
+    },
     [people, side],
   );
 

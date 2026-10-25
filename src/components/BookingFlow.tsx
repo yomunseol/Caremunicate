@@ -336,7 +336,7 @@ export default function BookingFlow({
                 ) : (
                   <>
                     {/* Self-reporting: the raw server code, never softened. */}
-                    Booking failed
+                    {t('cal.bookFailed')}
                     <span className="error-detail">({error})</span>
                   </>
                 )}
@@ -345,7 +345,7 @@ export default function BookingFlow({
 
             <div className="cal-modal-footer">
               <span className="cal-footer-note">
-                {chosen ? `${duration} min · ` : ''}
+                {chosen ? `${t('cal.minUnit', { count: duration })} · ` : ''}
                 {timezone}
               </span>
               <button type="button" className="ghost-button" onClick={onClose}>

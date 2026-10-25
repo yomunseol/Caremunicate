@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
+import { relativeTime } from '../lib/time';
 import { useLang } from '../i18n';
 
 export interface ChatListItem {
@@ -37,19 +38,6 @@ const previewOf = (content: string | null | undefined): string => {
   return cleaned.length > 40 ? `${cleaned.slice(0, 40).trimEnd()}…` : cleaned;
 };
 
-const timeAgo = (iso: string | null): string => {
-  if (!iso) return '';
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (seconds < 45) return 'just now';
-  const minutes = seconds / 60;
-  if (minutes < 60) return `${Math.floor(minutes)}m`;
-  const hours = minutes / 60;
-  if (hours < 24) return `${Math.floor(hours)}h`;
-  const days = hours / 24;
-  if (days < 7) return `${Math.floor(days)}d`;
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
-
 type ChatListProps = {
   myUserId: string;
   onOpenChat: (item: ChatListItem) => void;
@@ -62,7 +50,7 @@ type ChatListProps = {
 //   - 0 conversations + no error -> friendly empty state.
 //   - error truthy               -> the REAL database error message in red.
 export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: ChatListProps) {
-  const { t, tString } = useLang();
+  const { t, tString, locale } = useLang();
   const [items, setItems] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -234,7 +222,7 @@ export function ChatList({ myUserId, onOpenChat, onStartNewChat, onLoaded }: Cha
               <span style={styles.copy}>
                 <span style={styles.rowTop}>
                   <strong style={styles.name}>{item.peerName}</strong>
-                  <time style={styles.time}>{timeAgo(item.at)}</time>
+                  <time style={styles.time}>{relativeTime(item.at, locale, t('chat.justNow'))}</time>
                 </span>
                 <span style={isUnread ? styles.previewUnread : styles.preview}>
                   {item.preview}

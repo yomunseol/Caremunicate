@@ -1,37 +1,32 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { MessageCircle, X, Send } from 'lucide-react';
+import { Expand, X, Send, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { resolveDisplayName } from '../lib/displayName';
 import { roleLabelKey } from '../lib/roles';
+import { relativeTime } from '../lib/time';
 import { createDirectConversation } from '../lib/conversations';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
+import { useMessenger } from '../context/MessengerContext';
 import { useLang } from '../i18n';
 import { ChatList, type ChatListItem } from './ChatList';
 import { SearchUsers, type SearchUserResult } from './SearchUsers';
 
 // ---------------------------------------------------------------------------
-// Tailwind equivalents for the notes in this file:
-//   fixed wrapper  -> "fixed bottom-4 right-4 z-50 flex flex-col items-end"
-//   circular button-> "rounded-full bg-[var(--accent,#3ea985)]"
-//   window panel   -> "absolute bottom-[4.5rem] w-[350px] max-w-[calc(100vw-2rem)]
-//                     h-[500px] max-h-[calc(100vh-7rem)] rounded-2xl shadow-xl
-//                     bg-white"
-// The project has no Tailwind build step, so the same design tokens are used
-// via inline styles (consistent with the rest of the app).
+// The built-in messenger panel (bottom-end, portaled-in-flow at the app root).
+//
+// It is the ONLY thing that opens a conversation in place: creating or picking
+// a chat calls openMessenger() on the global store, which eases the whole
+// "new tab / navigate away" defect class — no new browser tab is ever spawned
+// here. The full-page #chat/<id> route is reachable only through the Expand
+// affordance, which runs in the SAME tab. The Close X hides the panel and keeps
+// the conversation.
+//
+// On <md the panel renders as a bottom sheet (70vh, rounded top) via the
+// .chat-widget-panel class.
 // ---------------------------------------------------------------------------
 
-const timeAgo = (iso: string): string => {
-  const seconds = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (seconds < 45) return 'just now';
-  const minutes = seconds / 60;
-  if (minutes < 60) return `${Math.floor(minutes)}m`;
-  const hours = minutes / 60;
-  if (hours < 24) return `${Math.floor(hours)}h`;
-  const days = hours / 24;
-  if (days < 7) return `${Math.floor(days)}d`;
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
-};
+// The design tokens are applied via inline styles (no Tailwind build step).
 
 // ---------------------------------------------------------------------------
 // Thread view (inline chat) — reuses useRealtimeChat for live messages.
@@ -47,13 +42,17 @@ function ThreadView({
   thread,
   myUserId,
   onBack,
+  onExpand,
+  onClose,
 }: {
   thread: Thread;
   myUserId: string;
   onBack: () => void;
+  onExpand: () => void;
+  onClose: () => void;
 }) {
   const { messages, loading, error, sendMessage } = useRealtimeChat(thread.conversationId);
-  const { t, tString } = useLang();
+  const { t, tString, locale } = useLang();
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -94,6 +93,25 @@ function ThreadView({
             {t(roleLabelKey(thread.peerRole))}
           </span>
         </div>
+        <div style={styles.threadActions}>
+          <button
+            type="button"
+            onClick={onExpand}
+            style={styles.iconButton}
+            aria-label={t('chat.expand')}
+            title={t('chat.expand')}
+          >
+            <Expand size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={styles.iconButton}
+            aria-label={t('chat.closeChat')}
+          >
+            <X size={16} />
+          </button>
+        </div>
       </div>
 
       <div style={styles.messages} aria-live="polite" aria-busy={loading}>
@@ -109,7 +127,7 @@ function ThreadView({
                 <div style={mine ? styles.bubbleMine : styles.bubbleTheirs}>
                   <p style={styles.bubbleText}>{message.content}</p>
                   <time style={mine ? styles.bubbleTimeMine : styles.bubbleTimeTheirs}>
-                    {timeAgo(message.created_at)}
+                    {relativeTime(message.created_at, locale, t('chat.justNow'))}
                   </time>
                 </div>
               </div>
@@ -134,7 +152,7 @@ function ThreadView({
           <button
             type="submit"
             disabled={!canSend}
-            aria-label={t('chat.sendAria')}
+            aria-label={tString('chat.sendAria')}
             style={{ ...styles.sendButton, ...(canSend ? styles.sendButtonEnabled : null) }}
           >
             <Send size={16} />
@@ -146,15 +164,15 @@ function ThreadView({
 }
 
 // ---------------------------------------------------------------------------
-// Main floating widget (bottom-right)
+// Main floating widget (bottom-end)
 // ---------------------------------------------------------------------------
 
 export default function FloatingChatWidget() {
   const { user } = useAuth();
   const { t, tString } = useLang();
+  const { open: isOpen, target, setOpen, openMessenger, closeMessenger } = useMessenger();
   const myUserId = user?.id ?? '';
 
-  const [isOpen, setIsOpen] = useState(false);
   const [tab, setTab] = useState<'inbox' | 'search'>('inbox');
   const [thread, setThread] = useState<Thread | null>(null);
 
@@ -164,6 +182,19 @@ export default function FloatingChatWidget() {
 
   const lastSeenRef = useRef(Date.now());
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // The global store drives what the panel shows. Opening a conversation from
+  // anywhere (dashboard, chat list, new-chat) lands here — in place.
+  useEffect(() => {
+    if (!target) return;
+    setTab('inbox');
+    setThread({
+      conversationId: target.conversationId,
+      peerName: target.peerName ?? '',
+      peerRole: target.peerRole ?? '',
+    });
+    lastSeenRef.current = Date.now();
+  }, [target]);
 
   // Close when clicking outside the widget (optional nicety).
   useEffect(() => {
@@ -188,13 +219,12 @@ export default function FloatingChatWidget() {
         event as CustomEvent<{ conversationId: string; peerName: string; peerRole: string } | null>
       ).detail;
 
-      setIsOpen(true);
       lastSeenRef.current = Date.now();
 
       if (detail) {
-        setTab('inbox');
-        setThread(detail);
+        openMessenger(detail);
       } else {
+        setOpen(true);
         setTab('search');
         setThread(null);
       }
@@ -202,7 +232,7 @@ export default function FloatingChatWidget() {
 
     window.addEventListener('caremunicate:open-chat', onOpenChat);
     return () => window.removeEventListener('caremunicate:open-chat', onOpenChat);
-  }, []);
+  }, [openMessenger, setOpen]);
 
   // Red dot while collapsed: any thread whose last message is from the peer
   // and arrived after the widget was last opened.
@@ -211,14 +241,14 @@ export default function FloatingChatWidget() {
   ).length;
 
   const openThread = (conversationId: string, peerName: string, peerRole: string) => {
-    setThread({ conversationId, peerName, peerRole });
-    setTab('inbox');
+    openMessenger({ conversationId, peerName, peerRole });
   };
 
   // Called by the Search tab after picking a user: reuse the existing thread
-  // if present, otherwise create one atomically via the RPC.
-  const handlePickUser = async (user: SearchUserResult): Promise<void> => {
-    console.log('[chat] picking user:', user.user_id);
+  // if present, otherwise create one atomically via the RPC. Either way the
+  // panel opens IN PLACE — no navigation, no new tab.
+  const handlePickUser = async (picked: SearchUserResult): Promise<void> => {
+    console.log('[chat] picking user:', picked.user_id);
 
     const { data: mine, error: mineError } = await supabase
       .from('conversation_participants')
@@ -236,7 +266,7 @@ export default function FloatingChatWidget() {
         .from('conversation_participants')
         .select('conversation_id')
         .in('conversation_id', conversationIds)
-        .eq('user_id', user.user_id)
+        .eq('user_id', picked.user_id)
         .limit(1);
 
       if (existingError) throw existingError;
@@ -246,19 +276,27 @@ export default function FloatingChatWidget() {
     if (!conversationId) {
       // Idempotent: create_direct_conversation re-checks and returns the
       // existing thread if one was created concurrently.
-      conversationId = await createDirectConversation(myUserId, user.user_id);
+      conversationId = await createDirectConversation(myUserId, picked.user_id);
     }
 
     lastSeenRef.current = Date.now();
-    // The widget is triage; the room itself is the full-page chat route.
-    setIsOpen(false);
-    window.location.hash = `#chat/${conversationId}`;
+    openMessenger({
+      conversationId,
+      peerName: resolveDisplayName(picked.username, picked.email, t('chat.participant')),
+      peerRole: picked.role,
+    });
   };
 
   const closeWidget = () => {
-    setIsOpen(false);
+    closeMessenger();
     setThread(null);
     setTab('inbox');
+  };
+
+  // Expand = the ONLY path to the full-page route, and it stays in the SAME tab.
+  const expandToFullPage = (conversationId: string) => {
+    closeWidget();
+    window.location.hash = `#chat/${conversationId}`;
   };
 
   const toggleOpen = () => {
@@ -268,7 +306,7 @@ export default function FloatingChatWidget() {
       setTab('inbox');
       setThread(null);
       lastSeenRef.current = Date.now();
-      setIsOpen(true);
+      setOpen(true);
     }
   };
 
@@ -277,7 +315,7 @@ export default function FloatingChatWidget() {
   return (
     <div ref={rootRef} style={styles.root}>
       {isOpen ? (
-        <div style={styles.window} role="dialog" aria-label={t('chat.messages')}>
+        <div className="chat-widget-panel" style={styles.window} role="dialog" aria-label={t('chat.messages')}>
           <div style={styles.windowHeader}>
             <strong style={styles.windowTitle}>{t('chat.messages')}</strong>
             <button type="button" onClick={closeWidget} style={styles.iconButton} aria-label={t('chat.closeChat')}>
@@ -310,7 +348,13 @@ export default function FloatingChatWidget() {
             {tab === 'search' ? (
               <SearchUsers onPick={handlePickUser} />
             ) : thread ? (
-              <ThreadView thread={thread} myUserId={myUserId} onBack={() => setThread(null)} />
+              <ThreadView
+                thread={thread}
+                myUserId={myUserId}
+                onBack={() => setThread(null)}
+                onExpand={() => expandToFullPage(thread.conversationId)}
+                onClose={closeWidget}
+              />
             ) : (
               <ChatList
                 myUserId={myUserId}
@@ -377,15 +421,12 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // Box sizing lives in .chat-widget-panel (globals.css) so the <md bottom-sheet
+  // media query can override it — inline styles would win otherwise.
   window: {
-    width: 350,
-    maxWidth: 'calc(100vw - 2rem)',
-    height: 500,
-    maxHeight: 'calc(100vh - 7rem)',
     display: 'flex',
     flexDirection: 'column',
     background: '#fff',
-    borderRadius: 18,
     boxShadow: '0 20px 50px rgba(0, 0, 0, 0.18)',
     border: '1px solid rgba(0, 0, 0, 0.08)',
     overflow: 'hidden',
@@ -466,6 +507,13 @@ const styles: Record<string, CSSProperties> = {
     alignItems: 'center',
     gap: 8,
     minWidth: 0,
+    flex: 1,
+  },
+  threadActions: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    flexShrink: 0,
   },
   threadPeerName: {
     fontSize: 15,

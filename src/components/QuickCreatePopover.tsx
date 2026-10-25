@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { CalendarOff, X } from 'lucide-react';
+import { CalendarOff, CalendarPlus, X } from 'lucide-react';
 import { useLang } from '../i18n';
 import { useToast } from '../context/ToastContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { describeError } from '../lib/errors';
+import { supabase } from '../lib/supabase';
+import { slotDate } from '../lib/time';
 import {
   createAppointment,
   createAppointmentRoom,
@@ -11,6 +14,7 @@ import {
   formatTime,
   loadAvailability,
   loadBusySlots,
+  localDayKey,
   slotStatesForDate,
   SLOT_BUFFER_MINUTES,
   SLOT_CHOICES,
@@ -26,12 +30,34 @@ import type { Anchor } from './CalendarEventPopover';
 //
 // Click any empty slot in the time grid and this opens where you clicked, with
 // the time already filled from the slot. Providers save straight to
-// appointments; patients keep the full booking flow instead (they have to pick
-// a provider first), so this is only ever mounted for a provider.
+// appointments; patients keep the full booking flow instead.
+//
+// CF-4 — two fallbacks when the provider's own data is thin:
+//   TIME  — with no availability rows the slot dropdown would be dead, so it is
+//           replaced by a 15-minute time picker (07:00–22:00) plus a duration
+//           select, and a one-click "Apply default weekly hours" button
+//           (Mon–Fri 09:00–18:00) that writes availability rows and refreshes
+//           the slot dropdown.
+//   GUEST — the patient field is a combobox over linked patients with an
+//           always-available "+ Guest patient" option (name required, ≥2 chars),
+//           which books with patient_id NULL and guest_name set.
 // ---------------------------------------------------------------------------
 
 const WIDTH = 288;
 const MARGIN = 12;
+
+/** The ad-hoc time picker's bounds and step (used only with no availability). */
+const ADHOC_FIRST_MINUTES = 7 * 60; // 07:00
+const ADHOC_LAST_MINUTES = 22 * 60; // 22:00
+const ADHOC_STEP_MINUTES = 15;
+
+/** The one-click default week: Mon–Fri 09:00–18:00. */
+const DEFAULT_WEEKDAYS = [1, 2, 3, 4, 5];
+const DEFAULT_START = '09:00';
+const DEFAULT_END = '18:00';
+
+const toHhmm = (minutes: number): string =>
+  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 
 type QuickCreatePopoverProps = {
   anchor: Anchor;
@@ -60,25 +86,59 @@ export default function QuickCreatePopover({
   const { notify } = useToast();
   const trapRef = useFocusTrap<HTMLFormElement>(true);
   const nodeRef = useRef<HTMLFormElement | null>(null);
+  const patientBoxRef = useRef<HTMLDivElement | null>(null);
 
   const [title, setTitle] = useState('');
   const [rules, setRules] = useState<Availability[]>([]);
   const [booked, setBooked] = useState<Appointment[]>([]);
   const [slotStart, setSlotStart] = useState('');
+  const [adhocTime, setAdhocTime] = useState(DEFAULT_START);
   const [duration, setDuration] = useState<number>(slotMinutes);
-  const [patientId, setPatientId] = useState(patients[0]?.id ?? '');
+  const [patientQuery, setPatientQuery] = useState('');
+  const [patientId, setPatientId] = useState<string>(patients[0]?.id ?? '');
+  const [guestMode, setGuestMode] = useState(false);
+  const [guestName, setGuestName] = useState('');
+  const [comboOpen, setComboOpen] = useState(false);
+  const [applyingHours, setApplyingHours] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
+  /** Any availability rows at all decide the TIME path. */
+  const hasAvailability = rules.length > 0;
+
   // The provider's own slot length may not be one of the standard durations, so
-  // offer the union — otherwise the select would show a blank value.
+  // offer the union — otherwise the select would show a blank value. The ad-hoc
+  // path offers exactly 15/30/45/60.
   const durationChoices = useMemo(
-    () => [...new Set([...SLOT_CHOICES, slotMinutes])].sort((a, b) => a - b),
-    [slotMinutes],
+    () =>
+      hasAvailability
+        ? [...new Set([...SLOT_CHOICES, slotMinutes])].sort((a, b) => a - b)
+        : [...SLOT_CHOICES],
+    [hasAvailability, slotMinutes],
   );
 
-  // The provider's availability + live busy ranges, so the time picker offers
-  // exactly the open slots (and shows the taken ones disabled).
+  // The ad-hoc time options: 15-minute steps from 07:00 to 22:00.
+  const adhocTimes = useMemo(() => {
+    const options: string[] = [];
+    for (let mins = ADHOC_FIRST_MINUTES; mins <= ADHOC_LAST_MINUTES; mins += ADHOC_STEP_MINUTES) {
+      options.push(toHhmm(mins));
+    }
+    return options;
+  }, []);
+
+  // The provider's availability + live busy ranges.
+  const load = useMemo(
+    () => async () => {
+      const [nextRules, nextBusy] = await Promise.all([
+        loadAvailability(providerId),
+        loadBusySlots(providerId),
+      ]);
+      setRules(nextRules);
+      setBooked(nextBusy);
+    },
+    [providerId],
+  );
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -106,22 +166,36 @@ export default function QuickCreatePopover({
     [day, rules, booked],
   );
 
-  // Default to the slot that was clicked (if it is open), else the first open
-  // one — never a slot the provider cannot actually take.
+  // Default the slot dropdown to the clicked slot (if open), else the first open
+  // one — only relevant when the provider HAS availability.
   useEffect(() => {
-    if (slotStart) return;
+    if (!hasAvailability || slotStart) return;
     const clicked = slotStates.find(
       (state) =>
         state.available && state.start.getHours() * 60 + state.start.getMinutes() === minutes,
     );
     const pick = clicked ?? slotStates.find((state) => state.available);
     if (pick) setSlotStart(pick.start.toISOString());
-  }, [slotStates, minutes, slotStart]);
+  }, [hasAvailability, slotStates, minutes, slotStart]);
 
-  const chosen = useMemo(
-    () => slotStates.find((state) => state.start.toISOString() === slotStart) ?? null,
-    [slotStates, slotStart],
-  );
+  // The chosen START, from whichever time path is active.
+  const startDate = useMemo(() => {
+    if (hasAvailability) {
+      return slotStates.find((state) => state.start.toISOString() === slotStart)?.start ?? null;
+    }
+    const key = localDayKey(day);
+    return key ? slotDate(key, adhocTime) : null;
+  }, [hasAvailability, slotStates, slotStart, day, adhocTime]);
+
+  // The linked patients that match the typed query.
+  const patientMatches = useMemo(() => {
+    const query = patientQuery.trim().toLowerCase();
+    if (!query) return patients;
+    return patients.filter((patient) => (patient.name || patient.id).toLowerCase().includes(query));
+  }, [patients, patientQuery]);
+
+  const guestNameValid = guestName.trim().length >= 2;
+  const canCreate = Boolean(startDate) && !saving && (guestMode ? guestNameValid : Boolean(patientId));
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -139,13 +213,58 @@ export default function QuickCreatePopover({
   }, [onClose]);
 
   const left = Math.max(MARGIN, Math.min(anchor.x, window.innerWidth - WIDTH - MARGIN));
-  const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - 330));
+  const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - 360));
+
+  /** Writes the default week (Mon–Fri 09:00–18:00) through the CF-1 availability
+   *  table, then refreshes so the slot dropdown takes over. */
+  const applyDefaultHours = async () => {
+    if (applyingHours || !providerId) return;
+    setApplyingHours(true);
+    setError('');
+    try {
+      const payload = DEFAULT_WEEKDAYS.map((weekday) => ({
+        host_id: providerId,
+        weekday,
+        start_time: DEFAULT_START,
+        end_time: DEFAULT_END,
+        slot_min: duration,
+        buffer_min: 0,
+      }));
+
+      const { error: upsertError } = await supabase
+        .from('availability')
+        .upsert(payload, { onConflict: 'host_id,weekday,start_time' });
+      if (upsertError) throw upsertError;
+
+      await load();
+      notify(t('cal.availabilitySaved'), 'success');
+    } catch (caught) {
+      console.error('CALENDAR ERROR:', caught);
+      setError(describeError(caught));
+    } finally {
+      setApplyingHours(false);
+    }
+  };
+
+  const selectPatient = (patient: PersonInfo) => {
+    setGuestMode(false);
+    setPatientId(patient.id);
+    setPatientQuery(patient.name || patient.id);
+    setComboOpen(false);
+  };
+
+  const selectGuest = () => {
+    setGuestMode(true);
+    setPatientId('');
+    setPatientQuery(t('cal.guestPatient'));
+    setComboOpen(false);
+  };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!patientId || saving || !chosen) return;
+    if (!canCreate || !startDate) return;
 
-    const start = chosen.start;
+    const start = startDate;
     const end = new Date(start.getTime() + duration * 60_000);
 
     setSaving(true);
@@ -158,7 +277,8 @@ export default function QuickCreatePopover({
       }
 
       const created = await createAppointment({
-        patientId,
+        patientId: guestMode ? null : patientId,
+        guestName: guestMode ? guestName.trim() : null,
         providerId,
         roomId: null,
         roomCode: null,
@@ -242,38 +362,55 @@ export default function QuickCreatePopover({
 
       <div className="cal-field-row">
         <label className="cal-field">
-          <span>Time</span>
-          <select
-            className="input"
-            dir="ltr"
-            aria-label="Time"
-            value={slotStart}
-            disabled={slotStates.length === 0}
-            onChange={(event) => setSlotStart(event.target.value)}
-          >
-            {slotStates.length === 0 ? (
-              <option value="">{t('cal.noSlotsYet')}</option>
-            ) : (
-              slotStates.map((state) => (
-                <option
-                  key={state.start.toISOString()}
-                  value={state.start.toISOString()}
-                  disabled={!state.available}
-                >
-                  {formatTime(state.start, locale)}
-                  {state.available ? '' : ` · ${t('cal.slotUnavailable')}`}
+          <span>{t('cal.time')}</span>
+          {hasAvailability ? (
+            <select
+              className="input"
+              dir="ltr"
+              aria-label={t('cal.time')}
+              value={slotStart}
+              disabled={slotStates.length === 0}
+              onChange={(event) => setSlotStart(event.target.value)}
+            >
+              {slotStates.length === 0 ? (
+                <option value="">{t('cal.noSlotsYet')}</option>
+              ) : (
+                slotStates.map((state) => (
+                  <option
+                    key={state.start.toISOString()}
+                    value={state.start.toISOString()}
+                    disabled={!state.available}
+                  >
+                    {formatTime(state.start, locale)}
+                    {state.available ? '' : ` · ${t('cal.slotUnavailable')}`}
+                  </option>
+                ))
+              )}
+            </select>
+          ) : (
+            /* No availability rows: a live 15-minute picker, never a dead dropdown. */
+            <select
+              className="input"
+              dir="ltr"
+              aria-label={t('cal.time')}
+              value={adhocTime}
+              onChange={(event) => setAdhocTime(event.target.value)}
+            >
+              {adhocTimes.map((value) => (
+                <option key={value} value={value}>
+                  {value}
                 </option>
-              ))
-            )}
-          </select>
+              ))}
+            </select>
+          )}
         </label>
 
         <label className="cal-field">
-          <span>Duration</span>
+          <span>{t('cal.duration')}</span>
           <select
             className="input"
             value={duration}
-            aria-label="Duration"
+            aria-label={t('cal.duration')}
             onChange={(event) => setDuration(Number(event.target.value))}
           >
             {durationChoices.map((choice) => (
@@ -285,29 +422,89 @@ export default function QuickCreatePopover({
         </label>
       </div>
 
-      <label className="cal-field">
-        <span>{t('cal.bookAppointment')}</span>
-        {patients.length > 0 ? (
-          <select
-            className="input"
-            value={patientId}
-            onChange={(event) => setPatientId(event.target.value)}
+      {/* No availability: explain the fallback and offer the one-click fix. */}
+      {!hasAvailability ? (
+        <>
+          <p className="cal-hint">{t('cal.noAvailabilityHint')}</p>
+          <button
+            type="button"
+            className="ghost-button cal-inline-cta"
+            disabled={applyingHours}
+            aria-busy={applyingHours}
+            onClick={() => void applyDefaultHours()}
           >
-            {patients.map((patient) => (
-              <option key={patient.id} value={patient.id}>
-                {patient.name || patient.id}
-              </option>
+            <CalendarPlus size={15} aria-hidden="true" /> {t('cal.applyDefaultHours')}
+          </button>
+        </>
+      ) : null}
+
+      {/* Patient: combobox over linked patients + an always-available guest row. */}
+      <div className="cal-field" ref={patientBoxRef}>
+        <span>{t('cal.bookAppointment')}</span>
+        <input
+          className="input"
+          value={patientQuery}
+          role="combobox"
+          aria-expanded={comboOpen}
+          aria-label={t('cal.bookAppointment')}
+          onFocus={() => setComboOpen(true)}
+          onChange={(event) => {
+            setPatientQuery(event.target.value);
+            setGuestMode(false);
+            setPatientId('');
+            setComboOpen(true);
+          }}
+          onBlur={() => window.setTimeout(() => setComboOpen(false), 120)}
+        />
+
+        {comboOpen ? (
+          <ul className="cal-combo-list" role="listbox" aria-label={t('cal.bookAppointment')}>
+            {patientMatches.map((patient) => (
+              <li key={patient.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={!guestMode && patientId === patient.id}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectPatient(patient)}
+                >
+                  {patient.name || patient.id}
+                </button>
+              </li>
             ))}
-          </select>
-        ) : (
-          /* No bare '—': say why there is nothing to pick. */
-          <span className="cal-empty-state cal-empty-state-inline">
-            <CalendarOff size={18} aria-hidden="true" />
-            {/* Not yet translated — needs the 10-locale string. */}
-            <span>No patients to book with yet.</span>
+            <li>
+              <button
+                type="button"
+                role="option"
+                aria-selected={guestMode}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={selectGuest}
+              >
+                + {t('cal.guestPatient')}
+              </button>
+            </li>
+          </ul>
+        ) : null}
+
+        {patients.length === 0 && !guestMode ? (
+          <span className="cal-hint">
+            <CalendarOff size={14} aria-hidden="true" /> {t('cal.noLinkedPatients')}
           </span>
-        )}
-      </label>
+        ) : null}
+
+        {guestMode ? (
+          <input
+            className="input"
+            value={guestName}
+            required
+            minLength={2}
+            placeholder={t('cal.guestNamePlaceholder')}
+            aria-label={t('cal.guestNamePlaceholder')}
+            aria-invalid={guestName.length > 0 && !guestNameValid}
+            onChange={(event) => setGuestName(event.target.value)}
+          />
+        ) : null}
+      </div>
 
       {/* Overlap → the translated line; anything else self-reports its raw code. */}
       {error ? (
@@ -324,12 +521,7 @@ export default function QuickCreatePopover({
         <button type="button" className="ghost-button" onClick={onClose}>
           {t('common.cancel')}
         </button>
-        <button
-          type="submit"
-          className="primary-button"
-          disabled={saving || !patientId || !chosen}
-          aria-busy={saving}
-        >
+        <button type="submit" className="primary-button" disabled={!canCreate} aria-busy={saving}>
           {t('cal.create')}
         </button>
       </div>

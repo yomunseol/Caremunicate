@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 import { RoleProvider } from './context/RoleContext';
 import { CallProvider } from './context/CallContext';
 import { ToastProvider } from './context/ToastContext';
+import { MessengerProvider } from './context/MessengerContext';
 import { LangProvider } from './i18n';
 import './styles/globals.css';
 
@@ -16,7 +17,9 @@ root.render(
         <RoleProvider>
           <CallProvider>
             <ToastProvider>
-              <App />
+              <MessengerProvider>
+                <App />
+              </MessengerProvider>
             </ToastProvider>
           </CallProvider>
         </RoleProvider>

@@ -38,7 +38,10 @@ export type Availability = {
 
 export type Appointment = {
   id: string;
-  patient_id: string;
+  /** Null for a GUEST booking — a guest has no auth user. */
+  patient_id: string | null;
+  /** Set only on a guest booking (paired with a null patient_id). */
+  guest_name?: string | null;
   provider_id: string;
   /** The same owner, under the newer column name; either may be present. */
   host_id?: string | null;
@@ -388,8 +391,10 @@ const toPerson = (row: Record<string, unknown>): PersonInfo => ({
   verified: row.verification_status === 'verified',
 });
 
-export const loadPeople = async (ids: string[]): Promise<Map<string, PersonInfo>> => {
-  const unique = [...new Set(ids.filter(Boolean))];
+export const loadPeople = async (
+  ids: Array<string | null | undefined>,
+): Promise<Map<string, PersonInfo>> => {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
   const map = new Map<string, PersonInfo>();
   if (unique.length === 0) return map;
 
@@ -554,7 +559,10 @@ export const loadBusySlots = async (providerId: string): Promise<Appointment[]> 
 };
 
 export const createAppointment = async (payload: {
-  patientId: string;
+  /** Null for a GUEST booking. */
+  patientId: string | null;
+  /** Present only for a guest booking; stored when the column exists. */
+  guestName?: string | null;
   providerId: string;
   roomId: string | null;
   roomCode: string | null;
@@ -564,23 +572,33 @@ export const createAppointment = async (payload: {
 }): Promise<RequestResult> => {
   const durationMin = Math.max(1, Math.round((payload.end.getTime() - payload.start.getTime()) / 60_000));
 
-  const { data, error } = await supabase
-    .from('appointments')
-    .insert({
-      patient_id: payload.patientId,
-      provider_id: payload.providerId,
-      room_id: payload.roomId,
-      room_code: payload.roomCode,
-      start_at: payload.start.toISOString(),
-      end_at: payload.end.toISOString(),
-      duration_min: durationMin,
-      // A provider creating their own block confirms it outright — there is no
-      // request to approve.
-      status: 'confirmed',
-      note: payload.note ?? null,
-    })
-    .select('*')
-    .single();
+  const row: Record<string, unknown> = {
+    patient_id: payload.patientId,
+    provider_id: payload.providerId,
+    room_id: payload.roomId,
+    room_code: payload.roomCode,
+    start_at: payload.start.toISOString(),
+    end_at: payload.end.toISOString(),
+    duration_min: durationMin,
+    // A provider creating their own block confirms it outright — there is no
+    // request to approve.
+    status: 'confirmed',
+    note: payload.note ?? null,
+  };
+  // guest_name (CF-4) — optional, so it is dropped on a schema mismatch below.
+  if (payload.guestName) row.guest_name = payload.guestName;
+
+  const insert = (data: Record<string, unknown>) =>
+    supabase.from('appointments').insert(data).select('*').single();
+
+  let { data, error } = await insert(row);
+
+  // The live project may not carry guest_name yet (CF-4 migration not run):
+  // retry without it so the booking still lands, rather than 42703-ing.
+  if (error && payload.guestName && schemaMismatch(error.code)) {
+    delete row.guest_name;
+    ({ data, error } = await insert(row));
+  }
 
   if (error) {
     console.error('CALENDAR ERROR:', error.message);

@@ -107,7 +107,7 @@ call_prefs, specialty, clinic)` ·
 `messages(id, conversation_id, sender_id, content, created_at)` ·
 `call_rooms(code, host, status, lobby / password / lock / share / autoMute /
 max / personal)` — maintained in Supabase, not in this repo ·
-`appointments(+buffer_minutes, reminder_sent)` · `availability` ·
+`appointments(+buffer_minutes, reminder_sent, guest_name)` · `availability` ·
 `emergency_alerts` · `hospitals` ·
 `doctor_favorites` · `call_sessions(room_key, participant_ids, chat_log,
 has_recording, recording_url, ended_at)` · `clinical_docs(call_session_id,
@@ -160,6 +160,18 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   repo's migrations, and `coalesce(end_time, end_at)` only type-checks when both
   are `timestamptz`. On a table without them the appended block fails with
   **42703** at `alter column doctor_id`. Founder-run, unverified from the repo.
+- **CF-4 — ad-hoc time + guest booking** (provider quick-create modal,
+  `QuickCreatePopover.tsx`). With **no availability rows** the slot dropdown
+  would be dead, so it is replaced by a 15-minute time picker (07:00–22:00) plus
+  a duration select (15/30/45/60) and a one-click **Apply default weekly hours**
+  button (Mon–Fri 09:00–18:00) that upserts `availability` rows via the CF-1
+  table, then refreshes the slot dropdown. The patient field is a **combobox**
+  over linked patients with an always-available `+ Guest patient` option (name
+  required, ≥2 chars); a guest booking inserts an appointment with
+  `patient_id NULL` + `guest_name` — founder SQL
+  `202609250005_guest_booking.sql` adds the column and drops NOT NULL on
+  `patient_id`. Calendar titles fall back to `guest_name` when there is no
+  patient profile.
 
 ## Hospitals map — `/hospitals`
 
@@ -241,6 +253,17 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   idempotency key above. Ends with `notify pgrst, 'reload schema'`. The code's
   intent (email lives on `profiles`) is authoritative; the column was the gap.
   Founder-run, unverified from the repo.
+- **CF-4 — open in the built-in messenger, never a new tab.** A global
+  `MessengerProvider` / `useMessenger()` (`src/context/MessengerContext.tsx`,
+  mounted in `main.tsx`) owns `open` + `target`. Creating or picking a chat calls
+  `openMessenger({ conversationId, peerName, peerRole })` and the floating widget
+  opens IN PLACE — the URL does not change and no new tab is spawned
+  (grep-proven: zero `window.open` / `target="_blank"` across the chat surfaces).
+  The thread header carries peer name + role chip + an **Expand** icon (the ONLY
+  route to the full-page `#chat/<id>`, same tab) + a **Close X** (hides the panel,
+  keeps the conversation). On `<md` the panel renders as a bottom sheet (70vh,
+  rounded top) via `.chat-widget-panel`. Chat relative timestamps use the shared
+  locale-aware `relativeTime()` in `lib/time.ts` (no hardcoded "2h"/"just now").
 
 ## Notifications
 
