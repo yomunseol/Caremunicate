@@ -106,11 +106,11 @@ export default function CallOverflowMenu({
 
       <button type="button" className="call-overflow-item" onClick={onFullscreen}>
         <Maximize size={16} />
-        <span>Fullscreen</span>
+        <span>{t('call.fullscreen')}</span>
       </button>
 
       <div className="call-overflow-section">
-        <span className="call-overflow-section-title">Settings</span>
+        <span className="call-overflow-section-title">{t('call.settings')}</span>
         <CallDevicePicker
           compact
           mics={devices.mics}
@@ -124,14 +124,14 @@ export default function CallOverflowMenu({
         {/* Audio output — only where setSinkId is implemented (Chrome/Edge). */}
         {canPickSink && devices.sinks.length > 0 ? (
           <label className="call-device">
-            <span className="call-device-label">Speaker</span>
+            <span className="call-device-label">{t('call.speaker')}</span>
             <select
               className="call-device-select"
               value={sinkId ?? ''}
-              aria-label="Speaker"
+              aria-label={t('call.speaker')}
               onChange={(event) => selectSink(event.target.value)}
             >
-              <option value="">Default</option>
+              <option value="">{t('call.default')}</option>
               {devices.sinks.map((device) => (
                 <option key={device.deviceId} value={device.deviceId}>
                   {device.label}
@@ -141,7 +141,7 @@ export default function CallOverflowMenu({
           </label>
         ) : null}
 
-        <Switch label="Sounds" checked={sounds} onChange={toggleSounds} />
+        <Switch label={t('call.sounds')} checked={sounds} onChange={toggleSounds} />
       </div>
 
       <button
@@ -151,7 +151,7 @@ export default function CallOverflowMenu({
         onClick={onToggleStats}
       >
         <Activity size={16} />
-        <span>Call stats</span>
+        <span>{t('call.callStats')}</span>
       </button>
 
       {isHost && policy ? (
@@ -197,8 +197,8 @@ export default function CallOverflowMenu({
           <span className="call-switch-label">{t('call.removeParticipant')}</span>
           <ul className="call-overflow-list">
             {remotes.length === 0 ? (
-              /* No bare '—': say why the list is empty. Not yet translated. */
-              <li className="call-overflow-empty">No one else is here yet</li>
+              /* No bare '—': say why the list is empty. */
+              <li className="call-overflow-empty">{t('call.nobodyYet')}</li>
             ) : (
               remotes.map((person) => (
                 <li key={person.id} className="call-overflow-row">

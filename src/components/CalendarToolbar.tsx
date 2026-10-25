@@ -51,7 +51,7 @@ export default function CalendarToolbar({
         <button
           type="button"
           className="ghost-button cal-icon-btn"
-          aria-label="Previous"
+          aria-label={t('common.previous')}
           onClick={onPrev}
         >
           <ChevronLeft size={17} aria-hidden="true" className="cal-chevron" />
@@ -59,7 +59,7 @@ export default function CalendarToolbar({
         <button
           type="button"
           className="ghost-button cal-icon-btn"
-          aria-label="Next"
+          aria-label={t('common.next')}
           onClick={onNext}
         >
           <ChevronRight size={17} aria-hidden="true" className="cal-chevron" />

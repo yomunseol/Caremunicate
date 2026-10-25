@@ -92,11 +92,11 @@ export default function AppointmentCard({
   const cancelled = status === 'cancelled';
 
   const statusLabel: Record<string, string> = {
-    requested: 'Requested',
-    scheduled: 'Scheduled',
-    confirmed: 'Confirmed',
-    completed: 'Completed',
-    cancelled: 'Cancelled',
+    requested: t('cal.statusRequested'),
+    scheduled: t('cal.statusScheduled'),
+    confirmed: t('cal.statusConfirmed'),
+    completed: t('cal.statusCompleted'),
+    cancelled: t('cal.statusCancelled'),
   };
 
   return (
@@ -180,8 +180,8 @@ export default function AppointmentCard({
             className="ghost-button appt-icon-btn"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            aria-label="More"
-            title="More"
+            aria-label={t('common.more')}
+            title={t('common.more')}
             onClick={() => setMenuOpen((open) => !open)}
           >
             {/* Three SOLID dots at 20px. */}
@@ -200,7 +200,7 @@ export default function AppointmentCard({
                     onConfirm(appointment);
                   }}
                 >
-                  Confirm
+                  {t('common.confirm')}
                 </button>
               ) : null}
 
@@ -215,7 +215,7 @@ export default function AppointmentCard({
                   onAddToCalendar(appointment);
                 }}
               >
-                <CalendarPlus size={20} aria-hidden="true" /> Add to calendar
+                <CalendarPlus size={20} aria-hidden="true" /> {t('cal.addToCalendar')}
               </button>
 
               {!cancelled ? (

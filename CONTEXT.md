@@ -91,6 +91,18 @@ dropdown / modal 2000 < CallLayer 3000 < toasts 3500.
 - `<html dir>` and `<html lang>` switch with the locale.
 - Logical CSS only (no physical `left` / `right`); `t()` wraps interpolations in
   `<bdi>`; Latin content (codes, emails) carries `dir="ltr"`.
+- **CF-5 — coverage is now enforced, not eyeballed.** `npm run i18n:check`
+  (`scripts/i18n-check.mjs`, wired as `prebuild`) FAILS when any locale is
+  missing a master (`en`) key / has duplicates, OR when a hardcoded user-facing
+  string (JSX text or `aria-label`/`title`/`placeholder`/`alt`) appears outside
+  the allowlist (brand names, codes, units, symbol-only). All **10** locales carry
+  **every** key. The locale set the app ships is `en, fr, es, ko, zh, pt, de, it,
+  ar, he` — a deck naming `ja`/`ru` does not apply; those two are authored
+  natively here as `it`/`he`.
+- **Switcher persistence.** Choice lives in `localStorage`
+  (`caremunicate:locale`, plus `caremunicate:dir`); `<html lang>`/`<html dir>`
+  are written in a layout effect so the direction is correct on first paint. The
+  custom `App`-level nav uses only logical spacing, so it mirrors under `ar`/`he`.
 
 ## Design
 

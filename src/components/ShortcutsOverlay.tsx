@@ -15,11 +15,11 @@ type ShortcutsOverlayProps = {
 
 export function shortcutList(t: (key: string) => string): Array<{ keys: string; label: string }> {
   return [
-    { keys: 'Alt + M', label: 'Microphone' },
-    { keys: 'Alt + V', label: 'Camera' },
+    { keys: 'Alt + M', label: t('call.mic') },
+    { keys: 'Alt + V', label: t('call.camera') },
     { keys: 'Alt + S', label: t('call.screenShare') },
-    { keys: 'F', label: 'Fullscreen' },
-    { keys: '?', label: 'Keyboard shortcuts' },
+    { keys: 'F', label: t('call.fullscreen') },
+    { keys: '?', label: t('call.shortcuts') },
     { keys: 'Esc', label: t('common.close') },
   ];
 }
@@ -35,11 +35,11 @@ export default function ShortcutsOverlay({ onClose }: ShortcutsOverlayProps) {
         className="call-modal call-shortcuts"
         role="dialog"
         aria-modal="true"
-        aria-label="Keyboard shortcuts"
+        aria-label={t('call.shortcuts')}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="call-modal-head">
-          <strong>Keyboard shortcuts</strong>
+          <strong>{t('call.shortcuts')}</strong>
           <button type="button" className="call-panel-close" aria-label={t('common.close')} onClick={onClose}>
             <X size={16} />
           </button>

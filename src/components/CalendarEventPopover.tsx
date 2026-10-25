@@ -24,11 +24,11 @@ const MARGIN = 12;
 
 /** Same labels the appointment card uses, so chip copy reads identically. */
 const STATUS_LABEL: Record<string, string> = {
-  requested: 'Requested',
-  scheduled: 'Scheduled',
-  confirmed: 'Confirmed',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
+  requested: 'cal.statusRequested',
+  scheduled: 'cal.statusScheduled',
+  confirmed: 'cal.statusConfirmed',
+  completed: 'cal.statusCompleted',
+  cancelled: 'cal.statusCancelled',
 };
 
 type CalendarEventPopoverProps = {
@@ -156,7 +156,7 @@ export default function CalendarEventPopover({
           <>
             {side === 'provider' && status === 'scheduled' ? (
               <button type="button" className="ghost-button" onClick={() => onConfirm(appointment)}>
-                Confirm
+                {t('common.confirm')}
               </button>
             ) : null}
             <button type="button" className="ghost-button" onClick={() => onReschedule(appointment)}>
@@ -171,8 +171,8 @@ export default function CalendarEventPopover({
         <button
           type="button"
           className="ghost-button"
-          aria-label="Add to calendar"
-          title="Add to calendar"
+          aria-label={t('cal.addToCalendar')}
+          title={t('cal.addToCalendar')}
           onClick={() => onAddToCalendar(appointment)}
         >
           <CalendarPlus size={14} aria-hidden="true" />

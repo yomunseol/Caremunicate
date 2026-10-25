@@ -140,7 +140,7 @@ function Tile({
 
       {/* Zero inbound frames only means trouble when video was expected. */}
       {videoSilent && camOn && !sharing ? (
-        <span style={styles.silentBadge}>Video unavailable — audio only</span>
+        <span style={styles.silentBadge}>{t('call.videoUnavailable')}</span>
       ) : null}
 
       {!camOn && !sharing ? (
@@ -159,16 +159,16 @@ function Tile({
           </span>
         ) : null}
         {verified ? (
-          <span className="call-verified-badge" style={styles.verifiedBadge} title="Verified">
+          <span className="call-verified-badge" style={styles.verifiedBadge} title={t('verify.verified')}>
             ✓
           </span>
         ) : null}
       </span>
 
       <span style={styles.tileFlags}>
-        {hand ? <Hand size={14} aria-label="hand" /> : null}
-        {sharing ? <span style={styles.shareBadge}>Sharing</span> : null}
-        {!micOn ? <MicOff size={14} aria-label="muted" /> : null}
+        {hand ? <Hand size={14} aria-label={t('call.hand')} /> : null}
+        {sharing ? <span style={styles.shareBadge}>{t('call.sharing')}</span> : null}
+        {!micOn ? <MicOff size={14} aria-label={t('call.muted')} /> : null}
       </span>
 
       <span
@@ -724,8 +724,8 @@ export default function CallLayer() {
                 type="button"
                 className="call-chip"
                 style={styles.chip}
-                aria-label="Settings"
-                title="Settings"
+                aria-label={t('call.settings')}
+                title={t('call.settings')}
                 onClick={() => {
                   setOverflowOpen((open) => !open);
                   setReactionsOpen(false);
@@ -897,8 +897,8 @@ export default function CallLayer() {
                 <button
                   type="button"
                   onClick={toggleMic}
-                  title="Microphone (Alt+M)"
-                  aria-label="Microphone"
+                  title={t('call.mic')}
+                  aria-label={t('call.mic')}
                   aria-pressed={!muted}
                   style={{ ...styles.circleButton, ...(muted ? styles.circleOff : null) }}
                 >
@@ -908,8 +908,8 @@ export default function CallLayer() {
                 <button
                   type="button"
                   onClick={toggleCamera}
-                  title="Camera (Alt+V)"
-                  aria-label="Camera"
+                  title={t('call.camera')}
+                  aria-label={t('call.camera')}
                   aria-pressed={!cameraOff}
                   disabled={audioOnly}
                   style={{ ...styles.circleButton, ...(cameraOff ? styles.circleOff : null) }}
@@ -962,8 +962,8 @@ export default function CallLayer() {
                     setReactionsOpen((open) => !open);
                     setOverflowOpen(false);
                   }}
-                  title="Reactions"
-                  aria-label="Reactions"
+                  title={t('call.reactions')}
+                  aria-label={t('call.reactions')}
                   aria-pressed={reactionsOpen}
                   style={styles.circleButton}
                 >
@@ -1027,8 +1027,8 @@ export default function CallLayer() {
                     setOverflowOpen((open) => !open);
                     setReactionsOpen(false);
                   }}
-                  title="More"
-                  aria-label="More"
+                  title={t('common.more')}
+                  aria-label={t('common.more')}
                   aria-haspopup="menu"
                   aria-expanded={overflowOpen}
                   style={{ ...styles.circleButton, ...(overflowOpen ? styles.circleOn : null) }}
@@ -1093,9 +1093,9 @@ export default function CallLayer() {
 
       {/* Diagnostics slide-over (same panel chrome as the participant list). */}
       {statsOpen ? (
-        <aside className="call-participants call-stats-panel" role="dialog" aria-label="Call stats">
+        <aside className="call-participants call-stats-panel" role="dialog" aria-label={t('call.callStats')}>
           <header style={styles.panelHead}>
-            <strong>Call stats</strong>
+            <strong>{t('call.callStats')}</strong>
             <button type="button" className="call-panel-close" aria-label={t('common.close')} onClick={() => setStatsOpen(false)}>
               <X size={16} />
             </button>
@@ -1111,7 +1111,7 @@ export default function CallLayer() {
                 <span style={styles.diagLine}>frame: {entry.frameWidth}×{entry.frameHeight}</span>
               </li>
             ))}
-            {Object.keys(peerStats).length === 0 ? <li style={styles.diagLine}>No peer stats yet.</li> : null}
+            {Object.keys(peerStats).length === 0 ? <li style={styles.diagLine}>{t('call.noPeerStats')}</li> : null}
           </ul>
         </aside>
       ) : null}

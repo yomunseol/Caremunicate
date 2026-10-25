@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { describeError } from '../lib/errors';
+import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
 // The ONE notification surface.
@@ -34,6 +35,7 @@ const ToastContext = createContext<ToastApi | undefined>(undefined);
 const AUTO_DISMISS_MS = 3000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useLang();
   const [toasts, setToasts] = useState<Toast[]>([]);
   const nextId = useRef(1);
 
@@ -69,7 +71,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     typeof document === 'undefined'
       ? null
       : createPortal(
-          <div className="toast-stack" role="region" aria-label="Notifications">
+          <div className="toast-stack" role="region" aria-label={t('common.notifications')}>
             {toasts.map((toast) => (
               <div
                 key={toast.id}

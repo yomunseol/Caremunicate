@@ -244,7 +244,7 @@ export default function CallHub() {
                 aria-busy={lineBusy}
                 onClick={() => void loadLine()}
               >
-                Retry
+                {t('common.retry')}
               </button>
             </div>
           ) : (

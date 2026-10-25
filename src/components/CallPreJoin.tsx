@@ -149,7 +149,7 @@ export default function CallPreJoin() {
             type="button"
             onClick={() => toggleTrack('audio')}
             aria-pressed={micOn}
-            aria-label="Microphone"
+            aria-label={t('call.mic')}
             style={{ ...styles.toggle, ...(micOn ? null : styles.toggleOff) }}
           >
             {micOn ? <Mic size={18} /> : <MicOff size={18} />}
@@ -158,7 +158,7 @@ export default function CallPreJoin() {
             type="button"
             onClick={() => toggleTrack('video')}
             aria-pressed={camOn}
-            aria-label="Camera"
+            aria-label={t('call.camera')}
             style={{ ...styles.toggle, ...(camOn ? null : styles.toggleOff) }}
           >
             {camOn ? <Video size={18} /> : <VideoOff size={18} />}

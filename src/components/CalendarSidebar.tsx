@@ -62,7 +62,7 @@ export default function CalendarSidebar({
             <button
               type="button"
               className="ghost-button cal-icon-btn"
-              aria-label="Previous month"
+              aria-label={t('cal.prevMonth')}
               onClick={() => onMonth(-1)}
             >
               <ChevronLeft size={15} aria-hidden="true" className="cal-chevron" />
@@ -70,7 +70,7 @@ export default function CalendarSidebar({
             <button
               type="button"
               className="ghost-button cal-icon-btn"
-              aria-label="Next month"
+              aria-label={t('cal.nextMonth')}
               onClick={() => onMonth(1)}
             >
               <ChevronRight size={15} aria-hidden="true" className="cal-chevron" />
