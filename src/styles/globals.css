@@ -3416,14 +3416,27 @@ img {
 /* ---- Built-in messenger panel (FloatingChatWidget) ----------------------- */
 /* Box sizing lives here (NOT inline) so the <md bottom-sheet can override it. */
 .chat-widget-panel {
-  width: 350px;
-  max-width: calc(100vw - 2rem);
+  width: min(100vw - 1rem, 380px);
+  max-width: calc(100vw - 1rem);
   height: 500px;
   max-height: calc(100vh - 7rem);
   border-radius: 18px;
 }
 
-/* Mobile: a bottom sheet — 70vh, rounded top edge. */
+/* The thread header never lets its close X get clipped: the name truncates,
+   while the role chip and the action buttons refuse to shrink — so the X stays
+   fully visible at a 320px viewport. */
+.chat-thread-header { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
+.chat-thread-name { flex: 1 1 auto; min-width: 0; }
+.chat-thread-actions,
+.chat-role-badge { flex: 0 0 auto; }
+.chat-role-badge { font-size: 11px; }
+
+@media (max-width: 480px) {
+  .chat-role-badge { font-size: 10px; padding: 2px 6px; }
+}
+
+/* Mobile: a bottom sheet — 70vh, rounded top edge, safe-area aware. */
 @media (max-width: 767px) {
   .chat-widget-panel {
     position: fixed;
@@ -3433,6 +3446,7 @@ img {
     max-width: none;
     height: 70vh;
     max-height: 70vh;
+    padding-bottom: env(safe-area-inset-bottom, 0);
     border-radius: 1rem 1rem 0 0;
     z-index: 60;
   }

@@ -16,7 +16,7 @@ import {
   type Availability,
   type Slot,
 } from '../lib/appointments';
-import { fmtDateTime } from '../lib/time';
+import { fmtDateTime, fmtTime } from '../lib/time';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { roleLabelKey } from '../lib/roles';
 import { useLang } from '../i18n';
@@ -27,7 +27,7 @@ import { useLang } from '../i18n';
 //   header  provider name + role chip + certified badge
 //   strip   the next 14 days, horizontally scrollable, Intl labels
 //   grid    slot chips for the selected date (mint fill when chosen)
-//   footer  duration · timezone · Cancel / Book
+//   footer  localized summary · Cancel / Book
 //
 // Slots come from lib/appointments#slotsForDate: the weekday rule expanded from
 // start to end in slot_minutes steps, minus past times and minus anything
@@ -37,6 +37,12 @@ import { useLang } from '../i18n';
 // Booking is a REQUEST, never a room: requestAppointment tells the server and
 // the host decides. No room exists until an approval mints its code, so the
 // success panel shows no code — only the appointment and a link to the calendar.
+//
+// CF-6 — the picked slot is UNPACKED at selection into { startAt: Date,
+// durationMin: number }. Nothing sends a Slot OBJECT to the RPC or interpolates
+// one into a sentence: the call carries start_at = startAt.toISOString() and
+// p_duration_min = Number(durationMin). The Book button is gated on the unpacked
+// values being valid, so an invalid state can never reach the server.
 // ---------------------------------------------------------------------------
 
 export type BookableProvider = { id: string; name: string; role: string; verified: boolean };
@@ -122,14 +128,33 @@ export default function BookingFlow({
     [provider, day, rules, booked],
   );
 
+  // Unpack the picked slot into a plain, serializable shape. The RPC takes
+  // start_at (an ISO string) and p_duration_min (a number) — a Slot object must
+  // never reach either. An unparseable start or a non-positive duration is
+  // treated as "no valid selection", so the gate below keeps the button off.
+  const selectedSlot = useMemo(() => {
+    if (!chosen?.start || !chosen?.end) return null;
+    const startAt = chosen.start;
+    const durationMin = Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000);
+    if (!(startAt instanceof Date) || Number.isNaN(startAt.getTime())) return null;
+    if (!Number.isFinite(durationMin) || durationMin <= 0) return null;
+    return { startAt, durationMin };
+  }, [chosen]);
+
+  // CLIENT GATE — no RPC call on an invalid state.
+  const canBook = Boolean(provider && selectedSlot && !saving);
+
   const book = async () => {
-    if (!provider || !chosen || saving) return;
+    if (!provider || !selectedSlot || saving) return;
+    const { startAt, durationMin } = selectedSlot;
     setSaving(true);
     setError(null);
 
+    const end = new Date(startAt.getTime() + durationMin * 60_000);
+
     // Client pre-check: reject an overlap before asking the server, so a stale
     // grid (booked changed under us) shows the message without a round-trip.
-    if (findConflict({ start: chosen.start, end: chosen.end }, booked, 0, ruleBuffer)) {
+    if (findConflict({ start: startAt, end }, booked, 0, ruleBuffer)) {
       setError(OVERLAP_MESSAGE_KEY);
       setSaving(false);
       return;
@@ -137,12 +162,11 @@ export default function BookingFlow({
 
     // A REQUEST, not a booking: the host decides. The server creates the row
     // (status 'requested') and, on approval, mints the room code — so nothing
-    // room-related happens here.
-    const minutes = Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000);
+    // room-related happens here. Send the UNPACKED values only.
     const result = await requestAppointment({
       hostId: provider.id,
-      start: chosen.start,
-      durationMin: minutes,
+      start: startAt,
+      durationMin: Number(durationMin),
     });
 
     if (!result.ok) {
@@ -170,7 +194,27 @@ export default function BookingFlow({
     }
   }, []);
 
-  const duration = chosen ? Math.round((chosen.end.getTime() - chosen.start.getTime()) / 60_000) : 0;
+  // The footer summary — composed from Intl parts and rendered through ONE
+  // translated template, so no object can ever be stringify-interpolated.
+  const summary = useMemo(() => {
+    if (!selectedSlot) return null;
+    const { startAt, durationMin } = selectedSlot;
+    let date = '';
+    try {
+      date = new Intl.DateTimeFormat(locale, {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      }).format(startAt);
+    } catch {
+      date = '';
+    }
+    return {
+      date,
+      time: fmtTime(startAt, locale, 'BookingFlow.summary'),
+      duration: durationMin,
+    };
+  }, [selectedSlot, locale]);
 
   return (
     <div className="cal-modal-backdrop" role="presentation" onClick={onClose}>
@@ -191,7 +235,9 @@ export default function BookingFlow({
             <h3 className="cal-booked-title">{t('cal.requestSent')}</h3>
             <p className="cal-muted">
               {provider?.name}
-              {chosen ? ` · ${fmtDateTime(chosen.start, locale, 'BookingFlow.success')}` : ''}
+              {selectedSlot
+                ? ` · ${fmtDateTime(selectedSlot.startAt, locale, 'BookingFlow.success')}`
+                : ''}
             </p>
 
             <div className="cal-modal-footer">
@@ -345,8 +391,14 @@ export default function BookingFlow({
 
             <div className="cal-modal-footer">
               <span className="cal-footer-note">
-                {chosen ? `${t('cal.minUnit', { count: duration })} · ` : ''}
-                {timezone}
+                {summary
+                  ? t('cal.summaryLine', {
+                      date: summary.date,
+                      time: summary.time,
+                      duration: summary.duration,
+                      tz: timezone,
+                    })
+                  : t('cal.selectSlot')}
               </span>
               <button type="button" className="ghost-button" onClick={onClose}>
                 {t('common.cancel')}
@@ -354,9 +406,9 @@ export default function BookingFlow({
               <button
                 type="button"
                 className="primary-button"
-                disabled={!chosen || saving}
+                disabled={!canBook}
                 aria-busy={saving}
-                title={chosen ? undefined : t('cal.selectSlot')}
+                title={canBook ? undefined : t('cal.selectSlot')}
                 onClick={() => void book()}
               >
                 {t('cal.bookAppointment')}

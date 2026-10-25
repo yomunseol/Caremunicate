@@ -184,6 +184,19 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   `202609250005_guest_booking.sql` adds the column and drops NOT NULL on
   `patient_id`. Calendar titles fall back to `guest_name` when there is no
   patient profile.
+- **CF-6 — the slot is serialized, never an object** (`BookingFlow.tsx`). The
+  picked slot is unpacked at selection into `{ startAt: Date, durationMin:
+  number }`; `book()` sends `start_at = startAt.toISOString()` and
+  `p_duration_min = Number(durationMin)`, and the Book button is gated on
+  `startAt instanceof Date && !isNaN(startAt)` + a finite positive
+  `durationMin`, so an invalid state never calls the RPC. The footer summary is
+  ONE translated template — `t('cal.summaryLine', { date, time, duration, tz })`
+  with `date`/`time` from `Intl.DateTimeFormat` — never string interpolation of
+  a value object (the `,[object Object],` bug). Founder SQL
+  `202609250006_request_appointment_guard.sql` adds `if p_start_at is null then
+  raise exception 'invalid_start' using errcode='22007'` so a future null start
+  is a readable code, not the legacy-column `23502`. Months/weekday initials
+  already come from `Intl` (no hardcoded `S M T W` anywhere).
 
 ## Hospitals map — `/hospitals`
 
@@ -276,6 +289,13 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   keeps the conversation). On `<md` the panel renders as a bottom sheet (70vh,
   rounded top) via `.chat-widget-panel`. Chat relative timestamps use the shared
   locale-aware `relativeTime()` in `lib/time.ts` (no hardcoded "2h"/"just now").
+- **CF-6 — the panel header is responsive.** `.chat-widget-panel` is
+  `width: min(100vw - 1rem, 380px)`; the thread header (`.chat-thread-header`)
+  lets the name truncate (`.chat-thread-name`, `min-width: 0`) while the role
+  chip (`.chat-role-badge`, 11px → 10px under 480px) and the action buttons
+  (`.chat-thread-actions`) are `flex: 0 0 auto` — so the close X stays fully
+  visible at a 320px viewport. The `<md` bottom sheet keeps the header inside
+  the safe area (`padding-bottom: env(safe-area-inset-bottom)`).
 
 ## Notifications
 

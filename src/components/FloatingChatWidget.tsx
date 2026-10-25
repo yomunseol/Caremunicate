@@ -83,17 +83,19 @@ function ThreadView({
 
   return (
     <div style={styles.thread}>
-      <div style={styles.threadHeader}>
+      <div className="chat-thread-header" style={styles.threadHeader}>
         <button type="button" onClick={onBack} style={styles.backButton} aria-label={t('chat.backToChats')}>
           ←
         </button>
         <div style={styles.threadPeer}>
-          <strong style={styles.threadPeerName}>{thread.peerName?.trim() || t('chat.participant')}</strong>
-          <span style={styles.roleBadge}>
+          <strong className="chat-thread-name" style={styles.threadPeerName}>
+            {thread.peerName?.trim() || t('chat.participant')}
+          </strong>
+          <span className="chat-role-badge" style={styles.roleBadge}>
             {t(roleLabelKey(thread.peerRole))}
           </span>
         </div>
-        <div style={styles.threadActions}>
+        <div className="chat-thread-actions" style={styles.threadActions}>
           <button
             type="button"
             onClick={onExpand}
@@ -523,7 +525,6 @@ const styles: Record<string, CSSProperties> = {
   },
   roleBadge: {
     flexShrink: 0,
-    fontSize: 11,
     fontWeight: 600,
     textTransform: 'capitalize',
     color: 'var(--accent-strong, #2d7a5f)',
