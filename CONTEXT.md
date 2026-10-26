@@ -371,9 +371,13 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   `email_log(email, type, locale, error)` and the function returns `false`; the
   client reads the boolean and shows an inline notice. The locale is passed
   EXPLICITLY from UI state (the language switcher's value), never from a cookie.
-- Resend needs a DB-side setting for the DB-side send:
-  `alter database postgres set app.resend_api_key = '<key>'` (optional
-  `app.resend_from`). Separate from the Edge Function's `RESEND_API_KEY`.
+- Resend key for the **DB-side** send lives in `private.mail_config(key, value)`
+  (rows `resend_api_key`, `resend_from`), read through the LOCKED getter
+  `public.mail_secret('resend_api_key')` — SECURITY DEFINER with NO grants, so
+  PostgREST / any client role can never call it. Hosted Supabase denies
+  `alter database ... set app.*` (42501, postgres is not superuser), which is why
+  the old GUC path was dropped (`202609250010`). Separate from the Edge
+  Function's `RESEND_API_KEY`.
 - **Sibling**: `send-reminders` records failures in the same `email_log`. It is
   English-only because `profiles` carries no locale column.
 - **C-04 — mail endgame.** Custom code emails (2FA + any custom OTP) use ONE
@@ -384,9 +388,9 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   send logs `sent` (with the pg_net request id) or `failed` (with the raw
   reason). `send_test_email(to)` returns the RAW Resend response for the founder
   (service_role only). One DB-side key read:
-  `current_setting('app.resend_api_key')`; the Edge Function runtime keeps its
-  own `RESEND_API_KEY`. A missing or non-`re_` key is a CONFIG failure logged
-  loudly. The 6-box `CodePanel` (`src/components/CodePanel.tsx`) is the shared
+  `public.mail_secret('resend_api_key')` over `private.mail_config`; the Edge
+  Function runtime keeps its own `RESEND_API_KEY`. A missing or non-`re_` key is
+  a CONFIG failure logged loudly. The 6-box `CodePanel` (`src/components/CodePanel.tsx`) is the shared
   verify UI — wired into the 2FA email + authenticator views today; signup
   confirm / recovery / email-change reuse it next.
 

@@ -11,9 +11,13 @@
 --     founder can prove the key without exposing it to the client.
 --
 -- KEY / PIPELINE (one canonical read point for the DB runtime):
---   current_setting('app.resend_api_key')  -> the ONLY DB-side read site.
---   The Edge Function runtime reads Deno.env RESEND_API_KEY (its own runtime).
---   The key is NEVER stored in a table and never reaches the client.
+--   public.mail_secret('resend_api_key') / ('resend_from') — a LOCKED getter
+--   over private.mail_config. Hosted Supabase denies `alter database ... set
+--   app.*` (42501, postgres is not superuser), so the secrets live in a
+--   private-schema table the founder owns, reachable ONLY from owner-owned
+--   SECURITY DEFINER functions. The Edge Function runtime reads its own
+--   Deno.env RESEND_API_KEY. The key never reaches the client, and PostgREST
+--   can never expose mail_secret (it has NO grants).
 --
 -- Requires pg_net (`net`) + pgcrypto (`extensions`), created by 202609250001.
 -- Idempotent; safe to re-run.
@@ -47,6 +51,41 @@ $$;
 revoke all on function public.log_email(text, text, text, text, text) from public;
 
 -- ---------------------------------------------------------------------------
+-- 1b) private.mail_config + the LOCKED getter.
+--     Hosted Supabase denies `alter database ... set app.*`, so the secrets
+--     live in this private-schema table instead. Values are inserted with
+--     ON CONFLICT (key) DO NOTHING, so founder values survive a re-run.
+-- ---------------------------------------------------------------------------
+create schema if not exists private;
+
+create table if not exists private.mail_config (
+  key   text primary key,
+  value text not null
+);
+
+alter table private.mail_config enable row level security;
+revoke all on private.mail_config from public, anon, authenticated, service_role;
+
+insert into private.mail_config (key, value) values
+  ('resend_api_key', ''),
+  ('resend_from', 'Caremunicate <onboarding@resend.dev>')
+on conflict (key) do nothing;
+
+-- The getter. SECURITY DEFINER (owner) so owner-owned functions can read the
+-- private row; NO grants, so PostgREST / any client role can never call it.
+create or replace function public.mail_secret(p_key text)
+returns text
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select value from private.mail_config where key = p_key
+$$;
+
+revoke all on function public.mail_secret(text) from public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
 -- 2) ONE canonical DB-side key read + boot assertion.
 --    Missing / not ^re_ -> CONFIG failure, logged loudly.
 -- ---------------------------------------------------------------------------
@@ -55,7 +94,7 @@ returns text
 language sql
 stable
 as $$
-  with k as (select coalesce(current_setting('app.resend_api_key', true), '') as key)
+  with k as (select coalesce(public.mail_secret('resend_api_key'), '') as key)
   select case
            when (select key from k) = '' then 'resend_api_key_missing'
            when (select key from k) !~ '^re_' then 'resend_api_key_malformed'
@@ -105,8 +144,8 @@ declare
   v_code text;
   v_uid uuid := auth.uid();
   v_email text;
-  v_key text := current_setting('app.resend_api_key', true);
-  v_from text := coalesce(nullif(current_setting('app.resend_from', true), ''), 'Caremunicate <onboarding@resend.dev>');
+  v_key text := public.mail_secret('resend_api_key');
+  v_from text := coalesce(nullif(public.mail_secret('resend_from'), ''), 'Caremunicate <onboarding@resend.dev>');
   v_recent boolean;
   v_req bigint;
   v_config text;
@@ -183,8 +222,8 @@ security definer
 set search_path = ''
 as $$
 declare
-  v_key text := current_setting('app.resend_api_key', true);
-  v_from text := coalesce(nullif(current_setting('app.resend_from', true), ''), 'Caremunicate <onboarding@resend.dev>');
+  v_key text := public.mail_secret('resend_api_key');
+  v_from text := coalesce(nullif(public.mail_secret('resend_from'), ''), 'Caremunicate <onboarding@resend.dev>');
   v_config text;
   v_req bigint;
   v_status integer;

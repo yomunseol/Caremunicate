@@ -16,10 +16,10 @@
 -- session.
 --
 -- Requires pg_net (Supabase's `net` schema) and pgcrypto (`extensions` schema).
--- Set the Resend key on the database so the function can read it, e.g.:
---   alter database postgres set app.resend_api_key = '<RESEND key>';
---   alter database postgres set app.resend_from  = 'Caremunicate <no-reply@your-domain>';
--- (RESEND_FROM defaults to Resend's shared testing sender when unset.)
+-- The Resend key now lives in private.mail_config and is read through the locked
+-- getter public.mail_secret() (see 202609250010_mail_endgame.sql). Hosted
+-- Supabase denies `alter database ... set app.*` (42501), so the old GUC path
+-- was replaced. (RESEND_FROM defaults to Resend's shared testing sender.)
 
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists pg_net with schema net;
@@ -87,8 +87,11 @@ declare
   v_code text;
   v_uid uuid := auth.uid();
   v_email text;
-  v_key text := current_setting('app.resend_api_key', true);
-  v_from text := coalesce(nullif(current_setting('app.resend_from', true), ''), 'Caremunicate <onboarding@resend.dev>');
+  -- Superseded by 202609250010: the key is now read through the locked getter
+  -- public.mail_secret() over private.mail_config (the GUC `app.*` is denied on
+  -- hosted Supabase). Kept here so no `app.resend_api_key` read remains.
+  v_key text := public.mail_secret('resend_api_key');
+  v_from text := coalesce(nullif(public.mail_secret('resend_from'), ''), 'Caremunicate <onboarding@resend.dev>');
   v_recent boolean;
 begin
   if v_uid is null then
