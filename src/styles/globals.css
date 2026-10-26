@@ -3759,3 +3759,75 @@ img {
   text-align: start;
   font-size: 0.76rem;
 }
+
+/* ===========================================================================
+   CodePanel — the shared 6-box verification-code input (C-04).
+   =========================================================================== */
+.code-panel {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.code-panel-boxes {
+  display: flex;
+  gap: 8px;
+  direction: ltr;
+}
+
+.code-box {
+  width: 44px;
+  height: 52px;
+  padding: 0;
+  border: 1px solid rgba(15, 58, 50, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text, #133b35);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.35rem;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1;
+}
+
+.code-box:focus {
+  outline: none;
+  border-color: var(--accent, #3ea985);
+  box-shadow: 0 0 0 3px rgba(62, 169, 133, 0.18);
+}
+
+.code-box.is-invalid {
+  border-color: #c0392b;
+}
+
+.code-box:disabled {
+  opacity: 0.55;
+}
+
+.code-panel-error {
+  margin: 0;
+  color: #9c3636;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.code-panel-resend {
+  border: 1px solid rgba(62, 169, 133, 0.3);
+  border-radius: 999px;
+  padding: 0.55rem 0.95rem;
+  background: transparent;
+  color: #216e5d;
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.code-panel-resend:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 380px) {
+  .code-box { width: 38px; height: 46px; font-size: 1.15rem; }
+}

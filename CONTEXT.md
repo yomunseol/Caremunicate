@@ -376,6 +376,19 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   `app.resend_from`). Separate from the Edge Function's `RESEND_API_KEY`.
 - **Sibling**: `send-reminders` records failures in the same `email_log`. It is
   English-only because `profiles` carries no locale column.
+- **C-04 — mail endgame.** Custom code emails (2FA + any custom OTP) use ONE
+  static template (`202609250010_mail_endgame.sql`): a branded card, the code in
+  a big mono block, and ALL ten repo locales STACKED in the same email — no
+  per-locale template map, no magic links, no dynamic hooks. `email_log` gained
+  `to_email/kind/status/resend_id` plus a single `log_email(...)` writer; every
+  send logs `sent` (with the pg_net request id) or `failed` (with the raw
+  reason). `send_test_email(to)` returns the RAW Resend response for the founder
+  (service_role only). One DB-side key read:
+  `current_setting('app.resend_api_key')`; the Edge Function runtime keeps its
+  own `RESEND_API_KEY`. A missing or non-`re_` key is a CONFIG failure logged
+  loudly. The 6-box `CodePanel` (`src/components/CodePanel.tsx`) is the shared
+  verify UI — wired into the 2FA email + authenticator views today; signup
+  confirm / recovery / email-change reuse it next.
 
 ## Password recovery (CR4)
 

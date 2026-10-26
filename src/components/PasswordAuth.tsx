@@ -9,6 +9,7 @@ import {
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
+import CodePanel from './CodePanel';
 
 type View = 'password' | 'app_code' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
@@ -715,19 +716,13 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       {view === 'app_code' ? (
         <form onSubmit={handleAppCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-app-code">{t('login.labelAppCode')}</label>
-            <input
-              id="pa-app-code"
-              style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center' }}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              placeholder="000000"
+            <label style={styles.label}>{t('login.labelAppCode')}</label>
+            <CodePanel
               value={code}
-              onChange={(event) => setCode(event.target.value)}
+              onChange={setCode}
               disabled={loading}
-              required
+              autoFocus
+              label={t('login.labelAppCode')}
             />
           </div>
 
@@ -746,30 +741,17 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           {sendNotice ? <p style={styles.notice} role="status">{sendNotice}</p> : null}
 
           <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-email-code">{t('login.labelEmailCode')}</label>
-            <div style={styles.resendRow}>
-              <input
-                id="pa-email-code"
-                style={{ ...styles.input, letterSpacing: '0.2em', textAlign: 'center', width: 'auto', flex: 1, minWidth: 0 }}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                pattern="[0-9]{6}"
-                placeholder="000000"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-                disabled={loading}
-                required
-              />
-              <button
-                type="button"
-                style={{ ...styles.resendButton, ...(resendIn > 0 || loading ? styles.resendButtonDisabled : null) }}
-                onClick={() => void handleResendCode()}
-                disabled={resendIn > 0 || loading}
-              >
-                {resendIn > 0 ? t('tfa.resendIn', { seconds: resendIn }) : t('tfa.resend')}
-              </button>
-            </div>
+            <label style={styles.label}>{t('login.labelEmailCode')}</label>
+            <CodePanel
+              value={code}
+              onChange={setCode}
+              disabled={loading}
+              autoFocus
+              label={t('login.labelEmailCode')}
+              onResend={() => void handleResendCode()}
+              resendSecondsLeft={resendIn}
+              resendDisabled={loading}
+            />
           </div>
 
           <button type="submit" style={styles.primaryButton} disabled={loading}>
