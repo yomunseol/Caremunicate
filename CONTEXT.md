@@ -335,6 +335,12 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   only, half-open.
 - The guard raises **SQLSTATE `23P01`** (`appointment_overlap`); the client maps
   it to `cal.slotTaken` via `isOverlapError`.
+- **CF-9 — the trigger is the ONE server enforcer.** No exclusion constraint
+  exists in-repo; `202609250009_server_overlap_half_open.sql` defensively drops
+  any stray `EXCLUDE` constraint on `appointments` and (re)asserts
+  `guard_appointment_overlap` half-open + buffer-free, so the grid and the server
+  can never disagree. `check (end_at > start_at)` is row-validity only, not an
+  overlap check.
 - **Slots show, not hide**: `slotStatesForDate` returns every slot in the
   weekday rule with `available` + `reason` ('past' | 'busy'); unavailable chips
   render disabled/greyed. `slotsForDate` is just the open subset.
