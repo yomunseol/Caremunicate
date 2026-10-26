@@ -326,21 +326,20 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   the previous appointment's exact end is FREE. The predicate is strict `<` on
   both sides, never `<=` — in BOTH the client and the trigger
   (`202609250007_half_open_overlap.sql`).
-- **Buffer is opt-in, default 0, trailing-only** (CF-7). The appointment column
-  default is forced to 0 and any legacy `10` is wiped; the buffer comes from the
-  provider's `availability.buffer_minutes` and extends a busy window's END only
-  ("clearance after the previous appointment"). The client marks a slot that is
-  free in raw terms but caught by the buffer as `reason: 'buffer'` → distinct
-  dashed style + `t('cal.bufferBlocked', { n })` tooltip. A per-appointment
-  `buffer_minutes` is ignored by the overlap math.
+- **Buffer is INERT — it never blocks a booking** (CF-8, supersedes CF-7's
+  trailing-buffer behaviour). The `buffer_minutes` columns stay in the schema
+  (default 0) for a possible future feature but are NOT read by the overlap
+  predicate, never written non-zero, and not surfaced in the UI (the availability
+  editor exposes no buffer control; the orange dashed "buffer-blocked" slot style
+  and its tooltip are deleted). Overlap is decided by REAL appointment intervals
+  only, half-open.
 - The guard raises **SQLSTATE `23P01`** (`appointment_overlap`); the client maps
   it to `cal.slotTaken` via `isOverlapError`.
 - **Slots show, not hide**: `slotStatesForDate` returns every slot in the
-  weekday rule with `available` + `reason` ('past' | 'busy' | 'buffer');
-  unavailable chips render disabled/greyed. `slotsForDate` is just the open
-  subset.
-- `provider_busy_slots` returns ranges only (no buffer), so a patient's client
-  falls back to the provider's rule buffer; the DB trigger is the exact backstop.
+  weekday rule with `available` + `reason` ('past' | 'busy'); unavailable chips
+  render disabled/greyed. `slotsForDate` is just the open subset.
+- `provider_busy_slots` returns raw ranges only; the client uses them as-is and
+  the DB trigger is the exact backstop.
 - **Reminders** run in `supabase/functions/send-reminders` (Deno Edge Function,
   daily): appointments due within 24h with `reminder_sent = false` (status
   `scheduled|confirmed` only) are emailed via **Resend** and the flag flips only

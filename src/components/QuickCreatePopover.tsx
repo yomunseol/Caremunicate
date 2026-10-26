@@ -16,7 +16,6 @@ import {
   loadBusySlots,
   localDayKey,
   slotStatesForDate,
-  SLOT_BUFFER_MINUTES,
   SLOT_CHOICES,
   OVERLAP_MESSAGE_KEY,
   type Appointment,
@@ -155,12 +154,6 @@ export default function QuickCreatePopover({
     };
   }, [providerId]);
 
-  const ruleBuffer = useMemo(() => {
-    const rule = rules.find((item) => Number(item.weekday) === day.getDay());
-    const value = Number(rule?.buffer_minutes);
-    return Number.isFinite(value) ? value : SLOT_BUFFER_MINUTES;
-  }, [rules, day]);
-
   const slotStates = useMemo(
     () => slotStatesForDate(day, rules, booked),
     [day, rules, booked],
@@ -271,7 +264,7 @@ export default function QuickCreatePopover({
     setError('');
     try {
       // Client pre-check: never fire an obviously-overlapping block.
-      if (findConflict({ start, end }, booked, ruleBuffer)) {
+      if (findConflict({ start, end }, booked)) {
         setError(OVERLAP_MESSAGE_KEY);
         return;
       }
@@ -382,11 +375,7 @@ export default function QuickCreatePopover({
                     disabled={!state.available}
                   >
                     {formatTime(state.start, locale)}
-                    {state.available
-                      ? ''
-                      : state.reason === 'buffer'
-                        ? ` · ${tString('cal.bufferBlocked', { n: ruleBuffer })}`
-                        : ` · ${t('cal.slotUnavailable')}`}
+                    {state.available ? '' : ` · ${t('cal.slotUnavailable')}`}
                   </option>
                 ))
               )}
