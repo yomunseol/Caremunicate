@@ -113,6 +113,12 @@ create unique index if not exists appointments_room_code_key
 create index if not exists appointments_patient_start_idx on public.appointments (patient_id, start_at);
 create index if not exists appointments_provider_start_idx on public.appointments (provider_id, start_at);
 
+-- The legacy start_time/end_time columns must not block a booking that only
+-- writes start_at/end_at (the appointments_mirror coalesce fills them in), so
+-- relax their NOT NULL as part of the drift reconciliation.
+alter table public.appointments alter column start_time drop not null;
+alter table public.appointments alter column end_time drop not null;
+
 -- ---------------------------------------------------------------------------
 -- 3) Grants. Supabase's role default privileges usually cover new public tables,
 --    but CF-1 requires them explicit.
