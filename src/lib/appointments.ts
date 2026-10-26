@@ -313,7 +313,7 @@ export const findConflict = (
  *
  * Expand the rule from start→end in `slot_minutes` steps and mark each:
  *   - 'past' when it has already started,
- *   - 'busy' when it overlaps a live appointment widened by its buffer.
+ *   - 'busy' when it overlaps a live appointment (half-open; buffer inert).
  */
 export const slotStatesForDate = (
   day: Date,

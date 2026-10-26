@@ -30,8 +30,8 @@ import { useLang } from '../i18n';
 //
 // Slots come from lib/appointments#slotsForDate: the weekday rule expanded from
 // start to end in slot_minutes steps, minus past times and minus anything
-// overlapping a live appointment (cancelled ones do not block), with a 5-minute
-// buffer so back-to-back bookings are not jammed together.
+// overlapping a live appointment (cancelled ones do not block). Intervals are
+// half-open and the buffer is inert, so a slot at the previous end is bookable.
 //
 // Booking is a REQUEST, never a room: requestAppointment tells the server and
 // the host decides. No room exists until an approval mints its code, so the
