@@ -319,16 +319,26 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
 - `appointments` gained `buffer_minutes` (clearance per side) and `reminder_sent`
   in `202609220001_appointment_scheduling.sql`. `specialty` lives on `profiles`,
   never on `appointments`.
-- **Overlap is enforced twice**: a client pre-check (`findConflict` in
-  `src/lib/appointments.ts`) that renders `cal.slotTaken` — "Doctor is
-  unavailable at this time." — without a round-trip, AND a DB trigger
-  (`guard_appointment_overlap`) so a concurrent/stolen-token write cannot
-  double-book. Every live appointment is widened by its own buffer on both sides.
+- **Overlap is enforced twice, HALF-OPEN** (CF-7): a client pre-check
+  (`findConflict` → `overlapsHalfOpen` in `src/lib/appointments.ts`) that renders
+  `cal.slotTaken` — "That slot is already booked." — without a round-trip, AND a
+  DB trigger (`guard_appointment_overlap`). Touching intervals coexist: a slot at
+  the previous appointment's exact end is FREE. The predicate is strict `<` on
+  both sides, never `<=` — in BOTH the client and the trigger
+  (`202609250007_half_open_overlap.sql`).
+- **Buffer is opt-in, default 0, trailing-only** (CF-7). The appointment column
+  default is forced to 0 and any legacy `10` is wiped; the buffer comes from the
+  provider's `availability.buffer_minutes` and extends a busy window's END only
+  ("clearance after the previous appointment"). The client marks a slot that is
+  free in raw terms but caught by the buffer as `reason: 'buffer'` → distinct
+  dashed style + `t('cal.bufferBlocked', { n })` tooltip. A per-appointment
+  `buffer_minutes` is ignored by the overlap math.
 - The guard raises **SQLSTATE `23P01`** (`appointment_overlap`); the client maps
   it to `cal.slotTaken` via `isOverlapError`.
 - **Slots show, not hide**: `slotStatesForDate` returns every slot in the
-  weekday rule with `available` + `reason` ('past' | 'busy'); unavailable chips
-  render disabled/greyed. `slotsForDate` is just the open subset.
+  weekday rule with `available` + `reason` ('past' | 'busy' | 'buffer');
+  unavailable chips render disabled/greyed. `slotsForDate` is just the open
+  subset.
 - `provider_busy_slots` returns ranges only (no buffer), so a patient's client
   falls back to the provider's rule buffer; the DB trigger is the exact backstop.
 - **Reminders** run in `supabase/functions/send-reminders` (Deno Edge Function,

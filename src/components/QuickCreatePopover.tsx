@@ -271,7 +271,7 @@ export default function QuickCreatePopover({
     setError('');
     try {
       // Client pre-check: never fire an obviously-overlapping block.
-      if (findConflict({ start, end }, booked, 0, ruleBuffer)) {
+      if (findConflict({ start, end }, booked, ruleBuffer)) {
         setError(OVERLAP_MESSAGE_KEY);
         return;
       }
@@ -382,7 +382,11 @@ export default function QuickCreatePopover({
                     disabled={!state.available}
                   >
                     {formatTime(state.start, locale)}
-                    {state.available ? '' : ` · ${t('cal.slotUnavailable')}`}
+                    {state.available
+                      ? ''
+                      : state.reason === 'buffer'
+                        ? ` · ${tString('cal.bufferBlocked', { n: ruleBuffer })}`
+                        : ` · ${t('cal.slotUnavailable')}`}
                   </option>
                 ))
               )}

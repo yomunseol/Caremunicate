@@ -66,7 +66,13 @@ export type Slot = { start: Date; end: Date };
  * A slot plus WHY it is or is not bookable, so the UI can render every slot in
  * the day and grey out the unavailable ones instead of hiding them.
  */
-export type SlotState = { start: Date; end: Date; available: boolean; reason?: 'past' | 'busy' };
+export type SlotState = {
+  start: Date;
+  end: Date;
+  available: boolean;
+  /** 'buffer' = free in raw terms but caught by the trailing buffer only. */
+  reason?: 'past' | 'busy' | 'buffer';
+};
 
 export const SLOT_CHOICES = [15, 30, 45, 60] as const;
 
@@ -252,50 +258,65 @@ export const isLive = (appointment: Appointment, now = Date.now()): boolean => {
  *
  * Slots are returned in local time and the caller formats each one with Intl.
  */
-export const SLOT_BUFFER_MINUTES = 5;
+/**
+ * The buffer is OPT-IN and defaults to 0 — a slot that starts exactly when the
+ * previous appointment ends is FREE (half-open intervals). It is read from the
+ * provider's availability row (`buffer_minutes`); this constant is only the
+ * fallback used when no rule/buffer value is available. CF-7.
+ */
+export const SLOT_BUFFER_MINUTES = 0;
 
 /**
- * An existing appointment's occupied window, widened on each side by its OWN
- * buffer (falling back to the provider's rule buffer when the row predates the
- * column). The end is the legacy `end_at` when present, else
- * `start_at + duration_min` — the same precedence the old overlap math used,
- * now buffer-aware.
+ * THE one overlap predicate the whole app shares: [aStart, aEnd) vs
+ * [bStart, bEnd). Intervals that merely TOUCH (aEnd === bStart, or
+ * bEnd === aStart) do NOT overlap — strict `<` on both sides, never `<=`.
  */
-const blockedInterval = (
-  appointment: Pick<Appointment, 'start_at' | 'end_at' | 'duration_min' | 'buffer_minutes'>,
-  fallbackBufferMinutes: number,
+export const overlapsHalfOpen = (
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+): boolean => aStart < bEnd && bStart < aEnd;
+
+/**
+ * An existing appointment's occupied window, [start, end), optionally extended
+ * at the END by a trailing buffer ("clearance after the previous appointment").
+ * A per-appointment `buffer_minutes` is IGNORED — the buffer is a provider
+ * opt-in carried on the availability row, never a blanket default. The end is
+ * the legacy `end_at` when present, else `start_at + duration_min`.
+ */
+const busyWindow = (
+  appointment: Pick<Appointment, 'start_at' | 'end_at' | 'duration_min'>,
+  trailingBufferMinutes = 0,
 ): { start: number; end: number } | null => {
-  const start = parseDate(appointment.start_at, 'slotsForDate');
-  const end = parseDate(appointment.end_at ?? endAt(appointment), 'slotsForDate');
+  const start = parseDate(appointment.start_at, 'busyWindow');
+  const end = parseDate(appointment.end_at ?? endAt(appointment), 'busyWindow');
   if (!start || !end) return null;
 
-  const raw = Number(appointment.buffer_minutes);
-  const bufferMinutes = Number.isFinite(raw) ? raw : fallbackBufferMinutes;
-  const buffer = Math.max(0, bufferMinutes) * 60_000;
-  return { start: start.getTime() - buffer, end: end.getTime() + buffer };
+  const buffer =
+    Math.max(0, Number.isFinite(trailingBufferMinutes) ? trailingBufferMinutes : 0) * 60_000;
+  return { start: start.getTime(), end: end.getTime() + buffer };
 };
 
 /**
- * The first existing appointment that would collide with `candidate`, each side
- * widened by its own buffer. This is the client-side pre-check the booking flow
- * runs BEFORE it asks the server, so an obviously-taken slot never round-trips.
- * `null` means the slot is clear.
+ * The first existing appointment that would collide with `candidate`, using the
+ * HALF-OPEN predicate and a trailing buffer drawn from the provider's rules.
+ * This is the client-side pre-check the booking flow runs BEFORE it asks the
+ * server, so an obviously-taken slot never round-trips. `null` means it is clear.
  */
 export const findConflict = (
   candidate: { start: Date; end: Date },
   existing: Appointment[],
-  candidateBufferMinutes = 0,
-  existingBufferFallbackMinutes = 0,
+  trailingBufferMinutes = 0,
 ): Appointment | null => {
-  const buffer = Math.max(0, candidateBufferMinutes) * 60_000;
-  const start = candidate.start.getTime() - buffer;
-  const end = candidate.end.getTime() + buffer;
+  const cStart = candidate.start.getTime();
+  const cEnd = candidate.end.getTime();
 
   return (
     existing.find((appointment) => {
       if (appointment.status === 'cancelled') return false;
-      const window = blockedInterval(appointment, existingBufferFallbackMinutes);
-      return window !== null && start < window.end && end > window.start;
+      const window = busyWindow(appointment, trailingBufferMinutes);
+      return window !== null && overlapsHalfOpen(cStart, cEnd, window.start, window.end);
     }) ?? null
   );
 };
@@ -331,16 +352,23 @@ export const slotStatesForDate = (
 
   const startMinutes = startHour * 60 + startMinute;
   const endMinutes = endHour * 60 + endMinute;
-  // The provider's per-weekday buffer widens the candidate AND is the fallback
-  // for a busy row whose own buffer column is absent.
-  const ruleBuffer = Number(rule.buffer_minutes);
-  const bufferMinutes = Number.isFinite(ruleBuffer) ? ruleBuffer : SLOT_BUFFER_MINUTES;
-  const buffer = Math.max(0, bufferMinutes) * 60_000;
+  // Buffer is OPT-IN: read from THIS weekday's availability row, default 0.
+  const ruleBufferRaw = Number(rule.buffer_minutes);
+  const bufferMinutes = Number.isFinite(ruleBufferRaw) ? Math.max(0, ruleBufferRaw) : 0;
 
-  const busy = booked
-    .filter((appointment) => appointment.status !== 'cancelled')
-    .map((appointment) => blockedInterval(appointment, bufferMinutes))
+  const live = booked.filter((appointment) => appointment.status !== 'cancelled');
+  // Raw windows (no buffer) plus buffered windows (trailing buffer). A slot is
+  // 'busy' when it hits a raw window, and 'buffer' when ONLY the buffer catches
+  // it — so the UI can style the buffer case distinctly.
+  const rawWindows = live
+    .map((appointment) => busyWindow(appointment, 0))
     .filter((window): window is { start: number; end: number } => window !== null);
+  const bufferedWindows =
+    bufferMinutes > 0
+      ? live
+          .map((appointment) => busyWindow(appointment, bufferMinutes))
+          .filter((window): window is { start: number; end: number } => window !== null)
+      : rawWindows;
 
   const toHhmm = (minutes: number): string =>
     `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
@@ -351,14 +379,15 @@ export const slotStatesForDate = (
     if (!start) break;
     const end = addMinutesToDate(start, slotMinutes);
 
-    const past = start.getTime() <= now;
-    const blocked = busy.some(
-      (window) => start.getTime() - buffer < window.end && end.getTime() + buffer > window.start,
-    );
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    const past = startMs <= now;
+    const blockedRaw = rawWindows.some((w) => overlapsHalfOpen(startMs, endMs, w.start, w.end));
+    const blockedBuffered = bufferedWindows.some((w) => overlapsHalfOpen(startMs, endMs, w.start, w.end));
 
-    const state: SlotState = { start, end, available: !past && !blocked };
+    const state: SlotState = { start, end, available: !past && !blockedBuffered };
     if (past) state.reason = 'past';
-    else if (blocked) state.reason = 'busy';
+    else if (blockedBuffered) state.reason = blockedRaw ? 'busy' : 'buffer';
     states.push(state);
   }
 

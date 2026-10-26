@@ -3650,6 +3650,21 @@ img {
 .cal-slot:disabled:hover,
 .cal-slot.is-unavailable:hover { border-color: var(--cal-line, rgba(15, 58, 50, 0.12)); }
 
+/* A slot blocked ONLY by the provider's trailing buffer: a distinct dashed
+   amber outline + hatching, so it reads differently from a plainly booked slot. */
+.cal-slot.is-buffered {
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(224, 160, 60, 0.18) 0 6px,
+    rgba(224, 160, 60, 0.05) 6px 12px
+  );
+  border-color: rgba(190, 130, 40, 0.55);
+  border-style: dashed;
+  color: #8a5a12;
+  opacity: 0.85;
+}
+.cal-slot.is-buffered:hover { border-color: rgba(190, 130, 40, 0.55); }
+
 /* Never a bare '—': an icon and a sentence. */
 .cal-empty-state {
   display: grid;

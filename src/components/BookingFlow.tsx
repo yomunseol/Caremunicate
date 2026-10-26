@@ -69,7 +69,7 @@ export default function BookingFlow({
   onClose,
   onBooked,
 }: BookingFlowProps) {
-  const { t, locale } = useLang();
+  const { t, tString, locale } = useLang();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   const [provider, setProvider] = useState<BookableProvider | null>(initialProvider);
@@ -154,7 +154,7 @@ export default function BookingFlow({
 
     // Client pre-check: reject an overlap before asking the server, so a stale
     // grid (booked changed under us) shows the message without a round-trip.
-    if (findConflict({ start: startAt, end }, booked, 0, ruleBuffer)) {
+    if (findConflict({ start: startAt, end }, booked, ruleBuffer)) {
       setError(OVERLAP_MESSAGE_KEY);
       setSaving(false);
       return;
@@ -353,19 +353,29 @@ export default function BookingFlow({
               ) : (
                 slotStates.map((slot) => {
                   const active = chosen?.start.getTime() === slot.start.getTime();
-                  const className = ['cal-slot', active ? 'is-active' : '', slot.available ? '' : 'is-unavailable']
-                    .filter(Boolean)
-                    .join(' ');
                   return (
                     <button
                       key={slot.start.toISOString()}
                       type="button"
                       dir="ltr"
-                      className={className}
+                      className={[
+                        'cal-slot',
+                        active ? 'is-active' : '',
+                        slot.available ? '' : 'is-unavailable',
+                        slot.reason === 'buffer' ? 'is-buffered' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
                       aria-pressed={active}
                       disabled={!slot.available}
                       aria-disabled={!slot.available}
-                      title={slot.available ? undefined : t('cal.slotUnavailable')}
+                      title={
+                        slot.available
+                          ? undefined
+                          : slot.reason === 'buffer'
+                            ? tString('cal.bufferBlocked', { n: ruleBuffer })
+                            : t('cal.slotUnavailable')
+                      }
                       onClick={() => setChosen(slot)}
                     >
                       {formatTime(slot.start, locale)}
