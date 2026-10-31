@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
+import { Building2, Check, Cross, Stethoscope, UserRound, X } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
@@ -1147,7 +1148,7 @@ function App() {
                           <ul className="password-checklist" aria-label={t('auth.reqAria')}>
                             {passwordChecklist.map((item) => (
                               <li key={item.label} className={item.met ? 'password-rule met' : 'password-rule'}>
-                                <span aria-hidden="true">{item.met ? '✅' : '❌'}</span> {item.label}
+                                <span className="password-rule-icon" aria-hidden="true">{item.met ? <Check size={14} /> : <X size={14} />}</span> {item.label}
                               </li>
                             ))}
                           </ul>
@@ -1180,10 +1181,10 @@ function App() {
                       <div className="role-tiles" role="radiogroup" aria-label={t('auth.roleAria')}>
                         {(
                           [
-                            { value: 'patient', icon: '🧑', labelKey: 'roles.patient' },
-                            { value: 'doctor', icon: '🩺', labelKey: 'roles.doctor' },
-                            { value: 'department', icon: '🏢', labelKey: 'roles.department' },
-                            { value: 'hospital', icon: '🏥', labelKey: 'roles.hospital' },
+                            { value: 'patient', Icon: UserRound, labelKey: 'roles.patient' },
+                            { value: 'doctor', Icon: Stethoscope, labelKey: 'roles.doctor' },
+                            { value: 'department', Icon: Building2, labelKey: 'roles.department' },
+                            { value: 'hospital', Icon: Cross, labelKey: 'roles.hospital' },
                           ] as const
                         ).map((tile) => {
                           const active = authRole === tile.value;
@@ -1196,7 +1197,7 @@ function App() {
                               className={active ? 'role-tile active' : 'role-tile'}
                               onClick={() => selectRole(tile.value)}
                             >
-                              <span className="role-tile-icon" aria-hidden="true">{tile.icon}</span>
+                              <span className="role-tile-icon" aria-hidden="true"><tile.Icon size={22} /></span>
                               {t(tile.labelKey)}
                             </button>
                           );

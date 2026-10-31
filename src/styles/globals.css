@@ -1444,7 +1444,8 @@ img {
 }
 
 .role-tile-icon {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
   line-height: 1;
 }
 
@@ -1510,6 +1511,15 @@ img {
 
 .password-rule.met {
   color: var(--accent-strong, #216e5d);
+}
+
+.password-rule-icon {
+  display: inline-flex;
+}
+
+/* Unmet rules keep the red the old cross glyph carried. */
+.password-rule:not(.met) .password-rule-icon {
+  color: #c0392b;
 }
 
 .auth-loading {

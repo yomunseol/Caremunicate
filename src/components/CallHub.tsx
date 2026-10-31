@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
+import { Clipboard } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import {
@@ -213,7 +214,13 @@ export default function CallHub() {
                 title={t('call.copyCode')}
                 aria-label={`${t('call.copyCode')} — ${line.code}`}
               >
-                {lineCopied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+                {lineCopied ? (
+                  t('call.copied')
+                ) : (
+                  <>
+                    <Clipboard size={14} aria-hidden="true" /> {t('call.copyCode')}
+                  </>
+                )}
               </button>
 
               <span className="call-line-spacer" aria-hidden="true" />

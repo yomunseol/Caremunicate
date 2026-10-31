@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X } from 'lucide-react';
+import { Clipboard, Link, X } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { useLang } from '../i18n';
@@ -63,13 +63,25 @@ export default function CallInviteDrawer({ onClose }: CallInviteDrawerProps) {
           </span>
 
           <button type="button" className="ghost-button" onClick={() => copy(roomCode, 'code')}>
-            {copied === 'code' ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+            {copied === 'code' ? (
+              t('call.copied')
+            ) : (
+              <>
+                <Clipboard size={14} aria-hidden="true" /> {t('call.copyCode')}
+              </>
+            )}
           </button>
 
           {joinUrl ? (
             <>
               <button type="button" className="ghost-button" onClick={() => copy(joinUrl, 'link')}>
-                {copied === 'link' ? t('call.copied') : `🔗 ${t('call.shareLink')}`}
+                {copied === 'link' ? (
+                  t('call.copied')
+                ) : (
+                  <>
+                    <Link size={14} aria-hidden="true" /> {t('call.shareLink')}
+                  </>
+                )}
               </button>
 
               <div className="call-invite-qr">

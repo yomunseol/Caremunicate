@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Globe } from 'lucide-react';
 import { LOCALES, useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
@@ -156,7 +157,7 @@ export default function LanguageSwitcher() {
           aria-label={t('lang.aria')}
           onClick={() => setOpen((previous) => !previous)}
         >
-          <span aria-hidden="true">🌐</span>
+          <span aria-hidden="true"><Globe size={16} /></span>
           <span className="lang-current">{current.label}</span>
         </button>
       </div>

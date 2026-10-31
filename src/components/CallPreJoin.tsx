@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Clipboard, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import { useMicLevel } from '../hooks/useMicLevel';
@@ -179,7 +179,13 @@ export default function CallPreJoin() {
                 title={t('call.copyCode')}
                 aria-label={`${t('call.copyCode')} — ${roomCode}`}
               >
-                {copied ? t('call.copied') : `📋 ${t('call.copyCode')}`}
+                {copied ? (
+                  t('call.copied')
+                ) : (
+                  <>
+                    <Clipboard size={14} aria-hidden="true" /> {t('call.copyCode')}
+                  </>
+                )}
               </button>
             </span>
           ) : null}

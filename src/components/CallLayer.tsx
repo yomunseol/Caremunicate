@@ -4,6 +4,7 @@ import {
   Circle,
   FileText,
   Hand,
+  Heart,
   LayoutGrid,
   Link2,
   MessageSquare,
@@ -16,6 +17,7 @@ import {
   Settings,
   Smile,
   Square,
+  ThumbsUp,
   Users,
   Video,
   VideoOff,
@@ -59,7 +61,19 @@ import ShortcutsOverlay from './ShortcutsOverlay';
 
 const LAYER_Z_INDEX = 3000;
 const CONTROLS_IDLE_MS = 3000;
-const REACTION_EMOJI = ['👍', '❤️', '👏'];
+/** The three in-call reactions — line icons, keyed by a stable wire string. */
+const REACTIONS = [
+  { key: 'like', Icon: ThumbsUp },
+  { key: 'love', Icon: Heart },
+  { key: 'clap', Icon: Hand },
+] as const;
+
+/** Resolve the floating icon for a wire key; unknown keys fall back to a like. */
+function reactionIcon(key: string) {
+  if (key === 'love') return Heart;
+  if (key === 'clap') return Hand;
+  return ThumbsUp;
+}
 
 /** A single video tile. Remote video is never mirrored; only our own is. */
 function Tile({
@@ -825,11 +839,14 @@ export default function CallLayer() {
 
             {/* Reactions float up from bottom-centre over the stage. */}
             <div style={styles.reactionLayer} aria-hidden="true">
-              {reactions.map((reaction) => (
-                <span key={reaction.id} className="call-reaction" style={styles.reaction}>
-                  {reaction.emoji}
-                </span>
-              ))}
+              {reactions.map((reaction) => {
+                const Icon = reactionIcon(reaction.key);
+                return (
+                  <span key={reaction.id} className="call-reaction" style={styles.reaction}>
+                    <Icon size={30} aria-hidden="true" />
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -864,17 +881,17 @@ export default function CallLayer() {
           >
             {reactionsOpen ? (
               <div style={styles.emojiRow}>
-                {REACTION_EMOJI.map((emoji) => (
+                {REACTIONS.map(({ key, Icon }) => (
                   <button
-                    key={emoji}
+                    key={key}
                     type="button"
                     style={styles.emojiButton}
                     onClick={() => {
-                      sendReaction(emoji);
+                      sendReaction(key);
                       setReactionsOpen(false);
                     }}
                   >
-                    {emoji}
+                    <Icon size={20} aria-hidden="true" />
                   </button>
                 ))}
               </div>
@@ -1381,7 +1398,8 @@ const styles: Record<string, CSSProperties> = {
     insetInline: 0,
     marginInline: 'auto',
     width: 'fit-content',
-    fontSize: '1.7rem',
+    color: '#ffffff',
+    filter: 'drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45))',
   },
 
   reconnectToast: {
@@ -1498,7 +1516,7 @@ const styles: Record<string, CSSProperties> = {
     background: 'rgba(9, 32, 27, 0.96)',
     border: '1px solid rgba(255, 255, 255, 0.16)',
   },
-  emojiButton: { fontSize: '1.2rem', background: 'transparent', border: 'none', cursor: 'pointer' },
+  emojiButton: { display: 'inline-flex', alignItems: 'center', color: '#f2fffa', background: 'transparent', border: 'none', cursor: 'pointer' },
 
   statsChip: {
     justifySelf: 'center',

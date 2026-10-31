@@ -77,7 +77,7 @@ const EMERGENCY_RETRIES = 3;
 /** DataChannel liveness ping — the only heartbeat once signaling is released. */
 const DC_PING_MS = 3_000;
 
-/** How long an emoji reaction floats over the stage before it retires. */
+/** How long a reaction floats over the stage before it retires. */
 const REACTION_MS = 2_000;
 
 /** Per-peer diagnostics poll (connection + inbound/outbound video). */
@@ -322,8 +322,8 @@ export type PeerInfo = {
   connection: PeerConnState;
 };
 
-/** A transient emoji burst, rendered over the sender's tile. */
-export type Reaction = { id: string; emoji: string; from: string; self: boolean };
+/** A transient reaction, rendered over the sender's tile. */
+export type Reaction = { id: string; key: string; from: string; self: boolean };
 
 /** Rolling per-peer diagnostics, refreshed on a 4s poll. */
 export type PeerStats = {
@@ -471,7 +471,7 @@ export type UseCallResult = {
   lowerPeerHand: (peerId: string) => void;
   startShare: () => Promise<void>;
   stopShare: () => Promise<void>;
-  sendReaction: (emoji: string) => void;
+  sendReaction: (key: string) => void;
   refreshDevices: () => Promise<void>;
   selectMic: (deviceId: string) => Promise<void>;
   selectCamera: (deviceId: string) => Promise<void>;
@@ -822,11 +822,11 @@ export function useCall(
     }
   }, []);
 
-  /** Floats an emoji over its sender's tile, then retires it. */
+  /** Floats a reaction over its sender's tile, then retires it. */
   const pushReaction = useCallback(
-    (emoji: string, from: string) => {
+    (key: string, from: string) => {
       const id = `${from}:${Date.now()}:${Math.floor(performance.now())}`;
-      setReactions((previous) => [...previous, { id, emoji, from, self: from === me }]);
+      setReactions((previous) => [...previous, { id, key, from, self: from === me }]);
       const timer = window.setTimeout(() => {
         setReactions((previous) => previous.filter((item) => item.id !== id));
         reactionTimers.current = reactionTimers.current.filter((handle) => handle !== timer);
@@ -927,7 +927,7 @@ export function useCall(
           hand?: boolean;
           sharing?: boolean;
           host?: boolean;
-          emoji?: string;
+          key?: string;
         };
 
         if (data?.t === 'ended') {
@@ -948,8 +948,8 @@ export function useCall(
           });
           return;
         }
-        if (data?.t === 'reaction' && typeof data.emoji === 'string') {
-          pushReaction(data.emoji, peer.id);
+        if (data?.t === 'reaction' && typeof data.key === 'string') {
+          pushReaction(data.key, peer.id);
           return;
         }
         if (data?.t === 'lower-hand') {
@@ -1760,9 +1760,9 @@ export function useCall(
 
   // ---- reactions / hands ---------------------------------------------------
   const sendReaction = useCallback(
-    (emoji: string) => {
-      sendDataChannel({ t: 'reaction', emoji });
-      pushReaction(emoji, me);
+    (key: string) => {
+      sendDataChannel({ t: 'reaction', key });
+      pushReaction(key, me);
     },
     [sendDataChannel, pushReaction, me],
   );
