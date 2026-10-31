@@ -385,6 +385,8 @@ export type UseCallResult = {
   chatMessages: CallChatEntry[];
   /** Send one chat message (local echo, then persisted). */
   sendChat: (body: string) => void;
+  /** Re-fetch persisted chat (e.g. when the panel opens). */
+  refreshChat: (callId?: string) => Promise<void>;
   isHost: boolean;
   /** Display name of the other party when known — drives the CallLayer top bar. */
   peerName: string | null;
@@ -1581,6 +1583,22 @@ export function useCall(
     [me, attachChannel, enterPrejoin, refreshDevices],
   );
 
+  /** Re-read persisted chat for a call (defaults to the current room). */
+  const refreshChat = useCallback(async (callId?: string) => {
+    const id = callId ?? room.current;
+    if (!id || !alive.current) return;
+
+    const history = await loadCallChat(id);
+    if (!alive.current) return;
+
+    setChatMessages((previous) => {
+      const locals = previous.filter((item) => item.id.startsWith('local-'));
+      const seen = new Set(history.map((item) => item.id));
+      const merged = [...history, ...locals.filter((item) => !seen.has(item.id))];
+      return merged.sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id));
+    });
+  }, []);
+
   /** Open the docs session, then load + stream the dedicated chat history. */
   const openSession = useCallback(
     async (
@@ -1603,9 +1621,7 @@ export function useCall(
         setSessionId(session.id);
       }
 
-      const history = await loadCallChat(roomKey);
-      if (!alive.current) return;
-      setChatMessages(history);
+      await refreshChat(roomKey);
 
       // A DEDICATED channel — never the call: signaling one, which the engine
       // deliberately releases once the mesh settles.
@@ -1625,7 +1641,7 @@ export function useCall(
         });
       });
     },
-    [],
+    [refreshChat],
   );
 
   /** Local echo, then persist to call_chat_messages; reconcile by id. */
@@ -2420,6 +2436,7 @@ export function useCall(
     sessionId,
     chatMessages,
     sendChat,
+    refreshChat,
     isHost,
     peerName,
     connectedAt,

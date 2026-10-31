@@ -42,6 +42,7 @@ import { describeError } from './lib/errors';
 import { isAuthAllowed, recordAuthAttempt } from './lib/authRateLimit';
 import { useLang } from './i18n';
 import ResetPassword from './components/ResetPassword';
+import DocsPage from './components/DocsPage';
 
 type RouteKey =
   | 'home'
@@ -57,7 +58,8 @@ type RouteKey =
   | 'verify'
   | 'care'
   | 'patients'
-  | 'reset';
+  | 'reset'
+  | 'docs';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -115,7 +117,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients', 'docs'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -139,6 +141,12 @@ const RESET_PASSWORD_PATH = /^\/reset-password\/?$/;
 const isResetPasswordPath = (): boolean =>
   typeof window !== 'undefined' && RESET_PASSWORD_PATH.test(window.location.pathname);
 
+/** `/docs` — the public documentation page. */
+const DOCS_PATH = /^\/docs\/?$/;
+
+const isDocsPath = (): boolean =>
+  typeof window !== 'undefined' && DOCS_PATH.test(window.location.pathname);
+
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
   const match = window.location.pathname.match(CALL_PATH);
@@ -154,6 +162,7 @@ const getInitialRoute = (): RouteKey => {
   if (typeof window === 'undefined') return 'home';
   // A recovery link lands on a real path, with the tokens in the fragment.
   if (isResetPasswordPath()) return 'reset';
+  if (isDocsPath()) return 'docs';
   if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
 };
@@ -166,7 +175,7 @@ const getInitialRoute = (): RouteKey => {
 const routerBasePath = (): string => {
   if (typeof window === 'undefined') return '/';
   const path = window.location.pathname;
-  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path)) return '/';
+  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || DOCS_PATH.test(path)) return '/';
   return path;
 };
 
@@ -271,6 +280,18 @@ function App() {
 
   useEffect(() => {
     const syncRoute = () => {
+      if (isDocsPath()) {
+        setRoute('docs');
+        setConversationId(null);
+        setCallCode(null);
+        return;
+      }
+      if (isResetPasswordPath()) {
+        setRoute('reset');
+        setConversationId(null);
+        setCallCode(null);
+        return;
+      }
       const parsed = parseHash(window.location.hash);
       setRoute(parsed.route);
       setConversationId(parsed.conversationId);
@@ -292,7 +313,12 @@ function App() {
 
     syncRoute();
     window.addEventListener('hashchange', syncRoute);
-    return () => window.removeEventListener('hashchange', syncRoute);
+    // Path-style routes (/docs, /reset-password) change without a hash event.
+    window.addEventListener('popstate', syncRoute);
+    return () => {
+      window.removeEventListener('hashchange', syncRoute);
+      window.removeEventListener('popstate', syncRoute);
+    };
   }, []);
 
   useEffect(() => {
@@ -352,6 +378,10 @@ function App() {
     setRoute(nextRoute);
     setConversationId(null);
     setCallCode(null);
+    if (nextRoute === 'docs') {
+      window.history.pushState({}, '', '/docs');
+      return;
+    }
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
     window.history.pushState({}, '', `${routerBasePath()}${hash}`);
   };
@@ -767,6 +797,10 @@ function App() {
         <div className="nav-actions">
           <LanguageSwitcher />
 
+          <button className="ghost-button" type="button" onClick={() => navigate('docs')}>
+            {t('docs.title')}
+          </button>
+
           {currentUser ? (
             <>
               {/* Between the language pill and the Calls pill, at every width. */}
@@ -997,6 +1031,9 @@ function App() {
 
         {/* A recovery link: its own route, still inside the ErrorBoundary. */}
         {route === 'reset' && <ResetPassword />}
+
+        {/* Public product documentation. */}
+        {route === 'docs' && <DocsPage />}
 
         {(route === 'signup' || route === 'login') && (
           <section className="section form-grid auth-combined-layout">
@@ -1412,6 +1449,18 @@ function App() {
             rel="noopener noreferrer"
           >
             LancerMents
+          </a>
+        </p>
+        <p>
+          <a
+            className="footer-link"
+            href="/docs"
+            onClick={(event) => {
+              event.preventDefault();
+              navigate('docs');
+            }}
+          >
+            {t('docs.title')}
           </a>
         </p>
       </footer>

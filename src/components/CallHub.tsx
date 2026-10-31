@@ -260,6 +260,20 @@ export default function CallHub() {
             </span>
           )}
         </div>
+
+        {/* Caremunicate Docs — prominent next to the call entry points. */}
+        <div className="panel call-hub-docs">
+          <div className="eyebrow">{t('docs.title')}</div>
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => {
+              window.location.href = '/docs';
+            }}
+          >
+            {t('docs.view')}
+          </button>
+        </div>
       </div>
     </section>
   );

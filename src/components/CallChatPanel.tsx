@@ -15,7 +15,7 @@ type CallChatPanelProps = {
 
 export default function CallChatPanel({ onClose }: CallChatPanelProps) {
   const { t } = useLang();
-  const { chatMessages, sendChat, participants } = useCallContext();
+  const { chatMessages, sendChat, refreshChat, participants } = useCallContext();
   const trapRef = useFocusTrap<HTMLElement>(true);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [draft, setDraft] = useState('');
@@ -24,6 +24,12 @@ export default function CallChatPanel({ onClose }: CallChatPanelProps) {
     () => participants.find((person) => person.self)?.name ?? '',
     [participants],
   );
+
+  // Load history on mount (in addition to the join-time load), so opening the
+  // panel always reflects the persisted table immediately.
+  useEffect(() => {
+    void refreshChat();
+  }, [refreshChat]);
 
   // Pin to the newest message.
   useEffect(() => {
@@ -83,8 +89,9 @@ export default function CallChatPanel({ onClose }: CallChatPanelProps) {
         <input
           className="input"
           value={draft}
-          placeholder={t('chat.writeMessage')}
-          aria-label={t('chat.writeMessage')}
+          placeholder={t('chat.typeMessage')}
+          aria-label={t('chat.typeMessage')}
+          enterKeyHint="send"
           onChange={(event) => setDraft(event.target.value)}
         />
         <button
