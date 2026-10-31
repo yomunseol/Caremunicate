@@ -45,11 +45,15 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
 
     const q = asString(req.query?.q).trim();
     if (!q) {
-      res.status(400).json({ error: 'missing q' });
+      res.status(400).json({ error: 'Query is required' });
       return;
     }
 
-    const lang = asString(req.query?.lang).trim() || 'en';
+    // MapTiler expects a 2-letter language code (e.g. "ko", not "ko-KR").
+    const rawLang = asString(req.query?.lang).trim();
+    const safeLang = rawLang ? rawLang.split('-')[0] : 'en';
+    console.log('Geocoding query:', q, 'lang:', safeLang);
+
     const lat = asString(req.query?.lat).trim();
     const lon = asString(req.query?.lon).trim();
 
@@ -74,7 +78,7 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     let url =
       `${ENDPOINT}/${encodedQuery}.json` +
       `?key=${encodeURIComponent(apiKey)}` +
-      `&language=${encodeURIComponent(lang)}` +
+      `&language=${encodeURIComponent(safeLang)}` +
       '&limit=20';
     if (lat && lon) url += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
 

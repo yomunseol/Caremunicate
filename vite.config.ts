@@ -28,15 +28,17 @@ export default defineConfig(({ mode }) => {
 
       server.middlewares.use('/api/geocode', (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
-        const query = url.searchParams.get('q') ?? '';
-        const lang = url.searchParams.get('lang') ?? 'en';
+        const query = (url.searchParams.get('q') ?? '').trim();
+        const rawLang = (url.searchParams.get('lang') ?? '').trim();
+        const lang = rawLang ? rawLang.split('-')[0] : 'en';
         const lat = url.searchParams.get('lat') ?? '';
         const lon = url.searchParams.get('lon') ?? '';
 
-        if (!query.trim()) {
-          send(res, 400, { error: 'missing q' });
+        if (!query) {
+          send(res, 400, { error: 'Query is required' });
           return;
         }
+        console.log('Geocoding query:', query, 'lang:', lang);
         if (!apiKey) {
           console.error(
             '[GEOCODE] API key missing (dev) — set NEXT_PUBLIC_GEOCODER_API_KEY or GEOCODER_API_KEY in .env.local',
@@ -102,8 +104,9 @@ export default defineConfig(({ mode }) => {
 out center;`;
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 9_900);
+        const timer = setTimeout(() => controller.abort(), 8_000);
 
+        console.log('Fetching Overpass with 8s timeout...');
         void fetch('https://overpass.kumi.systems/api/interpreter', {
           method: 'POST',
           headers: {

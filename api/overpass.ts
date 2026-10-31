@@ -19,7 +19,7 @@ const ENDPOINT = 'https://overpass.kumi.systems/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
 // Beat Cloudflare's ~10s hard limit so we return a clean JSON 504 instead of a
 // gateway HTML page.
-const TIMEOUT_MS = 9_900;
+const TIMEOUT_MS = 8_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
@@ -108,6 +108,7 @@ out center;`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+    console.log('Fetching Overpass with 8s timeout...');
     let upstream: Response;
     try {
       upstream = await fetch(ENDPOINT, {
