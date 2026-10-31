@@ -98,13 +98,35 @@ type CarePlacesProps = {
   role?: string;
 };
 
-/** Exact Overpass QL: every medical amenity within 5 km of the centre. */
-const buildOverpassQuery = (lat: number, lon: number): string => `[out:json][timeout:25];
-(
-  node['amenity'~'${AMENITY_REGEX}'](around:${NEAR_RADIUS_M},${lat},${lon});
-  way['amenity'~'${AMENITY_REGEX}'](around:${NEAR_RADIUS_M},${lat},${lon});
-);
-out center;`;
+/** Strip quotes/backslashes and escape regex metacharacters for Overpass. */
+const sanitizeNeedle = (needle: string): string =>
+  needle
+    .replace(/['\\]/g, ' ')
+    .trim()
+    .slice(0, 64)
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Exact Overpass QL: medical amenities within 5 km of the centre. When a text
+ * needle is supplied the SAME set is name-filtered server-side (local + English
+ * names), so the list and the map always receive one identical array.
+ */
+const buildOverpassQuery = (lat: number, lon: number, needle = ''): string => {
+  const name = sanitizeNeedle(needle);
+  const around = `(around:${NEAR_RADIUS_M},${lat},${lon})`;
+  const clauses = name
+    ? [
+        `node['amenity'~'${AMENITY_REGEX}']['name'~'${name}',i]${around};`,
+        `node['amenity'~'${AMENITY_REGEX}']['name:en'~'${name}',i]${around};`,
+        `way['amenity'~'${AMENITY_REGEX}']['name'~'${name}',i]${around};`,
+        `way['amenity'~'${AMENITY_REGEX}']['name:en'~'${name}',i]${around};`,
+      ]
+    : [
+        `node['amenity'~'${AMENITY_REGEX}']${around};`,
+        `way['amenity'~'${AMENITY_REGEX}']${around};`,
+      ];
+  return `[out:json][timeout:25];\n(\n  ${clauses.join('\n  ')}\n);\nout center;`;
+};
 
 /** The mirror the relay fallback targets when the same-origin route is absent. */
 const OVERPASS_FALLBACK_MIRROR = 'https://overpass-api.de/api/interpreter';
@@ -222,9 +244,9 @@ const fetchOverpass = async (
   }
 };
 
-/** Cache key: `cp:{lat2},{lon2}` — centre rounded to 2 decimals. */
-const cacheKey = (lat: number, lon: number): string =>
-  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}`;
+/** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
+const cacheKey = (lat: number, lon: number, needle = ''): string =>
+  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
 
 /** Reads a cached element list, dropping entries older than the TTL. */
 const readCache = (key: string): OverpassElement[] | null => {
@@ -331,8 +353,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  /** Centre of the last search, so the Retry button can repeat it. */
-  const lastCenterRef = useRef<LatLon | null>(null);
+  /** The last search (centre + text), so the Retry button can repeat it. */
+  const lastSearchRef = useRef<{ at: LatLon; needle: string } | null>(null);
 
   const placeName = useCallback(
     (place: PlaceView) => place.name || t('places.eyebrow'),
@@ -373,14 +395,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   // ---- Overpass search ----------------------------------------------------
   const runSearch = useCallback(
-    async (at: LatLon) => {
-      lastCenterRef.current = at;
+    async (at: LatLon, needle = '') => {
+      lastSearchRef.current = { at, needle };
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Hard 15s ceiling: the proxy can hang without ever erroring.
+      // Hard 8s ceiling per the C-01 spec; the proxy can hang without erroring.
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
@@ -391,9 +413,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
-      const key = cacheKey(at.lat, at.lon);
+      const key = cacheKey(at.lat, at.lon, needle);
       const cached = readCache(key);
-      if (cached !== null) {
+      // An EMPTY cached list is not a hit: re-query instead of pinning the UI
+      // empty for ten minutes (the old "list empty while a pin is on the map").
+      if (cached !== null && cached.length > 0) {
         // A cache hit is still a finished search: settle immediately, no network.
         window.clearTimeout(timeoutId);
         if (abortRef.current === controller) {
@@ -410,12 +434,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
       try {
         const payload = await fetchOverpass(
-          buildOverpassQuery(at.lat, at.lon),
+          buildOverpassQuery(at.lat, at.lon, needle),
           controller.signal,
         );
 
         const elements = payload.elements ?? [];
-        writeCache(key, elements);
+        // Never cache an empty result set — it would masquerade as a future hit.
+        if (elements.length > 0) writeCache(key, elements);
 
         const places = elements
           .map(elementToPlace)
@@ -496,30 +521,25 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     event.preventDefault();
     // Overpass is proximity-based: make sure we have a centre, then query.
     if (center) {
-      void runSearch(center);
+      void runSearch(center, query);
     } else {
-      requestLocation((at) => void runSearch(at));
+      requestLocation();
     }
   };
 
   /** Retry the last search after a failure (inline error action). */
   const retrySearch = () => {
-    if (lastCenterRef.current) void runSearch(lastCenterRef.current);
+    const last = lastSearchRef.current;
+    if (last) void runSearch(last.at, last.needle);
   };
 
-  // Typed text narrows the already-loaded set client-side (no extra requests).
-  // Debounced so the filter settles 400ms after the last keystroke.
+  // Typed text drives a debounced SERVER search (name-filtered), so the map and
+  // list always render the SAME result array — never a client-side filter.
   const debouncedQuery = useDebouncedValue(query, 400);
-  const visibleResults = useMemo(() => {
-    const needle = debouncedQuery.trim().toLowerCase();
-    if (!needle) return results;
-    return results.filter(
-      (place) =>
-        place.name.toLowerCase().includes(needle) ||
-        place.amenity.toLowerCase().includes(needle) ||
-        place.address.toLowerCase().includes(needle),
-    );
-  }, [results, debouncedQuery]);
+  useEffect(() => {
+    if (!center) return;
+    void runSearch(center, debouncedQuery);
+  }, [debouncedQuery, center, runSearch]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);
@@ -732,7 +752,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           </button>
           <button
             type="button"
-            onClick={() => requestLocation((at) => void runSearch(at))}
+            onClick={() => requestLocation()}
             disabled={locating}
             aria-pressed={center !== null}
             style={{ ...styles.nearMeButton, ...(center ? styles.nearMeButtonOn : null) }}
@@ -755,13 +775,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             </button>
           </p>
         ) : null}
-        {!isLoading && !error && searched && visibleResults.length === 0 ? (
+        {!isLoading && !error && searched && results.length === 0 ? (
           <p style={styles.muted}>{t('places.noResults')}</p>
         ) : null}
 
-        {!isLoading && !error && visibleResults.length > 0 ? (
+        {!isLoading && !error && results.length > 0 ? (
           <>
-            <ul style={styles.results}>{visibleResults.map((place) => renderPlaceCard(place, place.placeId))}</ul>
+            <ul style={styles.results}>{results.map((place) => renderPlaceCard(place, place.placeId))}</ul>
             <p style={styles.attribution}>
               <a
                 href="https://www.openstreetmap.org/copyright"
@@ -808,7 +828,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                 <Popup>{t('places.usingLocation')}</Popup>
               </Marker>
             ) : null}
-            {visibleResults.map((place) => (
+            {results.map((place) => (
               <Marker
                 key={place.placeId}
                 position={[place.lat, place.lon]}
