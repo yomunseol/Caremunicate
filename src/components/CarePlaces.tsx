@@ -111,31 +111,22 @@ const sanitizeNeedle = (needle: string): string =>
  * needle is supplied the SAME set is name-filtered server-side (local + English
  * names), so the list and the map always receive one identical array.
  */
-const buildOverpassQuery = (
-  lat: number,
-  lon: number,
-  needle = '',
-  locale = '',
-): string => {
+const buildOverpassQuery = (lat: number, lon: number, needle = ''): string => {
   const name = sanitizeNeedle(needle);
   const around = `(around:${NEAR_RADIUS_M},${lat},${lon})`;
 
-  let clauses: string[];
-  if (name) {
-    // Match the local name, the English name, and the UI locale's name tag, so
-    // a Korean user typing "서울아산병원" resolves via name / name:ko.
-    const tags = ['name', 'name:en'];
-    if (locale && !tags.includes(`name:${locale}`)) tags.push(`name:${locale}`);
-    clauses = tags.flatMap((tag) => [
-      `node['amenity'~'${AMENITY_REGEX}']['${tag}'~'${name}',i]${around};`,
-      `way['amenity'~'${AMENITY_REGEX}']['${tag}'~'${name}',i]${around};`,
-    ]);
-  } else {
-    clauses = [
-      `node['amenity'~'${AMENITY_REGEX}']${around};`,
-      `way['amenity'~'${AMENITY_REGEX}']${around};`,
-    ];
-  }
+  // `[~'^name'~needle]` matches ANY name tag — name, name:en, name:ko, name:zh,
+  // name:ja, … — so a facility is found by the name in whichever language was
+  // typed, not only the current UI locale.
+  const clauses = name
+    ? [
+        `node['amenity'~'${AMENITY_REGEX}'][~'^name'~'${name}',i]${around};`,
+        `way['amenity'~'${AMENITY_REGEX}'][~'^name'~'${name}',i]${around};`,
+      ]
+    : [
+        `node['amenity'~'${AMENITY_REGEX}']${around};`,
+        `way['amenity'~'${AMENITY_REGEX}']${around};`,
+      ];
 
   return `[out:json][timeout:25];\n(\n  ${clauses.join('\n  ')}\n);\nout center;`;
 };
@@ -247,9 +238,9 @@ const fetchOverpass = async (
   }
 };
 
-/** Cache key: `cp:{lat2},{lon2}:{locale}:{needle}` — query identity is all four. */
-const cacheKey = (lat: number, lon: number, needle = '', locale = ''): string =>
-  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${locale}:${sanitizeNeedle(needle).toLowerCase()}`;
+/** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
+const cacheKey = (lat: number, lon: number, needle = ''): string =>
+  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
 
 /** Reads a cached element list, dropping entries older than the TTL. */
 const readCache = (key: string): OverpassElement[] | null => {
@@ -333,7 +324,7 @@ function MapFocus({
 
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
-  const { t, tString, locale } = useLang();
+  const { t, tString } = useLang();
 
   const { role: profileRole } = useRole();
   const effectiveRole = (role || profileRole).toLowerCase();
@@ -416,7 +407,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
-      const key = cacheKey(at.lat, at.lon, needle, locale);
+      const key = cacheKey(at.lat, at.lon, needle);
       const cached = readCache(key);
       // An EMPTY cached list is not a hit: re-query instead of pinning the UI
       // empty for ten minutes (the old "list empty while a pin is on the map").
@@ -437,7 +428,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
       try {
         const payload = await fetchOverpass(
-          buildOverpassQuery(at.lat, at.lon, needle, locale),
+          buildOverpassQuery(at.lat, at.lon, needle),
           controller.signal,
         );
 
@@ -483,7 +474,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         if (abortRef.current === controller) setIsLoading(false);
       }
     },
-    [t, locale],
+    [t],
   );
 
   // Abort any in-flight Overpass request on unmount.
