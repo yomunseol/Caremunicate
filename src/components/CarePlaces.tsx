@@ -10,7 +10,6 @@ import {
 import { Search, Star } from 'lucide-react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -20,6 +19,7 @@ import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 // ---------------------------------------------------------------------------
 // Care Places — keyless, credit-card-free map stack.
@@ -37,8 +37,10 @@ import { useLang } from '../i18n';
 
 const OVERPASS_PROXY = '/api/overpass';
 const NEAR_RADIUS_M = 5000;
-/** Hard client ceiling; the proxy allows 15s per mirror. */
-const OVERPASS_TIMEOUT_MS = 15_000;
+/** Hard client ceiling per the C-01 spec (8s). */
+const OVERPASS_TIMEOUT_MS = 8_000;
+/** A rate-limited mirror gets one automatic retry after this pause. */
+const RATE_LIMIT_WAIT_MS = 2_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
 const CACHE_PREFIX = 'cp:';
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -148,7 +150,7 @@ const readDetail = async (response: Response): Promise<string> => {
  *
  * Failures carry a `code` so the caller can append the raw reason.
  */
-const fetchOverpass = async (
+const fetchOverpassOnce = async (
   query: string,
   signal: AbortSignal,
 ): Promise<{ elements?: OverpassElement[] }> => {
@@ -192,6 +194,32 @@ const fetchOverpass = async (
   }
 
   throw overpassError(String(response.status), `${OVERPASS_PROXY} responded ${response.status}`);
+};
+
+const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+/** A 429, or a 502 whose mirror reasons include one, is worth one retry. */
+const isRateLimited = (error: unknown): boolean => {
+  const coded = error as CodedError | null;
+  if (!coded) return false;
+  if (coded.code === '429') return true;
+  return typeof coded.detail === 'string' && coded.detail.includes(':429');
+};
+
+/** One rate-limit retry (wait 2s) around a single Overpass attempt. */
+const fetchOverpass = async (
+  query: string,
+  signal: AbortSignal,
+): Promise<{ elements?: OverpassElement[] }> => {
+  try {
+    return await fetchOverpassOnce(query, signal);
+  } catch (error) {
+    if (isRateLimited(error)) {
+      await sleep(RATE_LIMIT_WAIT_MS);
+      return fetchOverpassOnce(query, signal);
+    }
+    throw error;
+  }
 };
 
 /** Cache key: `cp:{lat2},{lon2}` — centre rounded to 2 decimals. */
@@ -303,6 +331,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  /** Centre of the last search, so the Retry button can repeat it. */
+  const lastCenterRef = useRef<LatLon | null>(null);
 
   const placeName = useCallback(
     (place: PlaceView) => place.name || t('places.eyebrow'),
@@ -344,6 +374,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // ---- Overpass search ----------------------------------------------------
   const runSearch = useCallback(
     async (at: LatLon) => {
+      lastCenterRef.current = at;
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -471,9 +502,16 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     }
   };
 
+  /** Retry the last search after a failure (inline error action). */
+  const retrySearch = () => {
+    if (lastCenterRef.current) void runSearch(lastCenterRef.current);
+  };
+
   // Typed text narrows the already-loaded set client-side (no extra requests).
+  // Debounced so the filter settles 400ms after the last keystroke.
+  const debouncedQuery = useDebouncedValue(query, 400);
   const visibleResults = useMemo(() => {
-    const needle = query.trim().toLowerCase();
+    const needle = debouncedQuery.trim().toLowerCase();
     if (!needle) return results;
     return results.filter(
       (place) =>
@@ -481,7 +519,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         place.amenity.toLowerCase().includes(needle) ||
         place.address.toLowerCase().includes(needle),
     );
-  }, [results, query]);
+  }, [results, debouncedQuery]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);
@@ -709,7 +747,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         {locationError ? <p role="alert" style={styles.error}>{locationError}</p> : null}
 
         {isLoading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
-        {!isLoading && error ? <p role="alert" style={styles.error}>{error}</p> : null}
+        {!isLoading && error ? (
+          <p role="alert" style={styles.error}>
+            {error}{' '}
+            <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+              {t('common.retry')}
+            </button>
+          </p>
+        ) : null}
         {!isLoading && !error && searched && visibleResults.length === 0 ? (
           <p style={styles.muted}>{t('places.noResults')}</p>
         ) : null}
@@ -937,7 +982,8 @@ const styles: Record<string, CSSProperties> = {
   },
   starButtonSaved: { background: 'rgba(62, 169, 133, 0.16)', color: '#216e5d' },
   starButtonBusy: { opacity: 0.55, cursor: 'wait' },
-  mapWrap: { width: '100%' },
+  retryButton: { padding: '0.1rem 0.55rem', fontSize: '0.76rem', marginInlineStart: '0.4rem' },
+  mapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   mapCanvas: { width: '100%', height: 320, borderRadius: '0.9rem', background: '#fff' },
   attribution: { margin: 0, color: '#557b76', fontSize: '0.72rem', textAlign: 'end' },
   attributionLink: { color: '#216e5d', textDecoration: 'underline' },

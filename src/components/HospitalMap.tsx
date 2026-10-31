@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from 're
 import { createPortal } from 'react-dom';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
 import { LocateFixed, MapPin, Plus, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRole } from '../context/RoleContext';
@@ -10,6 +9,7 @@ import { useToast } from '../context/ToastContext';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import {
   SEARCH_TIMEOUT_MS,
   addHospital,
@@ -203,10 +203,22 @@ export default function HospitalMap() {
     );
   };
 
+  const abortRef = useRef<AbortController | null>(null);
+  const lastSearchRef = useRef<{ needle: string; at: LatLon } | null>(null);
+
   const runSearch = useCallback(
     async (needle: string, at: LatLon) => {
+      // Supersede any in-flight request so only the newest one settles state.
+      abortRef.current?.abort();
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
+      abortRef.current = controller;
+      lastSearchRef.current = { needle, at };
+
+      let timedOut = false;
+      const timeoutId = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, SEARCH_TIMEOUT_MS);
 
       setSearching(true);
       setSearchError('');
@@ -214,11 +226,13 @@ export default function HospitalMap() {
 
       try {
         const places = await searchPlaces(needle, at, controller.signal);
+        if (abortRef.current !== controller) return;
         setResults(places);
         setSearched(true);
       } catch (error) {
+        if (abortRef.current !== controller) return;
         if ((error as Error)?.name === 'AbortError') {
-          setSearchError(`${t('places.searchTimeout')} (timeout)`);
+          if (timedOut) setSearchError(`${t('places.searchFailed')} (timeout)`);
         } else {
           console.error('HOSPITAL_ERROR:', error);
           setSearchError(`${t('places.searchFailed')} (${describeError(error)})`);
@@ -226,11 +240,16 @@ export default function HospitalMap() {
         }
       } finally {
         window.clearTimeout(timeoutId);
-        setSearching(false);
+        if (abortRef.current === controller) setSearching(false);
       }
     },
     [t],
   );
+
+  const retrySearch = () => {
+    const last = lastSearchRef.current;
+    if (last) void runSearch(last.needle, last.at);
+  };
 
   const handleSearch = () => {
     const needle = query.trim();
@@ -240,6 +259,18 @@ export default function HospitalMap() {
     // browser refuses a location.
     void runSearch(needle, center ?? SEOUL);
   };
+
+  // Debounced live search (400ms) — typing no longer waits for a button press,
+  // and rapid keystrokes collapse into one Overpass request.
+  const debouncedQuery = useDebouncedValue(query, 400);
+  useEffect(() => {
+    const needle = debouncedQuery.trim();
+    if (!needle) return;
+    void runSearch(needle, center ?? SEOUL);
+  }, [debouncedQuery, center, runSearch]);
+
+  // Abort any in-flight search on unmount.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const pickResult = (place: OsmPlace) => {
     setDraft({ lat: place.lat, lon: place.lon });
@@ -378,7 +409,14 @@ export default function HospitalMap() {
               </button>
             </div>
             {geoError ? <p role="alert" style={styles.error}>{geoError}</p> : null}
-            {searchError ? <p role="alert" style={styles.error}>{searchError}</p> : null}
+            {searchError ? (
+              <p role="alert" style={styles.error}>
+                {searchError}{' '}
+                <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+                  {t('common.retry')}
+                </button>
+              </p>
+            ) : null}
             {!searching && !searchError && searched && results.length === 0 ? (
               <p style={styles.muted}>{t('hospital.noResultsHint')}</p>
             ) : null}
@@ -560,7 +598,8 @@ const styles: Record<string, CSSProperties> = {
   count: { color: '#216e5d', fontSize: '0.86rem' },
   muted: { margin: 0, color: '#557b76', fontSize: '0.84rem', lineHeight: 1.5 },
   error: { margin: 0, color: '#9c3636', fontSize: '0.84rem', fontWeight: 600, lineHeight: 1.5 },
-  mapWrap: { position: 'relative', isolation: 'isolate', width: '100%' },
+  retryButton: { padding: '0.1rem 0.55rem', fontSize: '0.76rem', marginInlineStart: '0.4rem' },
+  mapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   search: { maxWidth: '22rem' },
   mapCanvas: { width: '100%', height: 500, borderRadius: '1rem', background: '#fff' },
   list: {
@@ -620,7 +659,7 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: '0 0 0 2px rgba(82, 183, 136, 0.2)',
     background: 'rgba(82, 183, 136, 0.08)',
   },
-  pickMapWrap: { position: 'relative', isolation: 'isolate', width: '100%' },
+  pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
 };

@@ -206,6 +206,8 @@ type PricingSectionProps = {
   subheading: string;
   currentPlan?: PlanId | null;
   busyPlan?: PlanId | null;
+  /** True when a session exists: CTAs become an info-only "Current plan" chip. */
+  authed?: boolean;
 };
 
 export default function PricingSection({
@@ -214,6 +216,7 @@ export default function PricingSection({
   subheading,
   currentPlan = null,
   busyPlan = null,
+  authed = false,
 }: PricingSectionProps) {
   const { t } = useLang();
   const plans = getPlans(t);
@@ -234,10 +237,10 @@ export default function PricingSection({
 
           return (
             <article className={`plan-card ${plan.badge ? 'featured' : ''}`} key={plan.id}>
-              {plan.badge || isCurrent ? (
+              {plan.badge || (isCurrent && !authed) ? (
                 <div className="plan-badges">
                   {plan.badge ? <span className="plan-badge">{plan.badge}</span> : null}
-                  {isCurrent ? <span className="plan-current">{t('pricing.currentPlan')}</span> : null}
+                  {isCurrent && !authed ? <span className="plan-current">{t('pricing.currentPlan')}</span> : null}
                 </div>
               ) : null}
 
@@ -254,15 +257,21 @@ export default function PricingSection({
                 ))}
               </ul>
 
-              <button
-                className="primary-button cta-button"
-                type="button"
-                onClick={() => onSelectPlan(plan.id)}
-                aria-busy={isBusy}
-                aria-label={`${plan.cta} — ${plan.name} ${t('common.plan')}`}
-              >
-                {isBusy ? t('pricing.saving') : plan.cta}
-              </button>
+              {authed ? (
+                isCurrent ? (
+                  <span className="plan-current-chip">{t('pricing.currentPlan')}</span>
+                ) : null
+              ) : (
+                <button
+                  className="primary-button cta-button"
+                  type="button"
+                  onClick={() => onSelectPlan(plan.id)}
+                  aria-busy={isBusy}
+                  aria-label={`${plan.cta} — ${plan.name} ${t('common.plan')}`}
+                >
+                  {isBusy ? t('pricing.saving') : plan.cta}
+                </button>
+              )}
             </article>
           );
         })}

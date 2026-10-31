@@ -14,7 +14,7 @@ const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 const OVERPASS_PROXY = '/api/overpass';
 /** Name search radius around the supplied centre. */
 const SEARCH_RADIUS_M = 10_000;
-export const SEARCH_TIMEOUT_MS = 15_000;
+export const SEARCH_TIMEOUT_MS = 8_000;
 
 export type Hospital = {
   id: string;
@@ -119,6 +119,10 @@ const elementToPlace = (element: OsmElement): OsmPlace | null => {
  * proxy. Results are de-duplicated by OSM element id. Throws on a non-ok
  * response so the caller can surface the raw reason.
  */
+/** A rate-limited mirror gets one automatic retry after this pause. */
+const RATE_LIMIT_WAIT_MS = 2_000;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export async function searchPlaces(
   query: string,
   at: LatLon,
@@ -127,10 +131,21 @@ export async function searchPlaces(
   const needle = sanitizeQuery(query);
   if (!needle) return [];
 
-  const response = await fetch(
-    `${OVERPASS_PROXY}?data=${encodeURIComponent(buildSearchQuery(needle, at))}`,
-    { headers: { Accept: 'application/json' }, signal },
-  );
+  const url = `${OVERPASS_PROXY}?data=${encodeURIComponent(buildSearchQuery(needle, at))}`;
+  const attempt = () => fetch(url, { headers: { Accept: 'application/json' }, signal });
+
+  let response = await attempt();
+
+  // 429 (or a 502 whose mirror reasons include one) gets one retry after 2s.
+  let rateLimited = response.status === 429;
+  if (!rateLimited && response.status === 502) {
+    const detail = await response.clone().text().catch(() => '');
+    rateLimited = detail.includes(':429');
+  }
+  if (rateLimited) {
+    await sleep(RATE_LIMIT_WAIT_MS);
+    response = await attempt();
+  }
 
   if (!response.ok) {
     throw new Error(`Overpass ${response.status}`);

@@ -8,6 +8,7 @@ import { ToastProvider } from './context/ToastContext';
 import { MessengerProvider } from './context/MessengerContext';
 import { LangProvider } from './i18n';
 import './styles/globals.css';
+import 'leaflet/dist/leaflet.css';
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(

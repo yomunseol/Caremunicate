@@ -15,6 +15,7 @@ import CallHub from './components/CallHub';
 import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
 import HospitalMap from './components/HospitalMap';
+import HeroMap from './components/HeroMap';
 import DoctorList from './components/DoctorList';
 import MyCare from './components/MyCare';
 import PatientsList from './components/PatientsList';
@@ -870,6 +871,9 @@ function App() {
         {route === 'home' && (
           <>
             <section className="section hero-section">
+              <HeroMap />
+              <div className="hero-scrim" aria-hidden="true" />
+
               <div className="hero-card">
                 <div className="eyebrow">{t('home.heroEyebrow')}</div>
                 <h1 className="hero-title">
@@ -886,17 +890,21 @@ function App() {
                 </div>
 
                 <div className="cta-row">
-                  <button className="primary-button" type="button" onClick={() => navigate('signup')}>
-                    {t('common.createAccount')}
-                  </button>
-                  <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
-                    {t('common.viewPricing')}
-                  </button>
+                  {currentUser ? (
+                    <button className="primary-button" type="button" onClick={() => navigate('profile')}>
+                      {t('header.dashboard')}
+                    </button>
+                  ) : (
+                    <>
+                      <button className="primary-button" type="button" onClick={() => navigate('signup')}>
+                        {t('common.createAccount')}
+                      </button>
+                      <button className="secondary-button" type="button" onClick={() => navigate('pricing')}>
+                        {t('common.viewPricing')}
+                      </button>
+                    </>
+                  )}
                 </div>
-              </div>
-
-              <div className="hero-visual">
-                <img src="/Caremunicate_carousel_photo.jpg" alt={t('home.heroImageAlt')} />
               </div>
             </section>
 
@@ -958,6 +966,7 @@ function App() {
               onSelectPlan={(plan) => void selectPlan(plan)}
               currentPlan={currentUser ? currentPlanId : null}
               busyPlan={pendingPlan}
+              authed={Boolean(currentUser)}
             />
 
             <section className="section">
@@ -968,12 +977,20 @@ function App() {
                 </div>
 
                 <div className="cta-row">
-                  <button className="primary-button" type="button" onClick={() => openAuth('signup')}>
-                    {t('common.createAccount')}
-                  </button>
-                  <button className="secondary-button" type="button" onClick={() => openAuth('signup', 'doctor')}>
-                    {t('home.imADoctor')}
-                  </button>
+                  {currentUser ? (
+                    <button className="primary-button" type="button" onClick={() => navigate('profile')}>
+                      {t('header.dashboard')}
+                    </button>
+                  ) : (
+                    <>
+                      <button className="primary-button" type="button" onClick={() => openAuth('signup')}>
+                        {t('common.createAccount')}
+                      </button>
+                      <button className="secondary-button" type="button" onClick={() => openAuth('signup', 'doctor')}>
+                        {t('home.imADoctor')}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </section>
@@ -1329,6 +1346,7 @@ function App() {
             onSelectPlan={(plan) => void selectPlan(plan)}
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
+            authed={Boolean(currentUser)}
           />
         )}
         </ErrorBoundary>
