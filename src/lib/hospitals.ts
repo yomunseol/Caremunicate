@@ -4,17 +4,17 @@ import { supabase } from './supabase';
 // Hospitals: the community map backed by public.hospitals, plus the location
 // search that feeds it.
 //
-// The search reuses the SAME same-origin /api/overpass proxy Care Places uses —
-// no Nominatim, no third-party geocoder, no key. Overpass is proximity-based,
-// so a search needs a centre point (the caller supplies the user's location).
+// The search POSTs DIRECTLY to overpass-api.de (CORS: *) — no proxy, no key.
+// Overpass is proximity-based, so a search needs a centre point (the caller
+// supplies the user's location).
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-const OVERPASS_PROXY = '/api/overpass';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 /** Name search radius around the supplied centre. */
 const SEARCH_RADIUS_M = 10_000;
-export const SEARCH_TIMEOUT_MS = 26_000;
+export const SEARCH_TIMEOUT_MS = 25_000;
 
 export type Hospital = {
   id: string;
@@ -131,18 +131,23 @@ export async function searchPlaces(
   const needle = sanitizeQuery(query);
   if (!needle) return [];
 
-  const url = `${OVERPASS_PROXY}?data=${encodeURIComponent(buildSearchQuery(needle, at))}`;
-  const attempt = () => fetch(url, { headers: { Accept: 'application/json' }, signal });
+  // Direct browser POST (Overpass sends Access-Control-Allow-Origin: *).
+  const data = buildSearchQuery(needle, at);
+  const attempt = () =>
+    fetch(OVERPASS_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: new URLSearchParams({ data }),
+      signal,
+    });
 
   let response = await attempt();
 
-  // 429 (or a 502 whose mirror reasons include one) gets one retry after 2s.
-  let rateLimited = response.status === 429;
-  if (!rateLimited && response.status === 502) {
-    const detail = await response.clone().text().catch(() => '');
-    rateLimited = detail.includes(':429');
-  }
-  if (rateLimited) {
+  // A 429 gets one retry after 2s.
+  if (response.status === 429) {
     await sleep(RATE_LIMIT_WAIT_MS);
     response = await attempt();
   }

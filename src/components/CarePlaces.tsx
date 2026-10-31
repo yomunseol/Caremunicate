@@ -24,21 +24,20 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 // ---------------------------------------------------------------------------
 // Care Places — keyless, credit-card-free map stack.
 //
-//   Search : same-origin /api/overpass (see server/overpass.ts) — the server
-//            reaches the Overpass mirrors and caches the answer at the edge.
-//            No key, no quota account, OSM data. The browser makes no
-//            cross-origin Overpass request.
+//   Search : DIRECT browser POST to overpass-api.de (replies CORS: *), 25s
+//            abort — no serverless proxy, so Cloudflare/Vercel 504s cannot
+//            kill it. No key, no quota account, OSM data.
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
-// Nominatim is gone; Overpass is proximity-based, so a location is required
-// before a query can run (the `around:` filter needs a centre point).
+// Near me is proximity-based, so a radial Overpass query needs a centre point.
+// Typed names go to Nominatim (see fetchNominatim) instead.
 // ---------------------------------------------------------------------------
 
-const OVERPASS_PROXY = '/api/overpass';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const NEAR_RADIUS_M = 5000;
-/** Client guard, just above the route's 25s budget so its 504 wins the race. */
-const OVERPASS_TIMEOUT_MS = 26_000;
+/** Direct browser request; the QL itself declares [timeout:25]. */
+const OVERPASS_TIMEOUT_MS = 25_000;
 /** A rate-limited mirror gets one automatic retry after this pause. */
 const RATE_LIMIT_WAIT_MS = 2_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
@@ -168,16 +167,22 @@ const readFailure = async (
 };
 
 /**
- * Overpass through the same-origin `/api/overpass` route (one fast mirror, POST,
- * strict 8s server timeout). Failures carry a `code` so the caller can append
- * the raw reason.
+ * Overpass fetched DIRECTLY from the browser (Overpass replies with
+ * `Access-Control-Allow-Origin: *`), bypassing the serverless proxy and its
+ * Cloudflare/Vercel 504s. POST form body; the 25s abort comes from the caller.
+ * Failures carry a `code` so the caller can append the raw reason.
  */
 const fetchOverpassOnce = async (
   query: string,
   signal: AbortSignal,
 ): Promise<{ elements?: OverpassElement[] }> => {
-  const response = await fetch(`${OVERPASS_PROXY}?data=${encodeURIComponent(query)}`, {
-    headers: { Accept: 'application/json' },
+  const response = await fetch(OVERPASS_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
+    },
+    body: new URLSearchParams({ data: query }),
     signal,
   });
 
@@ -185,11 +190,11 @@ const fetchOverpassOnce = async (
     return (await response.json()) as { elements?: OverpassElement[] };
   }
 
-  // 429 / 504 / 500 / 502: read the JSON once and surface the real reasons.
+  // 429 / 5xx: read the body once and surface the real reasons.
   const { reasons, detail } = await readFailure(response);
   throw overpassError(
     String(response.status),
-    reasons.join(', ') || detail || `${OVERPASS_PROXY} responded ${response.status}`,
+    reasons.join(', ') || detail || `Overpass responded ${response.status}`,
   );
 };
 
@@ -446,7 +451,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   // ---- Search -------------------------------------------------------------
   // Two sources, deliberately split:
-  //   • Near me    → Overpass radial query (/api/overpass).
+  //   • Near me    → Overpass radial query (direct POST to overpass-api.de).
   //   • Typed name → Nominatim (/api/nominatim) — any-language name search that
   //                  does not depend on a 5 km radial scan.
   const lastTextRef = useRef('');

@@ -16,8 +16,9 @@ single Resend key for reminder email.
 - **Supabase** = auth + Postgres + Realtime + Storage.
 - **Own WebRTC call engine** — no Jitsi, no corsproxy, no third-party calling.
 - **Resend** for transactional email (server-side only — see Reminders).
-- **Overpass** through our own `/api/overpass` route (`server/overpass.ts` core;
-  mirrors rotate server-side, 15s each).
+- **Overpass** fetched DIRECTLY from the browser (`overpass-api.de` replies
+  `Access-Control-Allow-Origin: *`; POST form body, 25s abort) — no serverless
+  proxy, so Cloudflare/Vercel 504s cannot kill a search.
 - **Leaflet** maps (OpenStreetMap tiles), wrapped in `isolation: isolate` so its
   panes never escape above the app chrome.
 - Zero new npm dependencies unless the user names one explicitly.
@@ -203,8 +204,8 @@ value_*)` · `email_otp_codes(user_id, code_hash, expires_at, attempts)` ·
   `hospitals(id, name, latitude, longitude, osm_id, added_by)`.
 - Pins are a **custom mint `L.divIcon`** (teardrop + white disc + cross). The
   default blue Leaflet marker must never render.
-- Tiles are OSM raster; the location search goes through the **same-origin
-  `/api/overpass`** proxy (`src/lib/hospitals.ts`) — no Nominatim, no geocoder.
+- Tiles are OSM raster; the location search is a **direct browser POST** to
+  `overpass-api.de` (`src/lib/hospitals.ts`) — no proxy, no Nominatim.
 - Adding is **provider-only** (`isProvider`); the row is written with
   `added_by = auth.uid()`. RLS: read for all authenticated, insert/delete own.
 - The add form is **portaled to `<body>`** (the fixed-overlay rule) and carries

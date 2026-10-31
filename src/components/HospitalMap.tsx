@@ -25,7 +25,7 @@ import {
 //
 //   Tiles  : OpenStreetMap raster tiles, no key.
 //   Pins   : a custom MINT DivIcon (never Leaflet's default blue marker).
-//   Search : same-origin /api/overpass via src/lib/hospitals.ts — no geocoder.
+//   Search : direct POST to overpass-api.de via src/lib/hospitals.ts.
 //   Add    : providers only; click the map or pick a search result, name it,
 //            then insert into public.hospitals with the current user as author.
 // ---------------------------------------------------------------------------
