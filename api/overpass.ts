@@ -15,9 +15,11 @@ import { createClient } from '@supabase/supabase-js';
 
 export const config = { runtime: 'nodejs' };
 
-const ENDPOINT = 'https://overpass-api.de/api/interpreter';
+const ENDPOINT = 'https://overpass.kumi.systems/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const TIMEOUT_MS = 25_000;
+// Beat Cloudflare's ~10s hard limit so we return a clean JSON 504 instead of a
+// gateway HTML page.
+const TIMEOUT_MS = 9_900;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';

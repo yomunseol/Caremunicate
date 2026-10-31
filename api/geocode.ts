@@ -89,13 +89,9 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     }
 
     if (!upstream.ok) {
-      const body = await upstream.text().catch(() => '');
-      console.error('[GEOCODE] upstream', upstream.status, body.slice(0, 200));
-      if (upstream.status === 429) {
-        res.status(429).json({ error: 'rate limited' });
-        return;
-      }
-      res.status(500).json({ error: 'geocoder failed', status: upstream.status, detail: body.slice(0, 200) });
+      const errorText = await upstream.text().catch(() => '');
+      console.error('Maptiler Error:', upstream.status, errorText);
+      res.status(upstream.status).json({ error: `Geocoder failed: ${upstream.status}` });
       return;
     }
 
