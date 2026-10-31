@@ -4,12 +4,16 @@
 // "Near me" ONLY. It never accepts free text: it requires lat/lon and builds a
 // bounded radial query itself. A missing lat/lon is an immediate 400.
 //
+// RESILIENT: cache first. If the live API fails and we have any older cached
+// row, return it with source 'stale_cache' instead of an error. A 504 is only
+// returned when the cache is empty too.
+//
 // The WHOLE route runs under a 9s global deadline (Promise.race) so a hanging
 // Supabase cache or slow upstream can never let Cloudflare/Vercel kill the
-// process and return an HTML 504 page — we always answer with clean JSON.
+// process and return an HTML 504 page.
 //
 //   GET /api/overpass?lat=<n>&lon=<n>&radius=<m>
-//   -> 200 { version, elements: [...] }
+//   -> 200 { data: { elements }, source: 'cache' | 'live' | 'stale_cache', warning? }
 //   -> 400 { error: 'lat and lon are required for Overpass' }
 //   -> 504 { error: 'Search timed out. Please try again.' }
 // ---------------------------------------------------------------------------
@@ -29,6 +33,7 @@ const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
 const TIMEOUT_ERROR = 'Search timed out. Please try again.';
+const STALE_WARNING = 'Live search unavailable';
 
 // Server-side Supabase for the shared cache. Either env name works; a missing
 // env simply disables the cache and never blocks the route.
@@ -65,7 +70,28 @@ const outcome = (status: number, body: unknown, cacheControl?: string): Outcome 
   cacheControl,
 });
 
-/** The route's actual work: guard, cache, fetch, cache-save. */
+const hasElements = (value: unknown): value is { elements: unknown[] } =>
+  Boolean(value) && Array.isArray((value as { elements?: unknown }).elements);
+
+/** Any cached row for this key, regardless of age — used only as a fallback. */
+async function readStaleCache(cacheKey: string): Promise<unknown | null> {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('overpass_cache')
+      .select('response_data')
+      .eq('cache_key', cacheKey)
+      .maybeSingle();
+    if (error || !data) return null;
+    const cached = (data as { response_data?: unknown }).response_data;
+    return hasElements(cached) ? cached : null;
+  } catch (error) {
+    console.error('Stale cache read failed:', error);
+    return null;
+  }
+}
+
+/** The route's actual work: guard, cache, fetch, stale fallback, cache-save. */
 async function runOverpass(req: ProxyRequest): Promise<Outcome> {
   if (req.method && req.method !== 'GET' && req.method !== 'POST') {
     return outcome(405, { error: 'method not allowed' });
@@ -98,14 +124,14 @@ out center;`;
 
   const cacheKey = `${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
 
-  // Cache is a performance optimization only: never let it crash or block.
+  // ---- Step 1: fresh cache ----
   if (supabase) {
     try {
       const { data, error } = await supabase.rpc('get_overpass_cache', { p_key: cacheKey });
       if (error) {
         console.error('Cache failed, fetching direct:', error);
-      } else if (data && Array.isArray((data as { elements?: unknown }).elements)) {
-        return outcome(200, data);
+      } else if (hasElements(data)) {
+        return outcome(200, { data, source: 'cache' });
       }
     } catch (error) {
       console.error('Cache failed, fetching direct:', error);
@@ -114,13 +140,14 @@ out center;`;
     console.error('Cache unavailable (Supabase env missing), fetching direct');
   }
 
+  // ---- Step 2: live fetch ----
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   console.log('Fetching Overpass with 8s timeout...');
-  let upstream: Response;
+  let live: { elements: unknown[] } | null = null;
   try {
-    upstream = await fetch(ENDPOINT, {
+    const upstream = await fetch(ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -131,45 +158,46 @@ out center;`;
       signal: controller.signal,
       cache: 'no-store',
     });
-  } catch (error) {
-    const name = error instanceof Error ? error.name : 'err';
-    console.error('Overpass API error:', error);
-    if (name === 'AbortError' || name === 'TimeoutError') {
-      return outcome(504, { error: TIMEOUT_ERROR });
+
+    if (!upstream.ok) {
+      console.error('Overpass API error:', upstream.status);
+    } else {
+      const payload = (await upstream.json()) as { elements?: unknown };
+      if (hasElements(payload)) live = payload;
+      else console.error('Overpass API error: invalid payload');
     }
-    throw error;
+  } catch (error) {
+    console.error('Overpass API error:', error);
   } finally {
     clearTimeout(timer);
   }
 
-  if (!upstream.ok) {
-    console.error('Overpass API error:', upstream.status);
-    if (upstream.status === 429) {
-      return outcome(429, { error: 'rate limited' });
+  // ---- Step 3: live success ----
+  if (live) {
+    if (supabase && live.elements.length > 0) {
+      try {
+        const { error } = await supabase.rpc('save_overpass_cache', {
+          p_key: cacheKey,
+          p_data: live,
+        });
+        if (error) console.error('Cache save failed:', error);
+      } catch (error) {
+        console.error('Cache save failed:', error);
+      }
     }
-    return outcome(500, { error: 'overpass failed', status: upstream.status });
+    return outcome(
+      200,
+      { data: live, source: 'live' },
+      live.elements.length > 0 ? CACHE_CONTROL : NO_STORE,
+    );
   }
 
-  const payload = (await upstream.json()) as { elements?: unknown };
-  if (!Array.isArray(payload?.elements)) {
-    console.error('Overpass API error: invalid payload');
-    return outcome(500, { error: 'invalid payload' });
+  // ---- Step 4: stale cache, then 504 ----
+  const stale = await readStaleCache(cacheKey);
+  if (stale) {
+    return outcome(200, { data: stale, source: 'stale_cache', warning: STALE_WARNING });
   }
-
-  // Persist for everyone else; a failed save never blocks the response.
-  if (supabase && payload.elements.length > 0) {
-    try {
-      const { error } = await supabase.rpc('save_overpass_cache', {
-        p_key: cacheKey,
-        p_data: payload,
-      });
-      if (error) console.error('Cache save failed:', error);
-    } catch (error) {
-      console.error('Cache save failed:', error);
-    }
-  }
-
-  return outcome(200, payload, payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
+  return outcome(504, { error: TIMEOUT_ERROR });
 }
 
 /** Race `task` against a hard deadline, clearing the timer when either settles. */

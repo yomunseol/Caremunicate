@@ -54,9 +54,6 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     const safeLang = rawLang ? rawLang.split('-')[0] : 'en';
     console.log('Geocoding query:', q, 'lang:', safeLang);
 
-    const lat = asString(req.query?.lat).trim();
-    const lon = asString(req.query?.lon).trim();
-
     // Read at runtime, exactly as specified. Either name works on Vercel.
     const apiKey = process.env.NEXT_PUBLIC_GEOCODER_API_KEY || process.env.GEOCODER_API_KEY;
     if (!apiKey) {
@@ -73,28 +70,26 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
       return;
     }
 
-    // Strictly encode the query for the path segment.
-    const encodedQuery = encodeURIComponent(q);
-    let url =
-      `${ENDPOINT}/${encodedQuery}.json` +
-      `?key=${encodeURIComponent(apiKey)}` +
-      `&lang=${encodeURIComponent(safeLang)}` +
-      '&limit=20';
-    if (lat && lon) url += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
+    // Exact MapTiler URL: path-encoded query, 2-letter language.
+    const finalUrl =
+      `${ENDPOINT}/${encodeURIComponent(q)}.json` +
+      `?key=${apiKey}` +
+      `&lang=${safeLang}`;
+    console.log('Maptiler Request URL:', finalUrl);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     let upstream: Response;
     try {
-      upstream = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+      upstream = await fetch(finalUrl, { headers: { Accept: 'application/json' }, signal: controller.signal });
     } finally {
       clearTimeout(timer);
     }
 
     if (!upstream.ok) {
-      const errorText = await upstream.text().catch(() => '');
-      console.error('Maptiler Error:', upstream.status, errorText);
+      const raw = await upstream.text().catch(() => '');
+      console.error('Maptiler Raw Error:', raw);
       res.status(upstream.status).json({ error: `Geocoder failed: ${upstream.status}` });
       return;
     }

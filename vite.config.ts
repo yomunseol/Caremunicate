@@ -31,8 +31,6 @@ export default defineConfig(({ mode }) => {
         const query = (url.searchParams.get('q') ?? '').trim();
         const rawLang = (url.searchParams.get('lang') ?? '').trim();
         const lang = rawLang ? rawLang.split('-')[0] : 'en';
-        const lat = url.searchParams.get('lat') ?? '';
-        const lon = url.searchParams.get('lon') ?? '';
 
         if (!query) {
           send(res, 400, { error: 'Query is required' });
@@ -47,18 +45,17 @@ export default defineConfig(({ mode }) => {
           return;
         }
 
-        let target =
-          `https://api.maptiler.com/geocoding/${encodeURIComponent(query.trim())}.json` +
-          `?key=${encodeURIComponent(apiKey)}` +
-          `&lang=${encodeURIComponent(lang)}` +
-          '&limit=20';
-        if (lat && lon) target += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
+        const target =
+          `https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json` +
+          `?key=${apiKey}` +
+          `&lang=${lang}`;
+        console.log('Maptiler Request URL:', target);
 
         void fetch(target, { headers: { Accept: 'application/json' } })
           .then(async (upstream) => {
             if (!upstream.ok) {
-              const errorText = await upstream.text().catch(() => '');
-              console.error('Maptiler Error:', upstream.status, errorText);
+              const raw = await upstream.text().catch(() => '');
+              console.error('Maptiler Raw Error:', raw);
               send(res, upstream.status, { error: `Geocoder failed: ${upstream.status}` });
               return;
             }

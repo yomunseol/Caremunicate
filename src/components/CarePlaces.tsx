@@ -131,11 +131,17 @@ const readFailure = async (
   }
 };
 
+type NearbyResponse = {
+  data?: { elements?: OverpassElement[] };
+  source?: 'cache' | 'live' | 'stale_cache' | string;
+  warning?: string;
+};
+
 /** Near me → the lat/lon-only Overpass route (no text ever reaches it). */
 const fetchOverpassNearby = async (
   at: LatLon,
   signal: AbortSignal,
-): Promise<{ elements?: OverpassElement[] }> => {
+): Promise<NearbyResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
@@ -155,7 +161,7 @@ const fetchOverpassNearby = async (
     );
   }
 
-  return (await response.json()) as { elements?: OverpassElement[] };
+  return (await response.json()) as NearbyResponse;
 };
 
 /** Typed search is one network call; 800ms respects the geocoder's limits. */
@@ -338,6 +344,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState('');
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
+  // True when the route fell back to stale cache (or returned 504): show the
+  // calm yellow notice instead of a red error; existing favourites stay above.
+  const [fallbackNotice, setFallbackNotice] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   /** The last search (kind + centre + text), so Retry can repeat it exactly. */
@@ -415,6 +424,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setIsLoading(true);
       setSearched(false);
       setError('');
+      setFallbackNotice(false);
 
       try {
         const places = await load(controller.signal);
@@ -434,6 +444,15 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             console.error('SEARCH_ERROR:', caught);
             setError(`${t('places.searchFailed')} (timeout)`);
           }
+          return;
+        }
+
+        // A nearby 504 with no cached data at all: show the calm yellow notice
+        // (the favourites above remain usable), not a red error.
+        if (kind === 'nearby' && code === '504') {
+          console.warn('SEARCH_FALLBACK:', caught);
+          setFallbackNotice(true);
+          setResults([]);
           return;
         }
 
@@ -471,7 +490,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         // 2) The route owns the shared Supabase cache and the direct fallback.
         const payload = await fetchOverpassNearby(at, signal);
-        const elements = payload.elements ?? [];
+        const elements = payload.data?.elements ?? [];
+        // Stale cache / warning = live data is down: calm yellow notice; the
+        // existing favourites above stay visible and usable.
+        setFallbackNotice(payload.source === 'stale_cache' || Boolean(payload.warning));
         if (elements.length > 0) writeCache(localKey, elements);
         return toPlaces(elements);
       });
@@ -815,6 +837,12 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         <p style={styles.locationHint}>
           {center ? t('places.usingLocation') : t('places.needLocation')}
         </p>
+
+        {fallbackNotice ? (
+          <p role="status" style={styles.fallbackBanner}>
+            {t('places.liveSearchUnavailable')}
+          </p>
+        ) : null}
         {locationError ? <p role="alert" style={styles.error}>{locationError}</p> : null}
 
         {isLoading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
@@ -966,6 +994,17 @@ const styles: Record<string, CSSProperties> = {
   },
   muted: { margin: 0, color: '#557b76', fontSize: '0.84rem', lineHeight: 1.5 },
   error: { margin: 0, color: '#9c3636', fontSize: '0.84rem', fontWeight: 600, lineHeight: 1.5 },
+  fallbackBanner: {
+    margin: 0,
+    padding: '0.55rem 0.75rem',
+    borderRadius: '0.7rem',
+    border: '1px solid #f0d27a',
+    background: '#fff7d6',
+    color: '#8a6d1a',
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    lineHeight: 1.45,
+  },
   searchRow: { display: 'flex', alignItems: 'stretch', gap: '0.5rem', flexWrap: 'wrap' },
   searchBox: { position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 },
   searchIcon: { position: 'absolute', insetInlineStart: 12, color: '#557b76' },
