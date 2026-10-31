@@ -1,8 +1,7 @@
 # CONTEXT.md — Caremunicate
 
 > **Read this first.** Every future change reads CONTEXT.md before touching code
-> and updates it when the architecture moves. `HANDOFF.md` is older and
-> superseded by this file.
+> and updates it when the architecture moves.
 
 ## Mission
 
