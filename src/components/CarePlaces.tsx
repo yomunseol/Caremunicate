@@ -111,20 +111,32 @@ const sanitizeNeedle = (needle: string): string =>
  * needle is supplied the SAME set is name-filtered server-side (local + English
  * names), so the list and the map always receive one identical array.
  */
-const buildOverpassQuery = (lat: number, lon: number, needle = ''): string => {
+const buildOverpassQuery = (
+  lat: number,
+  lon: number,
+  needle = '',
+  locale = '',
+): string => {
   const name = sanitizeNeedle(needle);
   const around = `(around:${NEAR_RADIUS_M},${lat},${lon})`;
-  const clauses = name
-    ? [
-        `node['amenity'~'${AMENITY_REGEX}']['name'~'${name}',i]${around};`,
-        `node['amenity'~'${AMENITY_REGEX}']['name:en'~'${name}',i]${around};`,
-        `way['amenity'~'${AMENITY_REGEX}']['name'~'${name}',i]${around};`,
-        `way['amenity'~'${AMENITY_REGEX}']['name:en'~'${name}',i]${around};`,
-      ]
-    : [
-        `node['amenity'~'${AMENITY_REGEX}']${around};`,
-        `way['amenity'~'${AMENITY_REGEX}']${around};`,
-      ];
+
+  let clauses: string[];
+  if (name) {
+    // Match the local name, the English name, and the UI locale's name tag, so
+    // a Korean user typing "서울아산병원" resolves via name / name:ko.
+    const tags = ['name', 'name:en'];
+    if (locale && !tags.includes(`name:${locale}`)) tags.push(`name:${locale}`);
+    clauses = tags.flatMap((tag) => [
+      `node['amenity'~'${AMENITY_REGEX}']['${tag}'~'${name}',i]${around};`,
+      `way['amenity'~'${AMENITY_REGEX}']['${tag}'~'${name}',i]${around};`,
+    ]);
+  } else {
+    clauses = [
+      `node['amenity'~'${AMENITY_REGEX}']${around};`,
+      `way['amenity'~'${AMENITY_REGEX}']${around};`,
+    ];
+  }
+
   return `[out:json][timeout:25];\n(\n  ${clauses.join('\n  ')}\n);\nout center;`;
 };
 
@@ -142,23 +154,22 @@ const overpassError = (code: string, detail: string, message?: string): CodedErr
   return error;
 };
 
-/** 502 body: the per-mirror failure reasons, each reduced to a string. */
-const readReasons = async (response: Response): Promise<string[]> => {
+/** Reads an error body ONCE: the mirror reasons and/or the detail/error text. */
+const readFailure = async (
+  response: Response,
+): Promise<{ reasons: string[]; detail: string }> => {
   try {
-    const body = (await response.json()) as { reasons?: unknown };
-    return Array.isArray(body?.reasons) ? body.reasons.map(describeError) : [];
+    const body = (await response.json()) as {
+      reasons?: unknown;
+      detail?: unknown;
+      error?: unknown;
+    };
+    return {
+      reasons: Array.isArray(body?.reasons) ? body.reasons.map(describeError) : [],
+      detail: describeError(body?.detail ?? body?.error ?? ''),
+    };
   } catch {
-    return [];
-  }
-};
-
-/** 500 body: the crash detail, reduced to a string. */
-const readDetail = async (response: Response): Promise<string> => {
-  try {
-    const body = (await response.json()) as { detail?: unknown; error?: unknown };
-    return describeError(body?.detail ?? body?.error ?? '');
-  } catch {
-    return '';
+    return { reasons: [], detail: '' };
   }
 };
 
@@ -202,20 +213,12 @@ const fetchOverpassOnce = async (
     return (await relayed.json()) as { elements?: OverpassElement[] };
   }
 
-  if (response.status === 502) {
-    // "all mirrors failed" — surface WHICH mirrors failed and how, never a
-    // bare status.
-    const reasons = await readReasons(response);
-    throw overpassError('502', reasons.join(', ') || 'unknown');
-  }
-
-  if (response.status === 500) {
-    // A crash inside the route: surface its detail.
-    const detail = await readDetail(response);
-    throw overpassError('500', detail || 'route crash');
-  }
-
-  throw overpassError(String(response.status), `${OVERPASS_PROXY} responded ${response.status}`);
+  // 429 / 504 / 500 / 502: read the JSON once and surface the real reasons.
+  const { reasons, detail } = await readFailure(response);
+  throw overpassError(
+    String(response.status),
+    reasons.join(', ') || detail || `${OVERPASS_PROXY} responded ${response.status}`,
+  );
 };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -244,9 +247,9 @@ const fetchOverpass = async (
   }
 };
 
-/** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
-const cacheKey = (lat: number, lon: number, needle = ''): string =>
-  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
+/** Cache key: `cp:{lat2},{lon2}:{locale}:{needle}` — query identity is all four. */
+const cacheKey = (lat: number, lon: number, needle = '', locale = ''): string =>
+  `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${locale}:${sanitizeNeedle(needle).toLowerCase()}`;
 
 /** Reads a cached element list, dropping entries older than the TTL. */
 const readCache = (key: string): OverpassElement[] | null => {
@@ -330,7 +333,7 @@ function MapFocus({
 
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
-  const { t, tString } = useLang();
+  const { t, tString, locale } = useLang();
 
   const { role: profileRole } = useRole();
   const effectiveRole = (role || profileRole).toLowerCase();
@@ -413,7 +416,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
-      const key = cacheKey(at.lat, at.lon, needle);
+      const key = cacheKey(at.lat, at.lon, needle, locale);
       const cached = readCache(key);
       // An EMPTY cached list is not a hit: re-query instead of pinning the UI
       // empty for ten minutes (the old "list empty while a pin is on the map").
@@ -434,7 +437,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
       try {
         const payload = await fetchOverpass(
-          buildOverpassQuery(at.lat, at.lon, needle),
+          buildOverpassQuery(at.lat, at.lon, needle, locale),
           controller.signal,
         );
 
@@ -458,25 +461,19 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           // unmount must stay silent.
           if (timedOut) {
             console.error('OVERPASS_ERROR:', caught);
-            setError(`${t('places.searchTimeout')} (timeout)`);
+            setError(`${t('places.searchFailed')} (timeout)`);
           }
           return;
         }
 
         console.error('OVERPASS_ERROR:', caught);
-        // Always name the raw cause: the missing route, the per-mirror reasons
-        // from a 502, or the route's crash detail from a 500 — never a bare
-        // status.
-        const reason =
-          code === '404'
-            ? '404 route missing'
-            : code === '502'
-              ? `mirrors: ${detail || 'unknown'}`
-              : code === '500'
-                ? detail || 'route crash'
-                : code
-                  ? code
-                  : '';
+        // Always name the raw cause — the status from a 429/504/500 plus the
+        // mirror reasons — never a bare, silent empty list.
+        const reason = code === '404'
+          ? '404 route missing'
+          : code
+            ? `${code}${detail ? `: ${detail}` : ''}`
+            : '';
         setError(`${t('places.searchFailed')}${reason ? ` (${reason})` : ''}`);
         setResults([]);
       } finally {
@@ -486,7 +483,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         if (abortRef.current === controller) setIsLoading(false);
       }
     },
-    [t],
+    [t, locale],
   );
 
   // Abort any in-flight Overpass request on unmount.
@@ -537,9 +534,15 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // list always render the SAME result array — never a client-side filter.
   const debouncedQuery = useDebouncedValue(query, 400);
   useEffect(() => {
-    if (!center) return;
-    void runSearch(center, debouncedQuery);
-  }, [debouncedQuery, center, runSearch]);
+    const needle = debouncedQuery.trim();
+    if (!needle) return;
+    if (center) {
+      void runSearch(center, needle);
+      return;
+    }
+    // No centre yet: geolocate once so a typed name can be searched nearby.
+    if (!locating && !locationError) requestLocation();
+  }, [debouncedQuery, center, locating, locationError, runSearch]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);

@@ -48,6 +48,15 @@ const mirrorReason = (mirror: string, reason: string | number): string => {
  * `data` carries the query. Nothing is thrown: when every mirror fails the
  * collected `reasons` come back so the route can answer 502 with them.
  */
+/** 429 if a mirror rate-limited, 504 if every attempt timed out, else 500. */
+const failureStatus = (reasons: string[]): number => {
+  if (reasons.some((reason) => reason.endsWith(':429'))) return 429;
+  if (reasons.length > 0 && reasons.every((reason) => /:(AbortError|TimeoutError)$/.test(reason))) {
+    return 504;
+  }
+  return 500;
+};
+
 export const proxyOverpass = async (query: string): Promise<OverpassProxyResult> => {
   const reasons: string[] = [];
 
@@ -84,15 +93,18 @@ export const proxyOverpass = async (query: string): Promise<OverpassProxyResult>
         clearTimeout(timer);
       }
     } catch (error) {
+      console.error('Overpass API error:', error);
       const name = error instanceof Error && error.name ? error.name : 'err';
       reasons.push(mirrorReason(mirror, name));
     }
   }
 
+  const status = failureStatus(reasons);
+  console.error('Overpass API error:', reasons.join(', '));
   return {
     ok: false,
-    status: 502,
-    error: 'all mirrors failed',
+    status,
+    error: status === 504 ? 'upstream timeout' : status === 429 ? 'rate limited' : 'all mirrors failed',
     reasons,
     detail: reasons.join(', '),
   };

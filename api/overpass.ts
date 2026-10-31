@@ -78,6 +78,15 @@ const mirrorReason = (mirror: string, reason: string | number): string => {
   }
 };
 
+/** 429 if a mirror rate-limited, 504 if every attempt timed out, else 500. */
+const failureStatus = (reasons: string[]): number => {
+  if (reasons.some((reason) => reason.endsWith(':429'))) return 429;
+  if (reasons.length > 0 && reasons.every((reason) => /:(AbortError|TimeoutError)$/.test(reason))) {
+    return 504;
+  }
+  return 500;
+};
+
 export default async function handler(req: ProxyRequest, res: ProxyResponse): Promise<void> {
   try {
     if (req.method && req.method !== 'GET' && req.method !== 'POST') {
@@ -131,14 +140,21 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
           clearTimeout(timer);
         }
       } catch (error) {
+        console.error('Overpass API error:', error);
         const name = error instanceof Error && error.name ? error.name : 'err';
         reasons.push(mirrorReason(mirror, name));
       }
     }
 
-    res.status(502).json({ error: 'all mirrors failed', reasons });
+    const status = failureStatus(reasons);
+    console.error('Overpass API error:', reasons.join(', '));
+    res.status(status).json({
+      error: status === 504 ? 'upstream timeout' : status === 429 ? 'rate limited' : 'all mirrors failed',
+      reasons,
+    });
   } catch (caught) {
     // Never throw out of the route: answer 500 with the detail.
+    console.error('Overpass API error:', caught);
     const detail = String((caught as { message?: unknown })?.message ?? caught);
     res.status(500).json({ error: 'route crash', detail });
   }
