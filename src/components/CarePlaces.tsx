@@ -238,6 +238,61 @@ const fetchOverpass = async (
   }
 };
 
+const NOMINATIM_PROXY = '/api/nominatim';
+/** Nominatim's usage policy is 1 request/second; 1100ms gives a margin. */
+const DEBOUNCE_MS = 1_100;
+
+type NominatimResult = {
+  place_id?: number;
+  display_name?: string;
+  name?: string;
+  lat?: string;
+  lon?: string;
+  type?: string;
+  class?: string;
+};
+
+/** Normalize a Nominatim result into the shared list/map view model. */
+const nominatimToPlace = (item: NominatimResult): PlaceView | null => {
+  const lat = Number(item?.lat);
+  const lon = Number(item?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const display = (item.display_name ?? '').trim();
+  const name = item.name || display.split(',')[0]?.trim() || display;
+  if (!name) return null;
+  return {
+    placeId: `nominatim/${item.place_id ?? `${lat},${lon}`}`,
+    osmType: 'node',
+    name,
+    amenity: item.type ?? item.class ?? '',
+    address: display,
+    lat,
+    lon,
+  };
+};
+
+/** Typed-name search through the same-origin Nominatim proxy. */
+const fetchNominatim = async (
+  needle: string,
+  lang: string,
+  signal: AbortSignal,
+): Promise<NominatimResult[]> => {
+  const params = new URLSearchParams({ q: needle, lang });
+  const response = await fetch(`${NOMINATIM_PROXY}?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
+  if (!response.ok) {
+    const { reasons, detail } = await readFailure(response);
+    throw overpassError(
+      String(response.status),
+      reasons.join(', ') || detail || `status ${response.status}`,
+    );
+  }
+  const payload = await response.json().catch(() => []);
+  return Array.isArray(payload) ? (payload as NominatimResult[]) : [];
+};
+
 /** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
 const cacheKey = (lat: number, lon: number, needle = ''): string =>
   `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
@@ -324,7 +379,7 @@ function MapFocus({
 
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
-  const { t, tString } = useLang();
+  const { t, tString, locale } = useLang();
 
   const { role: profileRole } = useRole();
   const effectiveRole = (role || profileRole).toLowerCase();
@@ -347,8 +402,12 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
-  /** The last search (centre + text), so the Retry button can repeat it. */
-  const lastSearchRef = useRef<{ at: LatLon; needle: string } | null>(null);
+  /** The last search (kind + centre + text), so Retry can repeat it exactly. */
+  const lastSearchRef = useRef<{
+    kind: 'nearby' | 'text';
+    at: LatLon | null;
+    needle: string;
+  } | null>(null);
 
   const placeName = useCallback(
     (place: PlaceView) => place.name || t('places.eyebrow'),
@@ -387,16 +446,27 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     void loadFavorites();
   }, [loadFavorites]);
 
-  // ---- Overpass search ----------------------------------------------------
-  const runSearch = useCallback(
-    async (at: LatLon, needle = '') => {
-      lastSearchRef.current = { at, needle };
+  // ---- Search -------------------------------------------------------------
+  // Two sources, deliberately split:
+  //   • Near me    → Overpass radial query (/api/overpass).
+  //   • Typed name → Nominatim (/api/nominatim) — any-language name search that
+  //                  does not depend on a 5 km radial scan.
+  const lastTextRef = useRef('');
+
+  const executeSearch = useCallback(
+    async (
+      kind: 'nearby' | 'text',
+      at: LatLon | null,
+      needle: string,
+      load: (signal: AbortSignal) => Promise<PlaceView[]>,
+    ) => {
+      lastSearchRef.current = { kind, at, needle };
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Hard 8s ceiling per the C-01 spec; the proxy can hang without erroring.
+      // Hard 8s ceiling for either proxy; a hung request must never vanish.
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
@@ -407,43 +477,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
 
-      const key = cacheKey(at.lat, at.lon, needle);
-      const cached = readCache(key);
-      // An EMPTY cached list is not a hit: re-query instead of pinning the UI
-      // empty for ten minutes (the old "list empty while a pin is on the map").
-      if (cached !== null && cached.length > 0) {
-        // A cache hit is still a finished search: settle immediately, no network.
-        window.clearTimeout(timeoutId);
-        if (abortRef.current === controller) {
-          const places = cached
-            .map(elementToPlace)
-            .filter((place): place is PlaceView => place !== null);
-          setResults(places);
-          setSelectedId(null);
-          setSearched(true);
-          setIsLoading(false);
-        }
-        return;
-      }
-
       try {
-        const payload = await fetchOverpass(
-          buildOverpassQuery(at.lat, at.lon, needle),
-          controller.signal,
-        );
-
-        const elements = payload.elements ?? [];
-        // Never cache an empty result set — it would masquerade as a future hit.
-        if (elements.length > 0) writeCache(key, elements);
-
-        const places = elements
-          .map(elementToPlace)
-          .filter((place): place is PlaceView => place !== null);
-
+        const places = await load(controller.signal);
+        if (abortRef.current !== controller) return;
         setResults(places);
         setSelectedId(null);
         setSearched(true);
       } catch (caught) {
+        if (abortRef.current !== controller) return;
         const code = (caught as CodedError)?.code;
         const detail = (caught as CodedError)?.detail ?? '';
 
@@ -451,15 +492,15 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           // Only a timeout is worth surfacing; a superseded request or an
           // unmount must stay silent.
           if (timedOut) {
-            console.error('OVERPASS_ERROR:', caught);
+            console.error('SEARCH_ERROR:', caught);
             setError(`${t('places.searchFailed')} (timeout)`);
           }
           return;
         }
 
-        console.error('OVERPASS_ERROR:', caught);
-        // Always name the raw cause — the status from a 429/504/500 plus the
-        // mirror reasons — never a bare, silent empty list.
+        console.error('SEARCH_ERROR:', caught);
+        // Always name the raw cause — 429/504/500 plus the proxy detail — never
+        // a bare, silent empty list.
         const reason = code === '404'
           ? '404 route missing'
           : code
@@ -469,12 +510,47 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         setResults([]);
       } finally {
         window.clearTimeout(timeoutId);
-        // Guarded so a superseded request cannot clear the newest one's spinner.
-        // The active request always reaches here, so "Searching…" can never stick.
         if (abortRef.current === controller) setIsLoading(false);
       }
     },
     [t],
+  );
+
+  /** Near me → Overpass radial query around the given centre. */
+  const runNearby = useCallback(
+    async (at: LatLon) => {
+      await executeSearch('nearby', at, '', async (signal) => {
+        const key = cacheKey(at.lat, at.lon, '');
+        const cached = readCache(key);
+        // An EMPTY cached list is not a hit: re-query instead of pinning empty.
+        if (cached !== null && cached.length > 0) {
+          return cached
+            .map(elementToPlace)
+            .filter((place): place is PlaceView => place !== null);
+        }
+        const payload = await fetchOverpass(buildOverpassQuery(at.lat, at.lon), signal);
+        const elements = payload.elements ?? [];
+        if (elements.length > 0) writeCache(key, elements);
+        return elements
+          .map(elementToPlace)
+          .filter((place): place is PlaceView => place !== null);
+      });
+    },
+    [executeSearch],
+  );
+
+  /** Typed name → Nominatim, locale-aware via accept-language. */
+  const runText = useCallback(
+    async (needle: string) => {
+      lastTextRef.current = needle;
+      await executeSearch('text', null, needle, async (signal) => {
+        const items = await fetchNominatim(needle, locale, signal);
+        return items
+          .map(nominatimToPlace)
+          .filter((place): place is PlaceView => place !== null);
+      });
+    },
+    [executeSearch, locale],
   );
 
   // Abort any in-flight Overpass request on unmount.
@@ -507,33 +583,38 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    // Overpass is proximity-based: make sure we have a centre, then query.
-    if (center) {
-      void runSearch(center, query);
+    const needle = query.trim();
+    // A typed name goes to Nominatim; an empty submit means "find nearby".
+    if (needle) {
+      void runText(needle);
+    } else if (center) {
+      void runNearby(center);
     } else {
-      requestLocation();
+      requestLocation((at) => void runNearby(at));
     }
   };
 
   /** Retry the last search after a failure (inline error action). */
   const retrySearch = () => {
     const last = lastSearchRef.current;
-    if (last) void runSearch(last.at, last.needle);
+    if (!last) return;
+    if (last.kind === 'text') void runText(last.needle);
+    else if (last.at) void runNearby(last.at);
   };
 
-  // Typed text drives a debounced SERVER search (name-filtered), so the map and
-  // list always render the SAME result array — never a client-side filter.
-  const debouncedQuery = useDebouncedValue(query, 400);
+  // Typed text drives a debounced NOMINATIM search. 1100ms respects Nominatim's
+  // strict 1 request/second usage policy (400ms would trip 429s).
+  const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
   useEffect(() => {
     const needle = debouncedQuery.trim();
-    if (!needle) return;
-    if (center) {
-      void runSearch(center, needle);
+    if (!needle) {
+      lastTextRef.current = '';
       return;
     }
-    // No centre yet: geolocate once so a typed name can be searched nearby.
-    if (!locating && !locationError) requestLocation();
-  }, [debouncedQuery, center, locating, locationError, runSearch]);
+    // Skip when the submit/Retry path already searched this exact text.
+    if (needle === lastTextRef.current) return;
+    void runText(needle);
+  }, [debouncedQuery, runText]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);
@@ -746,7 +827,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           </button>
           <button
             type="button"
-            onClick={() => requestLocation()}
+            onClick={() => requestLocation((at) => void runNearby(at))}
             disabled={locating}
             aria-pressed={center !== null}
             style={{ ...styles.nearMeButton, ...(center ? styles.nearMeButtonOn : null) }}

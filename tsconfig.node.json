@@ -10,5 +10,5 @@
     "allowSyntheticDefaultImports": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "server/overpass.ts"]
+  "include": ["vite.config.ts", "server/overpass.ts", "server/nominatim.ts"]
 }
