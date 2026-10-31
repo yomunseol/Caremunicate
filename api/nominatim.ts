@@ -52,8 +52,11 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     const lang = asString(req.query?.lang).trim() || 'en';
     const latRaw = asString(req.query?.lat).trim();
     const lonRaw = asString(req.query?.lon).trim();
+    const radiusRaw = asString(req.query?.radius).trim();
+    const country = asString(req.query?.country).trim().toLowerCase();
     const lat = Number(latRaw);
     const lon = Number(lonRaw);
+    const radiusKm = Number(radiusRaw);
 
     const url = new URL(ENDPOINT);
     url.searchParams.set('q', q);
@@ -61,16 +64,21 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     url.searchParams.set('limit', '20');
     url.searchParams.set('addressdetails', '1');
     url.searchParams.set('accept-language', lang);
-    if (latRaw && lonRaw && Number.isFinite(lat) && Number.isFinite(lon)) {
-      // ~50 km box around the user: local results, never global.
-      const dLat = 50 / 111;
-      const dLon = 50 / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+    if (
+      latRaw && lonRaw &&
+      Number.isFinite(lat) && Number.isFinite(lon) &&
+      Number.isFinite(radiusKm) && radiusKm > 0
+    ) {
+      // Bounded pass around the user (25/200/1000 km), local results only.
+      const dLat = radiusKm / 111;
+      const dLon = radiusKm / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
       url.searchParams.set('viewbox', `${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`);
       url.searchParams.set('bounded', '1');
-    } else {
-      // No location: never return results from another continent.
-      url.searchParams.set('countrycodes', 'kr');
+    } else if (/^[a-z]{2}$/.test(country)) {
+      // No coordinates: keep the search inside the user's country.
+      url.searchParams.set('countrycodes', country);
     }
+    // Neither: no geographic constraint — a true global search.
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);

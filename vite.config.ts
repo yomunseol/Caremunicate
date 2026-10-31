@@ -60,6 +60,8 @@ const nominatimDevProxy = (): Plugin => ({
       const lang = url.searchParams.get('lang') ?? 'en';
       const latRaw = url.searchParams.get('lat');
       const lonRaw = url.searchParams.get('lon');
+      const radiusKm = Number(url.searchParams.get('radius') ?? '');
+      const country = (url.searchParams.get('country') ?? '').trim().toLowerCase();
       const lat = Number(latRaw);
       const lon = Number(lonRaw);
       const at =
@@ -79,7 +81,11 @@ const nominatimDevProxy = (): Plugin => ({
         return;
       }
 
-      void proxyNominatim(query, lang, at)
+      void proxyNominatim(query, lang, {
+        at,
+        radiusKm: Number.isFinite(radiusKm) ? radiusKm : 0,
+        country: country || null,
+      })
         .then((result) => {
           if ('error' in result) {
             send(result.status, { error: result.error });

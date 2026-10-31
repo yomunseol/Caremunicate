@@ -43,6 +43,12 @@ const OVERPASS_TIMEOUT_MS = 8_000;
 const RATE_LIMIT_WAIT_MS = 2_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
+/** Progressive text-search radii (km); the final pass is a global search. */
+const TEXT_RADII_KM = [25, 200, 1000];
+/** Space cascade passes to respect Nominatim's 1 request/second policy. */
+const NOMINATIM_GAP_MS = 1_100;
+/** The cascade may take several passes; allow more than the 8s nearby budget. */
+const TEXT_SEARCH_TIMEOUT_MS = 15_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
 const CACHE_PREFIX = 'cp:';
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -274,17 +280,21 @@ const nominatimToPlace = (item: NominatimResult): PlaceView | null => {
 };
 
 /** Typed-name search through the same-origin Nominatim proxy. */
+type NominatimQuery = { at: LatLon | null; radiusKm?: number; country?: string | null };
+
 const fetchNominatim = async (
   needle: string,
   lang: string,
-  at: LatLon | null,
+  query: NominatimQuery,
   signal: AbortSignal,
 ): Promise<NominatimResult[]> => {
   const params = new URLSearchParams({ q: needle, lang });
-  if (at) {
-    params.set('lat', String(at.lat));
-    params.set('lon', String(at.lon));
+  if (query.at) {
+    params.set('lat', String(query.at.lat));
+    params.set('lon', String(query.at.lon));
   }
+  if (query.radiusKm) params.set('radius', String(query.radiusKm));
+  if (query.country) params.set('country', query.country);
   const response = await fetch(`${NOMINATIM_PROXY}?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     signal,
@@ -298,6 +308,14 @@ const fetchNominatim = async (
   }
   const payload = await response.json().catch(() => []);
   return Array.isArray(payload) ? (payload as NominatimResult[]) : [];
+};
+
+/** The browser locale's region subtag (e.g. ko-KR -> kr), when present. */
+const regionFromNavigator = (): string | null => {
+  if (typeof navigator === 'undefined') return null;
+  const parts = (navigator.language || '').split('-');
+  const region = (parts[1] ?? '').toUpperCase();
+  return /^[A-Z]{2}$/.test(region) ? region.toLowerCase() : null;
 };
 
 /** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
@@ -466,6 +484,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       at: LatLon | null,
       needle: string,
       load: (signal: AbortSignal) => Promise<PlaceView[]>,
+      timeoutMs = OVERPASS_TIMEOUT_MS,
     ) => {
       lastSearchRef.current = { kind, at, needle };
       // Supersede any in-flight request so only the newest one settles state.
@@ -473,12 +492,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Hard 8s ceiling for either proxy; a hung request must never vanish.
+      // Hard ceiling per search; the text cascade gets a longer budget than the
+      // 8s nearby query.
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
         controller.abort();
-      }, OVERPASS_TIMEOUT_MS);
+      }, timeoutMs);
 
       setIsLoading(true);
       setSearched(false);
@@ -546,16 +566,40 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [executeSearch],
   );
 
-  /** Typed name → Nominatim, locale-aware and bounded to the user's area. */
+  /** Typed name → Nominatim: region → 200km → 1000km → global. */
   const runText = useCallback(
     async (needle: string) => {
       lastTextRef.current = needle;
-      await executeSearch('text', null, needle, async (signal) => {
-        const items = await fetchNominatim(needle, locale, center, signal);
-        return items
-          .map(nominatimToPlace)
-          .filter((place): place is PlaceView => place !== null);
-      });
+      await executeSearch(
+        'text',
+        null,
+        needle,
+        async (signal) => {
+          // Progressive expansion. With a centre: 25 → 200 → 1000 km, then a
+          // global pass. Without: the browser region's country, then global.
+          const passes: NominatimQuery[] = [];
+          if (center) {
+            for (const radiusKm of TEXT_RADII_KM) passes.push({ at: center, radiusKm });
+            passes.push({ at: center });
+          } else {
+            const country = regionFromNavigator();
+            if (country) passes.push({ at: null, country });
+            passes.push({ at: null });
+          }
+
+          for (let i = 0; i < passes.length; i += 1) {
+            const items = await fetchNominatim(needle, locale, passes[i], signal);
+            if (items.length > 0) {
+              return items
+                .map(nominatimToPlace)
+                .filter((place): place is PlaceView => place !== null);
+            }
+            if (i < passes.length - 1) await sleep(NOMINATIM_GAP_MS);
+          }
+          return [];
+        },
+        TEXT_SEARCH_TIMEOUT_MS,
+      );
     },
     [executeSearch, locale, center],
   );

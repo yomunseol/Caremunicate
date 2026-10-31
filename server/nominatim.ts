@@ -24,17 +24,24 @@ export type NominatimProxyResult =
 
 type LatLon = { lat: number; lon: number };
 
-/** ~50 km bounding box around a point, for Nominatim's `viewbox`. */
-const viewboxFor = (at: LatLon): string => {
-  const dLat = 50 / 111;
-  const dLon = 50 / (111 * Math.max(Math.cos((at.lat * Math.PI) / 180), 0.01));
+export type NominatimQueryOptions = {
+  at?: LatLon | null;
+  /** Bounded radius in km. 0 / undefined = no geographic constraint. */
+  radiusKm?: number;
+  country?: string | null;
+};
+
+/** Bounding box of `radiusKm` around a point, for Nominatim's `viewbox`. */
+const viewboxFor = (at: LatLon, radiusKm: number): string => {
+  const dLat = radiusKm / 111;
+  const dLon = radiusKm / (111 * Math.max(Math.cos((at.lat * Math.PI) / 180), 0.01));
   return `${at.lon - dLon},${at.lat - dLat},${at.lon + dLon},${at.lat + dLat}`;
 };
 
 export const proxyNominatim = async (
   query: string,
   lang: string,
-  at: LatLon | null = null,
+  { at = null, radiusKm = 0, country = null }: NominatimQueryOptions = {},
 ): Promise<NominatimProxyResult> => {
   const url = new URL(NOMINATIM_ENDPOINT);
   url.searchParams.set('q', query);
@@ -42,14 +49,15 @@ export const proxyNominatim = async (
   url.searchParams.set('limit', '20');
   url.searchParams.set('addressdetails', '1');
   url.searchParams.set('accept-language', lang || 'en');
-  if (at && Number.isFinite(at.lat) && Number.isFinite(at.lon)) {
-    // Constrain to ~50 km around the user, so results are local, not global.
-    url.searchParams.set('viewbox', viewboxFor(at));
+  if (at && Number.isFinite(radiusKm) && radiusKm > 0) {
+    // Bounded pass around the user (25 → 200 → 1000 km), local results only.
+    url.searchParams.set('viewbox', viewboxFor(at, radiusKm));
     url.searchParams.set('bounded', '1');
-  } else {
-    // No location: never return results from another continent.
-    url.searchParams.set('countrycodes', 'kr');
+  } else if (country) {
+    // No coordinates: at least keep the search inside the user's country.
+    url.searchParams.set('countrycodes', country);
   }
+  // Neither: no geographic constraint — a true global search.
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), NOMINATIM_TIMEOUT_MS);
