@@ -69,8 +69,10 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
       return;
     }
 
+    // Strictly encode the query for the path segment.
+    const encodedQuery = encodeURIComponent(q);
     let url =
-      `${ENDPOINT}/${encodeURIComponent(q)}.json` +
+      `${ENDPOINT}/${encodedQuery}.json` +
       `?key=${encodeURIComponent(apiKey)}` +
       `&language=${encodeURIComponent(lang)}` +
       '&limit=20';
@@ -93,7 +95,7 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
         res.status(429).json({ error: 'rate limited' });
         return;
       }
-      res.status(500).json({ error: 'geocoder failed', status: upstream.status });
+      res.status(500).json({ error: 'geocoder failed', status: upstream.status, detail: body.slice(0, 200) });
       return;
     }
 
@@ -108,13 +110,12 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     res.setHeader('Cache-Control', payload.features.length > 0 ? CACHE_CONTROL : NO_STORE);
     res.status(200).json(payload);
   } catch (caught) {
-    console.error('Geocoder API error:', caught);
-    const name = caught instanceof Error ? caught.name : 'err';
-    if (name === 'AbortError' || name === 'TimeoutError') {
+    const message = caught instanceof Error ? caught.message : String(caught);
+    console.error('Maptiler Error:', message, (caught as { status?: number })?.status);
+    if (caught instanceof Error && (caught.name === 'AbortError' || caught.name === 'TimeoutError')) {
       res.status(504).json({ error: 'upstream timeout' });
       return;
     }
-    const detail = String((caught as { message?: unknown })?.message ?? caught);
-    res.status(500).json({ error: 'route crash', detail });
+    res.status(500).json({ error: 'Geocoder request failed', detail: message });
   }
 }

@@ -469,36 +469,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         const local = readCache(localKey);
         if (local !== null && local.length > 0) return toPlaces(local);
 
-        // 2) Shared DB cache (Founder SQL: setup_overpass_cache.sql). Fails open.
-        const dbKey = `${NEAR_RADIUS_M}:${at.lat.toFixed(2)},${at.lon.toFixed(2)}`;
-        try {
-          const { data, error } = await supabase.rpc('get_overpass_cache', { p_key: dbKey });
-          if (!error && data && Array.isArray((data as { elements?: OverpassElement[] }).elements)) {
-            const cached = (data as { elements: OverpassElement[] }).elements;
-            if (cached.length > 0) {
-              writeCache(localKey, cached);
-              return toPlaces(cached);
-            }
-          }
-        } catch (error) {
-          console.log('OVERPASS CACHE lookup failed (failing open):', error);
-        }
-
-        // 3) Network, then populate both caches.
+        // 2) The route owns the shared Supabase cache and the direct fallback.
         const payload = await fetchOverpassNearby(at, signal);
         const elements = payload.elements ?? [];
-        if (elements.length > 0) {
-          writeCache(localKey, elements);
-          try {
-            const { error } = await supabase.rpc('save_overpass_cache', {
-              p_key: dbKey,
-              p_data: payload,
-            });
-            if (error) console.log('OVERPASS CACHE save failed:', error);
-          } catch (error) {
-            console.log('OVERPASS CACHE save failed:', error);
-          }
-        }
+        if (elements.length > 0) writeCache(localKey, elements);
         return toPlaces(elements);
       });
     },

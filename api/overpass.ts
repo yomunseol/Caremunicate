@@ -11,6 +11,8 @@
 //   -> 504 { error: 'Search timed out. Please try again.' }
 // ---------------------------------------------------------------------------
 
+import { createClient } from '@supabase/supabase-js';
+
 export const config = { runtime: 'nodejs' };
 
 const ENDPOINT = 'https://overpass-api.de/api/interpreter';
@@ -19,6 +21,17 @@ const TIMEOUT_MS = 25_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
+
+// Server-side Supabase for the shared cache. Either env name works; a missing
+// env simply disables the cache and never blocks the route.
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? '';
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+const supabase = SUPABASE_URL && SUPABASE_KEY
+  ? createClient(SUPABASE_URL, SUPABASE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+  : null;
 
 type ProxyRequest = {
   method?: string;
@@ -70,6 +83,26 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
 );
 out center;`;
 
+    const cacheKey = `${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+
+    // Cache is a performance optimization only: never let it crash or block.
+    if (supabase) {
+      try {
+        const { data, error } = await supabase.rpc('get_overpass_cache', { p_key: cacheKey });
+        if (error) {
+          console.error('Cache failed, fetching direct:', error);
+        } else if (data && Array.isArray((data as { elements?: unknown }).elements)) {
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.status(200).json(data);
+          return;
+        }
+      } catch (error) {
+        console.error('Cache failed, fetching direct:', error);
+      }
+    } else {
+      console.error('Cache unavailable (Supabase env missing), fetching direct');
+    }
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -105,6 +138,19 @@ out center;`;
       console.error('Overpass API error: invalid payload');
       res.status(500).json({ error: 'invalid payload' });
       return;
+    }
+
+    // Persist for everyone else; a failed save never blocks the response.
+    if (supabase && payload.elements.length > 0) {
+      try {
+        const { error } = await supabase.rpc('save_overpass_cache', {
+          p_key: cacheKey,
+          p_data: payload,
+        });
+        if (error) console.error('Cache save failed:', error);
+      } catch (error) {
+        console.error('Cache save failed:', error);
+      }
     }
 
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
