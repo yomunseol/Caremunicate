@@ -3873,7 +3873,3 @@ img {
   font-size: 1.02rem;
 }
 .docs-card .thin-list { margin: 0; }
-
-/* Calls hub — docs entry panel */
-.call-hub-docs { display: grid; gap: 0.75rem; align-content: start; }
-.call-hub-docs .primary-button { justify-self: start; }

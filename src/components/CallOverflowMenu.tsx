@@ -162,7 +162,7 @@ export default function CallOverflowMenu({
       {canUseDocs && onOpenDocs ? (
         <button type="button" className="call-overflow-item" onClick={onOpenDocs}>
           <FileText size={16} />
-          <span>{t('call.docs')}</span>
+          <span>{t('call.docsTitle')}</span>
         </button>
       ) : null}
 

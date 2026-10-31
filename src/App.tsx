@@ -42,7 +42,7 @@ import { describeError } from './lib/errors';
 import { isAuthAllowed, recordAuthAttempt } from './lib/authRateLimit';
 import { useLang } from './i18n';
 import ResetPassword from './components/ResetPassword';
-import DocsPage from './components/DocsPage';
+import HelpPage from './components/HelpPage';
 
 type RouteKey =
   | 'home'
@@ -59,7 +59,7 @@ type RouteKey =
   | 'care'
   | 'patients'
   | 'reset'
-  | 'docs';
+  | 'help';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -117,7 +117,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients', 'docs'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients', 'help'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -141,11 +141,11 @@ const RESET_PASSWORD_PATH = /^\/reset-password\/?$/;
 const isResetPasswordPath = (): boolean =>
   typeof window !== 'undefined' && RESET_PASSWORD_PATH.test(window.location.pathname);
 
-/** `/docs` — the public documentation page. */
-const DOCS_PATH = /^\/docs\/?$/;
+/** `/help` — the public help manual (footer only). */
+const HELP_PATH = /^\/help\/?$/;
 
-const isDocsPath = (): boolean =>
-  typeof window !== 'undefined' && DOCS_PATH.test(window.location.pathname);
+const isHelpPath = (): boolean =>
+  typeof window !== 'undefined' && HELP_PATH.test(window.location.pathname);
 
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -162,7 +162,7 @@ const getInitialRoute = (): RouteKey => {
   if (typeof window === 'undefined') return 'home';
   // A recovery link lands on a real path, with the tokens in the fragment.
   if (isResetPasswordPath()) return 'reset';
-  if (isDocsPath()) return 'docs';
+  if (isHelpPath()) return 'help';
   if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
 };
@@ -175,7 +175,7 @@ const getInitialRoute = (): RouteKey => {
 const routerBasePath = (): string => {
   if (typeof window === 'undefined') return '/';
   const path = window.location.pathname;
-  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || DOCS_PATH.test(path)) return '/';
+  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || HELP_PATH.test(path)) return '/';
   return path;
 };
 
@@ -280,8 +280,8 @@ function App() {
 
   useEffect(() => {
     const syncRoute = () => {
-      if (isDocsPath()) {
-        setRoute('docs');
+      if (isHelpPath()) {
+        setRoute('help');
         setConversationId(null);
         setCallCode(null);
         return;
@@ -378,8 +378,8 @@ function App() {
     setRoute(nextRoute);
     setConversationId(null);
     setCallCode(null);
-    if (nextRoute === 'docs') {
-      window.history.pushState({}, '', '/docs');
+    if (nextRoute === 'help') {
+      window.history.pushState({}, '', '/help');
       return;
     }
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
@@ -797,10 +797,6 @@ function App() {
         <div className="nav-actions">
           <LanguageSwitcher />
 
-          <button className="ghost-button" type="button" onClick={() => navigate('docs')}>
-            {t('docs.title')}
-          </button>
-
           {currentUser ? (
             <>
               {/* Between the language pill and the Calls pill, at every width. */}
@@ -1032,8 +1028,8 @@ function App() {
         {/* A recovery link: its own route, still inside the ErrorBoundary. */}
         {route === 'reset' && <ResetPassword />}
 
-        {/* Public product documentation. */}
-        {route === 'docs' && <DocsPage />}
+        {/* Public help manual (footer only). */}
+        {route === 'help' && <HelpPage />}
 
         {(route === 'signup' || route === 'login') && (
           <section className="section form-grid auth-combined-layout">
@@ -1454,10 +1450,10 @@ function App() {
         <p>
           <a
             className="footer-link"
-            href="/docs"
+            href="/help"
             onClick={(event) => {
               event.preventDefault();
-              navigate('docs');
+              navigate('help');
             }}
           >
             {t('docs.title')}

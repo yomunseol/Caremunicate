@@ -1,24 +1,23 @@
 import { useLang } from '../i18n';
-import { DOCS_SECTIONS } from '../lib/docsContent';
+import { HELP_SECTIONS } from '../lib/helpContent';
 
 // ---------------------------------------------------------------------------
-// /docs — the public Caremunicate documentation page. Reached from the top bar,
-// the footer, and the "View Docs" panel on the Calls hub. Chrome is translated;
-// the section content is English (kept in a .ts data module).
+// /help — the public Caremunicate help manual. Reached from the footer only;
+// the in-call "Docs" panel is the separate collaborative-documents feature.
 // ---------------------------------------------------------------------------
 
-export default function DocsPage() {
+export default function HelpPage() {
   const { t } = useLang();
 
   return (
-    <section className="section docs-page" aria-labelledby="docs-heading">
+    <section className="section docs-page" aria-labelledby="help-heading">
       <div className="section-heading">
         <div className="eyebrow">{t('common.appName')}</div>
-        <h2 id="docs-heading">{t('docs.title')}</h2>
+        <h2 id="help-heading">{t('docs.title')}</h2>
       </div>
 
       <div className="docs-grid">
-        {DOCS_SECTIONS.map((section) => (
+        {HELP_SECTIONS.map((section) => (
           <article key={section.id} className="panel docs-card">
             <h3>{section.title}</h3>
             <ul className="thin-list">

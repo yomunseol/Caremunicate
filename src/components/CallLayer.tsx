@@ -32,7 +32,7 @@ import { useLang } from '../i18n';
 import CallPreJoin from './CallPreJoin';
 import CallParticipantsPanel from './CallParticipantsPanel';
 import CallChatPanel from './CallChatPanel';
-import CallDocsPanel from './CallDocsPanel';
+import CaremunicateDocs from './CaremunicateDocs';
 import CallInviteDrawer from './CallInviteDrawer';
 import CallOverflowMenu from './CallOverflowMenu';
 import ShortcutsOverlay from './ShortcutsOverlay';
@@ -1032,7 +1032,7 @@ export default function CallLayer() {
 
           {panel === 'chat' ? <CallChatPanel onClose={() => setPanel('none')} /> : null}
 
-          {panel === 'docs' ? <CallDocsPanel onClose={() => setPanel('none')} /> : null}
+          {panel === 'docs' ? <CaremunicateDocs onClose={() => setPanel('none')} /> : null}
 
           {inviteOpen ? <CallInviteDrawer onClose={() => setInviteOpen(false)} /> : null}
 

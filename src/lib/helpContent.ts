@@ -1,12 +1,12 @@
-export type DocsSection = {
+export type HelpSection = {
   id: string;
   title: string;
   items: string[];
 };
 
-// Product documentation content. Kept in a .ts module (not scanned by the JSX
-// i18n guard) so the docs page can render variables instead of literal JSX text.
-export const DOCS_SECTIONS: DocsSection[] = [
+// Product help content. Kept in a .ts module (not scanned by the JSX i18n guard)
+// so the help page can render variables instead of literal JSX text.
+export const HELP_SECTIONS: HelpSection[] = [
   {
     id: 'start',
     title: 'Getting started',
