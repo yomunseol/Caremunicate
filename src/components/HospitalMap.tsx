@@ -25,7 +25,7 @@ import {
 //
 //   Tiles  : OpenStreetMap raster tiles, no key.
 //   Pins   : a custom MINT DivIcon (never Leaflet's default blue marker).
-//   Search : direct POST to overpass-api.de via src/lib/hospitals.ts.
+//   Search : typed name → /api/geocode (MapTiler) via src/lib/hospitals.ts.
 //   Add    : providers only; click the map or pick a search result, name it,
 //            then insert into public.hospitals with the current user as author.
 // ---------------------------------------------------------------------------
@@ -126,7 +126,7 @@ function PickOnMap({ onPick }: { onPick: (lat: number, lon: number) => void }) {
 export default function HospitalMap() {
   const { user } = useAuth();
   const { notify } = useToast();
-  const { t, tString } = useLang();
+  const { t, tString, locale } = useLang();
 
   // Adding a hospital is a provider action (doctor / department / hospital).
   const { provider } = useRole();
@@ -225,7 +225,7 @@ export default function HospitalMap() {
       setSearched(false);
 
       try {
-        const places = await searchPlaces(needle, at, controller.signal);
+        const places = await searchPlaces(needle, at, controller.signal, locale);
         if (abortRef.current !== controller) return;
         setResults(places);
         setSearched(true);

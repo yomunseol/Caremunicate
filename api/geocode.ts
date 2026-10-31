@@ -1,0 +1,110 @@
+// ---------------------------------------------------------------------------
+// /api/geocode — Vercel serverless function (Node runtime).
+//
+// Text search only. Proxies MapTiler so the API key stays server-side and is
+// read at RUNTIME (process.env), which fixes the "nokey: geocoder key missing"
+// error that came from the build-time import.meta.env lookup.
+//
+//   GET /api/geocode?q=<name>&lang=<locale>&lat=&lon=
+//   -> 200 MapTiler GeoJSON ({ features: [...] })
+//   -> 400 { error: 'missing q' }
+//   -> 405 { error: 'method not allowed' }
+//   -> 500 { error: 'Geocoder API key is missing in environment variables' }
+//   -> 504 { error: 'upstream timeout' }
+// ---------------------------------------------------------------------------
+
+export const config = { runtime: 'nodejs' };
+
+const ENDPOINT = 'https://api.maptiler.com/geocoding';
+const TIMEOUT_MS = 8_000;
+const CACHE_CONTROL = 'public, s-maxage=600';
+const NO_STORE = 'no-store';
+
+type ProxyRequest = {
+  method?: string;
+  query?: Record<string, string | string[] | undefined>;
+};
+
+type ProxyResponse = {
+  setHeader: (name: string, value: string) => void;
+  status: (code: number) => ProxyResponse;
+  json: (body: unknown) => void;
+};
+
+const asString = (value: unknown): string => {
+  if (Array.isArray(value)) return String(value[0] ?? '');
+  return typeof value === 'string' ? value : '';
+};
+
+export default async function handler(req: ProxyRequest, res: ProxyResponse): Promise<void> {
+  try {
+    if (req.method && req.method !== 'GET') {
+      res.status(405).json({ error: 'method not allowed' });
+      return;
+    }
+
+    const q = asString(req.query?.q).trim();
+    if (!q) {
+      res.status(400).json({ error: 'missing q' });
+      return;
+    }
+
+    const lang = asString(req.query?.lang).trim() || 'en';
+    const lat = asString(req.query?.lat).trim();
+    const lon = asString(req.query?.lon).trim();
+
+    // Read at runtime, exactly as specified. Either name works on Vercel.
+    const apiKey = process.env.NEXT_PUBLIC_GEOCODER_API_KEY || process.env.GEOCODER_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({ error: 'Geocoder API key is missing in environment variables' });
+      return;
+    }
+
+    let url =
+      `${ENDPOINT}/${encodeURIComponent(q)}.json` +
+      `?key=${encodeURIComponent(apiKey)}` +
+      `&language=${encodeURIComponent(lang)}` +
+      '&limit=20';
+    if (lat && lon) url += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (!upstream.ok) {
+      console.error('Geocoder API error:', upstream.status);
+      if (upstream.status === 429) {
+        res.status(429).json({ error: 'rate limited' });
+        return;
+      }
+      res.status(500).json({ error: 'geocoder failed', status: upstream.status });
+      return;
+    }
+
+    const payload = (await upstream.json()) as { features?: unknown };
+    if (!payload || !Array.isArray(payload.features)) {
+      console.error('Geocoder API error: invalid payload');
+      res.status(500).json({ error: 'invalid payload' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Cache-Control', payload.features.length > 0 ? CACHE_CONTROL : NO_STORE);
+    res.status(200).json(payload);
+  } catch (caught) {
+    console.error('Geocoder API error:', caught);
+    const name = caught instanceof Error ? caught.name : 'err';
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      res.status(504).json({ error: 'upstream timeout' });
+      return;
+    }
+    const detail = String((caught as { message?: unknown })?.message ?? caught);
+    res.status(500).json({ error: 'route crash', detail });
+  }
+}

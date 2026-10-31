@@ -24,9 +24,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 // ---------------------------------------------------------------------------
 // Care Places — keyless, credit-card-free map stack.
 //
-//   Search : DIRECT browser POST to overpass-api.de (replies CORS: *), 25s
-//            abort — no serverless proxy, so Cloudflare/Vercel 504s cannot
-//            kill it. No key, no quota account, OSM data.
+//   Search : STRICT split — typed text → /api/geocode (MapTiler), "Near me" →
+//            /api/overpass?lat&lon&radius (never text). No key in the bundle.
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
@@ -34,12 +33,9 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 // Typed names go to MapTiler geocoding (see fetchMaptiler) instead.
 // ---------------------------------------------------------------------------
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const NEAR_RADIUS_M = 5000;
-/** Direct browser request; the QL itself declares [timeout:25]. */
-const OVERPASS_TIMEOUT_MS = 25_000;
-/** A rate-limited mirror gets one automatic retry after this pause. */
-const RATE_LIMIT_WAIT_MS = 2_000;
+/** Client guard, just above the route's 25s budget so its 504 wins the race. */
+const OVERPASS_TIMEOUT_MS = 28_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
 /** Text search is a single commercial-geocoder call; keep a bounded budget. */
@@ -50,8 +46,6 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_CENTER: [number, number] = [30, 0];
 const DEFAULT_ZOOM = 2;
 const FOCUS_ZOOM = 15;
-/** ONE combined amenity regex — no type toggling, no per-type differentiation. */
-const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
 
 // Leaflet resolves its default marker images by URL at runtime, which bundlers
 // rewrite out from under it. Point the icon at the files Vite gives us instead.
@@ -109,31 +103,6 @@ const sanitizeNeedle = (needle: string): string =>
     .slice(0, 64)
     .replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/**
- * Exact Overpass QL: medical amenities within 5 km of the centre. When a text
- * needle is supplied the SAME set is name-filtered server-side (local + English
- * names), so the list and the map always receive one identical array.
- */
-const buildOverpassQuery = (lat: number, lon: number, needle = ''): string => {
-  const name = sanitizeNeedle(needle);
-  const around = `(around:${NEAR_RADIUS_M},${lat},${lon})`;
-
-  // `[~'^name'~needle]` matches ANY name tag — name, name:en, name:ko, name:zh,
-  // name:ja, … — so a facility is found by the name in whichever language was
-  // typed, not only the current UI locale.
-  const clauses = name
-    ? [
-        `node['amenity'~'${AMENITY_REGEX}'][~'^name'~'${name}',i]${around};`,
-        `way['amenity'~'${AMENITY_REGEX}'][~'^name'~'${name}',i]${around};`,
-      ]
-    : [
-        `node['amenity'~'${AMENITY_REGEX}']${around};`,
-        `way['amenity'~'${AMENITY_REGEX}']${around};`,
-      ];
-
-  return `[out:json][timeout:25];\n(\n  ${clauses.join('\n  ')}\n);\nout center;`;
-};
-
 type CodedError = Error & { code?: string; detail?: string };
 
 const overpassError = (code: string, detail: string, message?: string): CodedError => {
@@ -162,66 +131,33 @@ const readFailure = async (
   }
 };
 
-/**
- * Overpass fetched DIRECTLY from the browser (Overpass replies with
- * `Access-Control-Allow-Origin: *`), bypassing the serverless proxy and its
- * Cloudflare/Vercel 504s. POST form body; the 25s abort comes from the caller.
- * Failures carry a `code` so the caller can append the raw reason.
- */
-const fetchOverpassOnce = async (
-  query: string,
+/** Near me → the lat/lon-only Overpass route (no text ever reaches it). */
+const fetchOverpassNearby = async (
+  at: LatLon,
   signal: AbortSignal,
 ): Promise<{ elements?: OverpassElement[] }> => {
-  const response = await fetch(OVERPASS_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: new URLSearchParams({ data: query }),
+  const params = new URLSearchParams({
+    lat: String(at.lat),
+    lon: String(at.lon),
+    radius: String(NEAR_RADIUS_M),
+  });
+
+  const response = await fetch(`/api/overpass?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
     signal,
   });
 
-  if (response.ok) {
-    return (await response.json()) as { elements?: OverpassElement[] };
+  if (!response.ok) {
+    const { reasons, detail } = await readFailure(response);
+    throw overpassError(
+      String(response.status),
+      reasons.join(', ') || detail || `overpass responded ${response.status}`,
+    );
   }
 
-  // 429 / 5xx: read the body once and surface the real reasons.
-  const { reasons, detail } = await readFailure(response);
-  throw overpassError(
-    String(response.status),
-    reasons.join(', ') || detail || `Overpass responded ${response.status}`,
-  );
+  return (await response.json()) as { elements?: OverpassElement[] };
 };
 
-const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-
-/** A 429, or a 502 whose mirror reasons include one, is worth one retry. */
-const isRateLimited = (error: unknown): boolean => {
-  const coded = error as CodedError | null;
-  if (!coded) return false;
-  if (coded.code === '429') return true;
-  return typeof coded.detail === 'string' && coded.detail.includes(':429');
-};
-
-/** One rate-limit retry (wait 2s) around a single Overpass attempt. */
-const fetchOverpass = async (
-  query: string,
-  signal: AbortSignal,
-): Promise<{ elements?: OverpassElement[] }> => {
-  try {
-    return await fetchOverpassOnce(query, signal);
-  } catch (error) {
-    if (isRateLimited(error)) {
-      await sleep(RATE_LIMIT_WAIT_MS);
-      return fetchOverpassOnce(query, signal);
-    }
-    throw error;
-  }
-};
-
-/** MapTiler geocoding (commercial, stable, global). */
-const MAPTILER_GEOCODE_URL = 'https://api.maptiler.com/geocoding';
 /** Typed search is one network call; 1100ms keeps typing calm. */
 const DEBOUNCE_MS = 1_100;
 
@@ -237,10 +173,6 @@ type MapTilerFeature = {
     [key: string]: unknown;
   };
 };
-
-/** The key is supplied as NEXT_PUBLIC_… and exposed via vite envPrefix. */
-const maptilerKey = (): string =>
-  import.meta.env.NEXT_PUBLIC_GEOCODER_API_KEY ?? import.meta.env.VITE_GEOCODER_API_KEY ?? '';
 
 /** Normalize a MapTiler feature into the shared list/map view model. */
 const maptilerToPlace = (feature: MapTilerFeature): PlaceView | null => {
@@ -273,16 +205,17 @@ const fetchMaptiler = async (
   at: LatLon | null,
   signal: AbortSignal,
 ): Promise<MapTilerFeature[]> => {
-  const key = maptilerKey();
-  if (!key) throw overpassError('nokey', 'geocoder key missing');
+  // Server proxy reads the key at runtime (no key in the bundle).
+  const params = new URLSearchParams({ q: needle, lang });
+  if (at) {
+    params.set('lat', String(at.lat));
+    params.set('lon', String(at.lon));
+  }
 
-  const params = new URLSearchParams({ key, language: lang, limit: '20' });
-  if (at) params.set('proximity', `${at.lon},${at.lat}`);
-
-  const response = await fetch(
-    `${MAPTILER_GEOCODE_URL}/${encodeURIComponent(needle)}.json?${params.toString()}`,
-    { headers: { Accept: 'application/json' }, signal },
-  );
+  const response = await fetch(`/api/geocode?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
 
   if (!response.ok) {
     const { reasons, detail } = await readFailure(response);
@@ -453,7 +386,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
   // ---- Search -------------------------------------------------------------
   // Two sources, deliberately split:
-  //   • Near me    → Overpass radial query (direct POST to overpass-api.de).
+  //   • Near me    → /api/overpass?lat&lon&radius (bounded; never text).
   //   • Typed name → MapTiler geocoding (commercial, global, proximity-biased).
   const lastTextRef = useRef('');
 
@@ -552,7 +485,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         }
 
         // 3) Network, then populate both caches.
-        const payload = await fetchOverpass(buildOverpassQuery(at.lat, at.lon), signal);
+        const payload = await fetchOverpassNearby(at, signal);
         const elements = payload.elements ?? [];
         if (elements.length > 0) {
           writeCache(localKey, elements);

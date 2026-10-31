@@ -4,16 +4,12 @@ import { supabase } from './supabase';
 // Hospitals: the community map backed by public.hospitals, plus the location
 // search that feeds it.
 //
-// The search POSTs DIRECTLY to overpass-api.de (CORS: *) — no proxy, no key.
-// Overpass is proximity-based, so a search needs a centre point (the caller
-// supplies the user's location).
+// Text search goes through /api/geocode (MapTiler); Overpass stays reserved for
+// the radial "Near me" query. A centre point is still required.
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-/** Name search radius around the supplied centre. */
-const SEARCH_RADIUS_M = 10_000;
 export const SEARCH_TIMEOUT_MS = 25_000;
 
 export type Hospital = {
@@ -32,15 +28,6 @@ export type OsmPlace = {
   name: string;
   lat: number;
   lon: number;
-};
-
-type OsmElement = {
-  type: string;
-  id: number;
-  lat?: number;
-  lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
 };
 
 /** Every hospital, alphabetical. Throws on a PostgREST error. */
@@ -85,82 +72,63 @@ export async function addHospital(input: {
 const sanitizeQuery = (value: string): string =>
   value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 
-/**
- * Named medical places within the search radius of a centre.
- *
- * The two medical-tag clauses rank true facilities first; the `name:en` and
- * broad `name` clauses are the safety net so an OSM element whose tags differ
- * (or that is named in another script) still resolves. Results are de-duped by
- * element id and capped at 20 by the caller.
- */
-const buildSearchQuery = (needle: string, at: LatLon): string => `[out:json][timeout:25];
-(
-  nwr["name"~"${needle}",i]["amenity"~"hospital|clinic|doctors"](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
-  nwr["name"~"${needle}",i]["healthcare"~"hospital|clinic|doctor"](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
-  nwr["name:en"~"${needle}",i](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
-  nwr["name"~"${needle}",i](around:${SEARCH_RADIUS_M},${at.lat},${at.lon});
-);
-out center 20;`;
+type GeocodeFeature = {
+  geometry?: { coordinates?: [number, number] };
+  properties?: {
+    id?: string | number;
+    name?: string;
+    text?: string;
+    place_name?: string;
+  };
+};
 
-const elementToPlace = (element: OsmElement): OsmPlace | null => {
-  const lat = element.lat ?? element.center?.lat;
-  const lon = element.lon ?? element.center?.lon;
-  if (typeof lat !== 'number' || typeof lon !== 'number') return null;
+/** Normalize a geocoder feature into the map's OsmPlace shape. */
+const featureToPlace = (feature: GeocodeFeature): OsmPlace | null => {
+  const coords = feature?.geometry?.coordinates;
+  const lat = Number(coords?.[1]);
+  const lon = Number(coords?.[0]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-  const tags = element.tags ?? {};
-  const name = tags.name || tags['name:en'] || '';
+  const props = feature.properties ?? {};
+  const display = props.place_name ?? '';
+  const name = props.name || props.text || display.split(',')[0]?.trim() || display;
   if (!name) return null;
 
-  return { id: `${element.type}/${element.id}`, name, lat, lon };
+  return { id: `geocode/${props.id ?? `${lat},${lon}`}`, name, lat, lon };
 };
 
 /**
- * Search named hospitals/clinics around `at` through the same-origin Overpass
- * proxy. Results are de-duplicated by OSM element id. Throws on a non-ok
- * response so the caller can surface the raw reason.
+ * Search named places around `at` through the geocoder route. Text search is
+ * NEVER sent to Overpass; Overpass is reserved for the radial "Near me" query.
  */
-/** A rate-limited mirror gets one automatic retry after this pause. */
-const RATE_LIMIT_WAIT_MS = 2_000;
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-
 export async function searchPlaces(
   query: string,
   at: LatLon,
   signal?: AbortSignal,
+  lang = 'en',
 ): Promise<OsmPlace[]> {
   const needle = sanitizeQuery(query);
   if (!needle) return [];
 
-  // Direct browser POST (Overpass sends Access-Control-Allow-Origin: *).
-  const data = buildSearchQuery(needle, at);
-  const attempt = () =>
-    fetch(OVERPASS_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-      body: new URLSearchParams({ data }),
-      signal,
-    });
-
-  let response = await attempt();
-
-  // A 429 gets one retry after 2s.
-  if (response.status === 429) {
-    await sleep(RATE_LIMIT_WAIT_MS);
-    response = await attempt();
-  }
+  const params = new URLSearchParams({
+    q: needle,
+    lang,
+    lat: String(at.lat),
+    lon: String(at.lon),
+  });
+  const response = await fetch(`/api/geocode?${params.toString()}`, {
+    headers: { Accept: 'application/json' },
+    signal,
+  });
 
   if (!response.ok) {
-    throw new Error(`Overpass ${response.status}`);
+    throw new Error(`Geocoder ${response.status}`);
   }
 
-  const payload = (await response.json()) as { elements?: OsmElement[] };
+  const payload = (await response.json()) as { features?: GeocodeFeature[] };
   const byId = new Map<string, OsmPlace>();
-
-  for (const element of payload.elements ?? []) {
-    const place = elementToPlace(element);
+  for (const feature of payload.features ?? []) {
+    const place = featureToPlace(feature);
     if (place && !byId.has(place.id)) byId.set(place.id, place);
   }
 
