@@ -31,7 +31,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
 // Near me is proximity-based, so a radial Overpass query needs a centre point.
-// Typed names go to Nominatim (see fetchNominatim) instead.
+// Typed names go to MapTiler geocoding (see fetchMaptiler) instead.
 // ---------------------------------------------------------------------------
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
@@ -42,11 +42,7 @@ const OVERPASS_TIMEOUT_MS = 25_000;
 const RATE_LIMIT_WAIT_MS = 2_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
-/** Progressive text-search radii (km); the final pass is a global search. */
-const TEXT_RADII_KM = [25, 200, 1000];
-/** Space cascade passes to respect Nominatim's 1 request/second policy. */
-const NOMINATIM_GAP_MS = 1_100;
-/** The cascade may take several passes; allow more than the 8s nearby budget. */
+/** Text search is a single commercial-geocoder call; keep a bounded budget. */
 const TEXT_SEARCH_TIMEOUT_MS = 15_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
 const CACHE_PREFIX = 'cp:';
@@ -224,76 +220,82 @@ const fetchOverpass = async (
   }
 };
 
-const NOMINATIM_PROXY = '/api/nominatim';
-/** Nominatim's usage policy is 1 request/second; 1100ms gives a margin. */
+/** MapTiler geocoding (commercial, stable, global). */
+const MAPTILER_GEOCODE_URL = 'https://api.maptiler.com/geocoding';
+/** Typed search is one network call; 1100ms keeps typing calm. */
 const DEBOUNCE_MS = 1_100;
 
-type NominatimResult = {
-  place_id?: number;
-  display_name?: string;
-  name?: string;
-  lat?: string;
-  lon?: string;
-  type?: string;
-  class?: string;
+type MapTilerFeature = {
+  geometry?: { coordinates?: [number, number] };
+  properties?: {
+    id?: string | number;
+    name?: string;
+    text?: string;
+    place_name?: string;
+    address?: string;
+    type?: string;
+    [key: string]: unknown;
+  };
 };
 
-/** Normalize a Nominatim result into the shared list/map view model. */
-const nominatimToPlace = (item: NominatimResult): PlaceView | null => {
-  const lat = Number(item?.lat);
-  const lon = Number(item?.lon);
+/** The key is supplied as NEXT_PUBLIC_… and exposed via vite envPrefix. */
+const maptilerKey = (): string =>
+  import.meta.env.NEXT_PUBLIC_GEOCODER_API_KEY ?? import.meta.env.VITE_GEOCODER_API_KEY ?? '';
+
+/** Normalize a MapTiler feature into the shared list/map view model. */
+const maptilerToPlace = (feature: MapTilerFeature): PlaceView | null => {
+  const coords = feature?.geometry?.coordinates;
+  const lat = Number(coords?.[1]);
+  const lon = Number(coords?.[0]);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-  const display = (item.display_name ?? '').trim();
-  const name = item.name || display.split(',')[0]?.trim() || display;
+
+  const props = feature.properties ?? {};
+  const placeName = typeof props.place_name === 'string' ? props.place_name : '';
+  const address = placeName || (typeof props.address === 'string' ? props.address : '');
+  const name = props.name || props.text || placeName.split(',')[0]?.trim() || address;
   if (!name) return null;
+
   return {
-    placeId: `nominatim/${item.place_id ?? `${lat},${lon}`}`,
+    placeId: `maptiler/${props.id ?? `${lat},${lon}`}`,
     osmType: 'node',
     name,
-    amenity: item.type ?? item.class ?? '',
-    address: display,
+    amenity: typeof props.type === 'string' ? props.type : '',
+    address,
     lat,
     lon,
   };
 };
 
-/** Typed-name search through the same-origin Nominatim proxy. */
-type NominatimQuery = { at: LatLon | null; radiusKm?: number; country?: string | null };
-
-const fetchNominatim = async (
+/** Typed-name search through MapTiler, proximity-biased when a centre exists. */
+const fetchMaptiler = async (
   needle: string,
   lang: string,
-  query: NominatimQuery,
+  at: LatLon | null,
   signal: AbortSignal,
-): Promise<NominatimResult[]> => {
-  const params = new URLSearchParams({ q: needle, lang });
-  if (query.at) {
-    params.set('lat', String(query.at.lat));
-    params.set('lon', String(query.at.lon));
-  }
-  if (query.radiusKm) params.set('radius', String(query.radiusKm));
-  if (query.country) params.set('country', query.country);
-  const response = await fetch(`${NOMINATIM_PROXY}?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
-    signal,
-  });
+): Promise<MapTilerFeature[]> => {
+  const key = maptilerKey();
+  if (!key) throw overpassError('nokey', 'geocoder key missing');
+
+  const params = new URLSearchParams({ key, language: lang, limit: '20' });
+  if (at) params.set('proximity', `${at.lon},${at.lat}`);
+
+  const response = await fetch(
+    `${MAPTILER_GEOCODE_URL}/${encodeURIComponent(needle)}.json?${params.toString()}`,
+    { headers: { Accept: 'application/json' }, signal },
+  );
+
   if (!response.ok) {
     const { reasons, detail } = await readFailure(response);
     throw overpassError(
       String(response.status),
-      reasons.join(', ') || detail || `status ${response.status}`,
+      reasons.join(', ') || detail || `geocoder responded ${response.status}`,
     );
   }
-  const payload = await response.json().catch(() => []);
-  return Array.isArray(payload) ? (payload as NominatimResult[]) : [];
-};
 
-/** The browser locale's region subtag (e.g. ko-KR -> kr), when present. */
-const regionFromNavigator = (): string | null => {
-  if (typeof navigator === 'undefined') return null;
-  const parts = (navigator.language || '').split('-');
-  const region = (parts[1] ?? '').toUpperCase();
-  return /^[A-Z]{2}$/.test(region) ? region.toLowerCase() : null;
+  const payload = (await response.json().catch(() => null)) as
+    | { features?: MapTilerFeature[] }
+    | null;
+  return Array.isArray(payload?.features) ? payload.features : [];
 };
 
 /** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
@@ -452,8 +454,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // ---- Search -------------------------------------------------------------
   // Two sources, deliberately split:
   //   • Near me    → Overpass radial query (direct POST to overpass-api.de).
-  //   • Typed name → Nominatim (/api/nominatim) — any-language name search that
-  //                  does not depend on a 5 km radial scan.
+  //   • Typed name → MapTiler geocoding (commercial, global, proximity-biased).
   const lastTextRef = useRef('');
 
   const executeSearch = useCallback(
@@ -521,30 +522,57 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [t],
   );
 
-  /** Near me → Overpass radial query around the given centre. */
+  /** Near me → Overpass radial query, backed by the shared DB cache. */
   const runNearby = useCallback(
     async (at: LatLon) => {
       await executeSearch('nearby', at, '', async (signal) => {
-        const key = cacheKey(at.lat, at.lon, '');
-        const cached = readCache(key);
-        // An EMPTY cached list is not a hit: re-query instead of pinning empty.
-        if (cached !== null && cached.length > 0) {
-          return cached
+        const localKey = cacheKey(at.lat, at.lon, '');
+        const toPlaces = (elements: OverpassElement[]) =>
+          elements
             .map(elementToPlace)
             .filter((place): place is PlaceView => place !== null);
+
+        // 1) Per-browser cache (instant, even offline).
+        const local = readCache(localKey);
+        if (local !== null && local.length > 0) return toPlaces(local);
+
+        // 2) Shared DB cache (Founder SQL: setup_overpass_cache.sql). Fails open.
+        const dbKey = `${NEAR_RADIUS_M}:${at.lat.toFixed(2)},${at.lon.toFixed(2)}`;
+        try {
+          const { data, error } = await supabase.rpc('get_overpass_cache', { p_key: dbKey });
+          if (!error && data && Array.isArray((data as { elements?: OverpassElement[] }).elements)) {
+            const cached = (data as { elements: OverpassElement[] }).elements;
+            if (cached.length > 0) {
+              writeCache(localKey, cached);
+              return toPlaces(cached);
+            }
+          }
+        } catch (error) {
+          console.log('OVERPASS CACHE lookup failed (failing open):', error);
         }
+
+        // 3) Network, then populate both caches.
         const payload = await fetchOverpass(buildOverpassQuery(at.lat, at.lon), signal);
         const elements = payload.elements ?? [];
-        if (elements.length > 0) writeCache(key, elements);
-        return elements
-          .map(elementToPlace)
-          .filter((place): place is PlaceView => place !== null);
+        if (elements.length > 0) {
+          writeCache(localKey, elements);
+          try {
+            const { error } = await supabase.rpc('save_overpass_cache', {
+              p_key: dbKey,
+              p_data: payload,
+            });
+            if (error) console.log('OVERPASS CACHE save failed:', error);
+          } catch (error) {
+            console.log('OVERPASS CACHE save failed:', error);
+          }
+        }
+        return toPlaces(elements);
       });
     },
     [executeSearch],
   );
 
-  /** Typed name → Nominatim: region → 200km → 1000km → global. */
+  /** Typed name → MapTiler geocoding (proximity-biased when a centre exists). */
   const runText = useCallback(
     async (needle: string) => {
       lastTextRef.current = needle;
@@ -553,28 +581,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         null,
         needle,
         async (signal) => {
-          // Progressive expansion. With a centre: 25 → 200 → 1000 km, then a
-          // global pass. Without: the browser region's country, then global.
-          const passes: NominatimQuery[] = [];
-          if (center) {
-            for (const radiusKm of TEXT_RADII_KM) passes.push({ at: center, radiusKm });
-            passes.push({ at: center });
-          } else {
-            const country = regionFromNavigator();
-            if (country) passes.push({ at: null, country });
-            passes.push({ at: null });
-          }
-
-          for (let i = 0; i < passes.length; i += 1) {
-            const items = await fetchNominatim(needle, locale, passes[i], signal);
-            if (items.length > 0) {
-              return items
-                .map(nominatimToPlace)
-                .filter((place): place is PlaceView => place !== null);
-            }
-            if (i < passes.length - 1) await sleep(NOMINATIM_GAP_MS);
-          }
-          return [];
+          const features = await fetchMaptiler(needle, locale, center, signal);
+          return features
+            .map(maptilerToPlace)
+            .filter((place): place is PlaceView => place !== null);
         },
         TEXT_SEARCH_TIMEOUT_MS,
       );
@@ -636,7 +646,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const needle = query.trim();
-    // A typed name goes to Nominatim; an empty submit means "find nearby".
+    // A typed name goes to MapTiler; an empty submit means "find nearby".
     if (needle) {
       void runText(needle);
     } else if (center) {
@@ -654,8 +664,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     else if (last.at) void runNearby(last.at);
   };
 
-  // Typed text drives a debounced NOMINATIM search. 1100ms respects Nominatim's
-  // strict 1 request/second usage policy (400ms would trip 429s).
+  // Typed text drives a debounced MAPTILER search. 1100ms keeps typing calm
+  // without hammering the geocoder.
   const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
   useEffect(() => {
     const needle = debouncedQuery.trim();

@@ -1,65 +1,9 @@
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { NOMINATIM_CACHE_CONTROL, proxyNominatim } from './server/nominatim.ts';
-
-// ---------------------------------------------------------------------------
-// Dev-only stand-in for api/nominatim.ts (typed-name search). Shares
-// server/nominatim.ts so the endpoint, User-Agent and timeout have one source.
-//
-// Overpass needs no dev proxy any more: the browser fetches it directly (it
-// sends Access-Control-Allow-Origin: *), bypassing serverless timeouts.
-// ---------------------------------------------------------------------------
-const nominatimDevProxy = (): Plugin => ({
-  name: 'caremunicate-nominatim-dev-proxy',
-  apply: 'serve',
-  configureServer(server) {
-    server.middlewares.use('/api/nominatim', (req, res) => {
-      const url = new URL(req.url ?? '/', 'http://localhost');
-      const query = url.searchParams.get('q') ?? '';
-      const lang = url.searchParams.get('lang') ?? 'en';
-      const latRaw = url.searchParams.get('lat');
-      const lonRaw = url.searchParams.get('lon');
-      const radiusKm = Number(url.searchParams.get('radius') ?? '');
-      const country = (url.searchParams.get('country') ?? '').trim().toLowerCase();
-      const lat = Number(latRaw);
-      const lon = Number(lonRaw);
-      const at =
-        latRaw && lonRaw && Number.isFinite(lat) && Number.isFinite(lon)
-          ? { lat, lon }
-          : null;
-
-      const send = (status: number, body: unknown, cache = false) => {
-        res.statusCode = status;
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        if (cache) res.setHeader('Cache-Control', NOMINATIM_CACHE_CONTROL);
-        res.end(JSON.stringify(body));
-      };
-
-      if (!query.trim()) {
-        send(400, { error: 'missing q' });
-        return;
-      }
-
-      void proxyNominatim(query, lang, {
-        at,
-        radiusKm: Number.isFinite(radiusKm) ? radiusKm : 0,
-        country: country || null,
-      })
-        .then((result) => {
-          if ('error' in result) {
-            send(result.status, { error: result.error });
-            return;
-          }
-          send(200, result.body, !result.empty);
-        })
-        .catch((error: unknown) => {
-          console.error('NOMINATIM_ERROR:', error);
-          send(500, { error: 'route crash', detail: String(error) });
-        });
-    });
-  },
-});
 
 export default defineConfig({
-  plugins: [react(), nominatimDevProxy()],
+  // The geocoder key is supplied as NEXT_PUBLIC_GEOCODER_API_KEY, so expose
+  // that prefix to import.meta.env alongside Vite's default VITE_.
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_'],
+  plugins: [react()],
 });
