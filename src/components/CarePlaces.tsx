@@ -158,8 +158,8 @@ const fetchOverpassNearby = async (
   return (await response.json()) as { elements?: OverpassElement[] };
 };
 
-/** Typed search is one network call; 1100ms keeps typing calm. */
-const DEBOUNCE_MS = 1_100;
+/** Typed search is one network call; 800ms respects the geocoder's limits. */
+const DEBOUNCE_MS = 800;
 
 type MapTilerFeature = {
   geometry?: { coordinates?: [number, number] };
@@ -610,6 +610,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     if (needle === lastTextRef.current) return;
     void runText(needle);
   }, [debouncedQuery, runText]);
+
+  // A new keystroke cancels any in-flight request immediately (the debounced
+  // effect above then starts the next one), so a slow response never lands on
+  // top of newer input.
+  useEffect(() => {
+    abortRef.current?.abort();
+  }, [query]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);

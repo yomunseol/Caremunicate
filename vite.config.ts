@@ -38,6 +38,9 @@ export default defineConfig(({ mode }) => {
           return;
         }
         if (!apiKey) {
+          console.error(
+            '[GEOCODE] API key missing (dev) — set NEXT_PUBLIC_GEOCODER_API_KEY or GEOCODER_API_KEY in .env.local',
+          );
           send(res, 500, { error: 'Geocoder API key is missing in environment variables' });
           return;
         }

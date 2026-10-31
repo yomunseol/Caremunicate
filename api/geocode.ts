@@ -56,6 +56,15 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     // Read at runtime, exactly as specified. Either name works on Vercel.
     const apiKey = process.env.NEXT_PUBLIC_GEOCODER_API_KEY || process.env.GEOCODER_API_KEY;
     if (!apiKey) {
+      // Server-side diagnosis: report WHICH env names are present (never values).
+      console.error(
+        '[GEOCODE] API key missing — NEXT_PUBLIC_GEOCODER_API_KEY:',
+        Boolean(process.env.NEXT_PUBLIC_GEOCODER_API_KEY),
+        '| GEOCODER_API_KEY:',
+        Boolean(process.env.GEOCODER_API_KEY),
+        '| vercel:',
+        Boolean(process.env.VERCEL),
+      );
       res.status(500).json({ error: 'Geocoder API key is missing in environment variables' });
       return;
     }
@@ -78,7 +87,8 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     }
 
     if (!upstream.ok) {
-      console.error('Geocoder API error:', upstream.status);
+      const body = await upstream.text().catch(() => '');
+      console.error('[GEOCODE] upstream', upstream.status, body.slice(0, 200));
       if (upstream.status === 429) {
         res.status(429).json({ error: 'rate limited' });
         return;
