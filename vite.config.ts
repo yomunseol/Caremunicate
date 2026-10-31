@@ -50,7 +50,7 @@ export default defineConfig(({ mode }) => {
         let target =
           `https://api.maptiler.com/geocoding/${encodeURIComponent(query.trim())}.json` +
           `?key=${encodeURIComponent(apiKey)}` +
-          `&language=${encodeURIComponent(lang)}` +
+          `&lang=${encodeURIComponent(lang)}` +
           '&limit=20';
         if (lat && lon) target += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
 
@@ -94,7 +94,7 @@ export default defineConfig(({ mode }) => {
         const radiusRaw = Number(url.searchParams.get('radius') ?? '');
         const radius = Number.isFinite(radiusRaw) && radiusRaw > 0
           ? Math.min(Math.max(radiusRaw, 100), 50_000)
-          : 5_000;
+          : 3_000;
 
         const query = `[out:json][timeout:25];
 (

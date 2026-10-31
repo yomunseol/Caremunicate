@@ -33,7 +33,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 // Typed names go to MapTiler geocoding (see fetchMaptiler) instead.
 // ---------------------------------------------------------------------------
 
-const NEAR_RADIUS_M = 5000;
+const NEAR_RADIUS_M = 3000;
 /** Client guard, just above the route's 25s budget so its 504 wins the race. */
 const OVERPASS_TIMEOUT_MS = 28_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */

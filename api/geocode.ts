@@ -78,7 +78,7 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     let url =
       `${ENDPOINT}/${encodedQuery}.json` +
       `?key=${encodeURIComponent(apiKey)}` +
-      `&language=${encodeURIComponent(safeLang)}` +
+      `&lang=${encodeURIComponent(safeLang)}` +
       '&limit=20';
     if (lat && lon) url += `&proximity=${encodeURIComponent(lon)},${encodeURIComponent(lat)}`;
 
