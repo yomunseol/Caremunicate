@@ -37,8 +37,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const OVERPASS_PROXY = '/api/overpass';
 const NEAR_RADIUS_M = 5000;
-/** Hard client ceiling per the C-01 spec (8s). */
-const OVERPASS_TIMEOUT_MS = 8_000;
+/** Client guard, just above the route's 25s budget so its 504 wins the race. */
+const OVERPASS_TIMEOUT_MS = 26_000;
 /** A rate-limited mirror gets one automatic retry after this pause. */
 const RATE_LIMIT_WAIT_MS = 2_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */

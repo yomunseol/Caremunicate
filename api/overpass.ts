@@ -4,26 +4,32 @@
 // FULLY SELF-CONTAINED: zero relative imports, so an extensionless-import
 // error (TS2835) cannot occur here.
 //
-// ONE fast, less-congested mirror (lz4.overpass-api.de), POSTed as a form body
-// (the public server drops long GET URLs), behind a strict 8s AbortController.
+// POSTed as a form body (the public server drops long GET URLs) with a 25s
+// budget matching the `[timeout:25]` in the query. Two endpoints are tried in
+// order under ONE shared deadline, so a fast primary failure leaves the rest of
+// the budget for the fallback.
 //
 //   GET/POST /api/overpass?data=<encoded Overpass QL>   (or form body `data`)
 //   -> 200 JSON (Overpass payload), Cache-Control: public, s-maxage=600
 //   -> 400 { error: 'missing data' }
 //   -> 405 { error: 'method not allowed' }
-//   -> 504 { error: 'Search timed out. Please try again.' }
-//   -> 429 { error: 'rate limited' }
-//   -> 500 { error: 'overpass failed' | 'invalid payload' | 'route crash' }
+//   -> 504 { error: 'Search timed out. Please try again.' | 'Search failed. Please try again.' }
+//   -> 500 { error: 'route crash', detail }
 // ---------------------------------------------------------------------------
 
 export const config = { runtime: 'nodejs' };
 
-const ENDPOINT = 'https://lz4.overpass-api.de/api/interpreter';
+const ENDPOINTS = [
+  'https://lz4.overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+];
+
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 25_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const TIMEOUT_ERROR = 'Search timed out. Please try again.';
+const FAILED_ERROR = 'Search failed. Please try again.';
 
 type ProxyRequest = {
   method?: string;
@@ -80,53 +86,57 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    let lastReason = 'unknown';
 
-    let upstream: Response;
     try {
-      upstream = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': USER_AGENT,
-          Accept: 'application/json',
-        },
-        body: new URLSearchParams({ data }),
-        signal: controller.signal,
-        cache: 'no-store',
+      for (const endpoint of ENDPOINTS) {
+        try {
+          const upstream = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              'User-Agent': USER_AGENT,
+              Accept: 'application/json',
+            },
+            body: new URLSearchParams({ data }),
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+
+          if (upstream.ok) {
+            const payload = (await upstream.json()) as { elements?: unknown };
+            if (Array.isArray(payload?.elements)) {
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              // Never cache an EMPTY answer — it would pin "no results".
+              res.setHeader('Cache-Control', payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
+              res.status(200).json(payload);
+              return;
+            }
+            lastReason = 'invalid payload';
+            console.error('Overpass API error: invalid payload');
+            continue;
+          }
+
+          lastReason = String(upstream.status);
+          console.error('Overpass API error:', upstream.status);
+        } catch (error) {
+          console.error('Overpass API error:', error);
+          lastReason = error instanceof Error ? error.name : 'err';
+          // The shared 25s deadline fired: no budget left for another endpoint.
+          if (controller.signal.aborted) break;
+        }
+      }
+
+      const timedOut = controller.signal.aborted;
+      res.status(504).json({
+        error: timedOut ? TIMEOUT_ERROR : FAILED_ERROR,
+        detail: lastReason,
       });
     } finally {
       clearTimeout(timer);
     }
-
-    if (!upstream.ok) {
-      console.error('Overpass API error:', upstream.status);
-      if (upstream.status === 429) {
-        res.status(429).json({ error: 'rate limited' });
-        return;
-      }
-      res.status(500).json({ error: 'overpass failed', status: upstream.status });
-      return;
-    }
-
-    const payload = (await upstream.json()) as { elements?: unknown };
-    if (!Array.isArray(payload?.elements)) {
-      console.error('Overpass API error: invalid payload');
-      res.status(500).json({ error: 'invalid payload' });
-      return;
-    }
-
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    // Never cache an EMPTY answer — it would pin "no results" for ten minutes.
-    res.setHeader('Cache-Control', payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
-    res.status(200).json(payload);
   } catch (caught) {
     console.error('Overpass API error:', caught);
-    const name = caught instanceof Error ? caught.name : 'err';
-    if (name === 'AbortError' || name === 'TimeoutError') {
-      // A real error state for the frontend → it shows "Search failed" + Retry.
-      res.status(504).json({ error: TIMEOUT_ERROR });
-      return;
-    }
     const detail = String((caught as { message?: unknown })?.message ?? caught);
     res.status(500).json({ error: 'route crash', detail });
   }

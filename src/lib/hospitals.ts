@@ -14,7 +14,7 @@ const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 const OVERPASS_PROXY = '/api/overpass';
 /** Name search radius around the supplied centre. */
 const SEARCH_RADIUS_M = 10_000;
-export const SEARCH_TIMEOUT_MS = 8_000;
+export const SEARCH_TIMEOUT_MS = 26_000;
 
 export type Hospital = {
   id: string;
