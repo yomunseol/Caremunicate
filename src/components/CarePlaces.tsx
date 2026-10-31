@@ -41,6 +41,8 @@ const NEAR_RADIUS_M = 5000;
 const OVERPASS_TIMEOUT_MS = 8_000;
 /** A rate-limited mirror gets one automatic retry after this pause. */
 const RATE_LIMIT_WAIT_MS = 2_000;
+/** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
+const GEOLOCATION_TIMEOUT_MS = 5_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
 const CACHE_PREFIX = 'cp:';
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -275,9 +277,14 @@ const nominatimToPlace = (item: NominatimResult): PlaceView | null => {
 const fetchNominatim = async (
   needle: string,
   lang: string,
+  at: LatLon | null,
   signal: AbortSignal,
 ): Promise<NominatimResult[]> => {
   const params = new URLSearchParams({ q: needle, lang });
+  if (at) {
+    params.set('lat', String(at.lat));
+    params.set('lon', String(at.lon));
+  }
   const response = await fetch(`${NOMINATIM_PROXY}?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     signal,
@@ -539,18 +546,18 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [executeSearch],
   );
 
-  /** Typed name → Nominatim, locale-aware via accept-language. */
+  /** Typed name → Nominatim, locale-aware and bounded to the user's area. */
   const runText = useCallback(
     async (needle: string) => {
       lastTextRef.current = needle;
       await executeSearch('text', null, needle, async (signal) => {
-        const items = await fetchNominatim(needle, locale, signal);
+        const items = await fetchNominatim(needle, locale, center, signal);
         return items
           .map(nominatimToPlace)
           .filter((place): place is PlaceView => place !== null);
       });
     },
-    [executeSearch, locale],
+    [executeSearch, locale, center],
   );
 
   // Abort any in-flight Overpass request on unmount.
@@ -565,19 +572,42 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     setLocating(true);
     setLocationError('');
 
+    // Guard the whole flow: a hanging getCurrentPosition must not leave the UI
+    // stuck on "Locating…". After 5s, surface a translated timeout notice.
+    let settled = false;
+    let timer: number | undefined;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      fn();
+    };
+
+    timer = window.setTimeout(() => {
+      finish(() => {
+        console.log('PLACES ERROR: geolocation timeout');
+        setLocationError(t('places.locationTimeout'));
+        setLocating(false);
+      });
+    }, GEOLOCATION_TIMEOUT_MS);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const at = { lat: position.coords.latitude, lon: position.coords.longitude };
-        setCenter(at);
-        setLocating(false);
-        onSuccess?.(at);
+        finish(() => {
+          const at = { lat: position.coords.latitude, lon: position.coords.longitude };
+          setCenter(at);
+          setLocating(false);
+          onSuccess?.(at);
+        });
       },
       (geoError) => {
-        console.log('PLACES ERROR:', geoError);
-        setLocationError(geoError.message || t('places.locationDenied'));
-        setLocating(false);
+        finish(() => {
+          console.log('PLACES ERROR:', geoError);
+          setLocationError(geoError.message || t('places.locationDenied'));
+          setLocating(false);
+        });
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
+      { enableHighAccuracy: false, timeout: GEOLOCATION_TIMEOUT_MS, maximumAge: 300000 },
     );
   };
 

@@ -22,9 +22,19 @@ export type NominatimProxyResult =
   | { ok: true; status: number; body: unknown; empty: boolean }
   | { ok: false; status: number; error: string };
 
+type LatLon = { lat: number; lon: number };
+
+/** ~50 km bounding box around a point, for Nominatim's `viewbox`. */
+const viewboxFor = (at: LatLon): string => {
+  const dLat = 50 / 111;
+  const dLon = 50 / (111 * Math.max(Math.cos((at.lat * Math.PI) / 180), 0.01));
+  return `${at.lon - dLon},${at.lat - dLat},${at.lon + dLon},${at.lat + dLat}`;
+};
+
 export const proxyNominatim = async (
   query: string,
   lang: string,
+  at: LatLon | null = null,
 ): Promise<NominatimProxyResult> => {
   const url = new URL(NOMINATIM_ENDPOINT);
   url.searchParams.set('q', query);
@@ -32,6 +42,14 @@ export const proxyNominatim = async (
   url.searchParams.set('limit', '20');
   url.searchParams.set('addressdetails', '1');
   url.searchParams.set('accept-language', lang || 'en');
+  if (at && Number.isFinite(at.lat) && Number.isFinite(at.lon)) {
+    // Constrain to ~50 km around the user, so results are local, not global.
+    url.searchParams.set('viewbox', viewboxFor(at));
+    url.searchParams.set('bounded', '1');
+  } else {
+    // No location: never return results from another continent.
+    url.searchParams.set('countrycodes', 'kr');
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), NOMINATIM_TIMEOUT_MS);

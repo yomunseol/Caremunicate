@@ -58,6 +58,14 @@ const nominatimDevProxy = (): Plugin => ({
       const url = new URL(req.url ?? '/', 'http://localhost');
       const query = url.searchParams.get('q') ?? '';
       const lang = url.searchParams.get('lang') ?? 'en';
+      const latRaw = url.searchParams.get('lat');
+      const lonRaw = url.searchParams.get('lon');
+      const lat = Number(latRaw);
+      const lon = Number(lonRaw);
+      const at =
+        latRaw && lonRaw && Number.isFinite(lat) && Number.isFinite(lon)
+          ? { lat, lon }
+          : null;
 
       const send = (status: number, body: unknown, cache = false) => {
         res.statusCode = status;
@@ -71,7 +79,7 @@ const nominatimDevProxy = (): Plugin => ({
         return;
       }
 
-      void proxyNominatim(query, lang)
+      void proxyNominatim(query, lang, at)
         .then((result) => {
           if ('error' in result) {
             send(result.status, { error: result.error });

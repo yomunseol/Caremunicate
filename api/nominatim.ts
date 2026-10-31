@@ -50,6 +50,10 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
       return;
     }
     const lang = asString(req.query?.lang).trim() || 'en';
+    const latRaw = asString(req.query?.lat).trim();
+    const lonRaw = asString(req.query?.lon).trim();
+    const lat = Number(latRaw);
+    const lon = Number(lonRaw);
 
     const url = new URL(ENDPOINT);
     url.searchParams.set('q', q);
@@ -57,6 +61,16 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     url.searchParams.set('limit', '20');
     url.searchParams.set('addressdetails', '1');
     url.searchParams.set('accept-language', lang);
+    if (latRaw && lonRaw && Number.isFinite(lat) && Number.isFinite(lon)) {
+      // ~50 km box around the user: local results, never global.
+      const dLat = 50 / 111;
+      const dLon = 50 / (111 * Math.max(Math.cos((lat * Math.PI) / 180), 0.01));
+      url.searchParams.set('viewbox', `${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`);
+      url.searchParams.set('bounded', '1');
+    } else {
+      // No location: never return results from another continent.
+      url.searchParams.set('countrycodes', 'kr');
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
