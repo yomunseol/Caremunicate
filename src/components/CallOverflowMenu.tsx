@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, LayoutGrid, Lock, LockOpen, Maximize, UserMinus, Users, X } from 'lucide-react';
+import { Activity, FileText, LayoutGrid, Lock, LockOpen, Maximize, UserMinus, Users, X } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import CallDevicePicker from './CallDevicePicker';
@@ -21,6 +21,9 @@ type CallOverflowMenuProps = {
   onFullscreen: () => void;
   onToggleStats: () => void;
   onClose: () => void;
+  /** Provider-only: open Caremunicate Docs for this call. */
+  canUseDocs?: boolean;
+  onOpenDocs?: () => void;
 };
 
 function Switch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
@@ -48,6 +51,8 @@ export default function CallOverflowMenu({
   onFullscreen,
   onToggleStats,
   onClose,
+  canUseDocs = false,
+  onOpenDocs,
 }: CallOverflowMenuProps) {
   const { t } = useLang();
   const {
@@ -153,6 +158,13 @@ export default function CallOverflowMenu({
         <Activity size={16} />
         <span>{t('call.callStats')}</span>
       </button>
+
+      {canUseDocs && onOpenDocs ? (
+        <button type="button" className="call-overflow-item" onClick={onOpenDocs}>
+          <FileText size={16} />
+          <span>{t('call.docs')}</span>
+        </button>
+      ) : null}
 
       {isHost && policy ? (
         <div className="call-overflow-section">

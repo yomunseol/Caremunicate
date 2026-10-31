@@ -19,12 +19,11 @@ import {
   type CallPolicy,
 } from '../lib/callRooms';
 import {
-  appendCallMessage,
   endCallSession,
   ensureCallSession,
-  subscribeCallSession,
   type CallChatEntry,
 } from '../lib/callSessions';
+import { loadCallChat, sendCallChat, subscribeCallChat } from '../lib/callChat';
 
 // ---------------------------------------------------------------------------
 // First-party calling engine over Supabase Realtime broadcast.
@@ -1582,7 +1581,7 @@ export function useCall(
     [me, attachChannel, enterPrejoin, refreshDevices],
   );
 
-  /** Open (or rejoin) the persisted session and stream its chat_log. */
+  /** Open the docs session, then load + stream the dedicated chat history. */
   const openSession = useCallback(
     async (
       roomKey: string,
@@ -1590,34 +1589,51 @@ export function useCall(
       hostId: string | null,
       kindValue: string,
     ) => {
+      // Docs lock lives on call_sessions; chat does not depend on it.
       const session = await ensureCallSession({
         roomKey,
         roomCode: roomCodeValue,
         hostId,
         kind: kindValue,
       });
-      if (!session || !alive.current) return;
+      if (!alive.current) return;
 
-      sessionRef.current = session.id;
-      setSessionId(session.id);
-      setChatMessages(session.chat_log);
+      if (session) {
+        sessionRef.current = session.id;
+        setSessionId(session.id);
+      }
+
+      const history = await loadCallChat(roomKey);
+      if (!alive.current) return;
+      setChatMessages(history);
 
       // A DEDICATED channel — never the call: signaling one, which the engine
       // deliberately releases once the mesh settles.
       sessionUnsub.current?.();
-      sessionUnsub.current = subscribeCallSession(session.id, (entries) => {
-        if (alive.current) setChatMessages(entries);
+      sessionUnsub.current = subscribeCallChat(roomKey, (entry) => {
+        if (!alive.current) return;
+        setChatMessages((previous) => {
+          if (previous.some((item) => item.id === entry.id)) return previous;
+          // The server echo of our own optimistic row: drop the local copy.
+          const withoutOptimistic = previous.filter(
+            (item) =>
+              !(item.id.startsWith('local-') && item.sender === entry.sender && item.body === entry.body),
+          );
+          return [...withoutOptimistic, entry].sort(
+            (a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id),
+          );
+        });
       });
     },
     [],
   );
 
-  /** Local echo, then persist; reconcile with the server entry by id. */
+  /** Local echo, then persist to call_chat_messages; reconcile by id. */
   const sendChat = useCallback(
     (body: string) => {
       const text = body.trim();
-      const activeId = sessionRef.current;
-      if (!text || !activeId) return;
+      const callId = room.current;
+      if (!text || !callId || !me) return;
 
       const optimistic: CallChatEntry = {
         id: `local-${Math.random().toString(36).slice(2)}`,
@@ -1627,7 +1643,7 @@ export function useCall(
       };
       setChatMessages((previous) => [...previous, optimistic]);
 
-      void appendCallMessage(activeId, myName, text).then((entry) => {
+      void sendCallChat({ callId, userId: me, userName: myName, message: text }).then((entry) => {
         if (!entry || !alive.current) return;
         setChatMessages((previous) => {
           const withoutLocal = previous.filter((item) => item.id !== optimistic.id);
@@ -1638,7 +1654,7 @@ export function useCall(
         });
       });
     },
-    [myName],
+    [me, myName],
   );
 
   /** "Join now" — promote the preview to the live call and connect. */

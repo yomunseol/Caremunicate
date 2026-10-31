@@ -2,7 +2,8 @@ import { supabase } from './supabase';
 import { firstRow } from './rows';
 
 // ---------------------------------------------------------------------------
-// Call sessions — the persisted row behind in-call chat and clinical docs.
+// Call sessions — the persisted row behind clinical docs. Chat lives in its own
+// table (call_chat_messages) via lib/callChat.ts.
 //
 // One row per live call, keyed by the room. The engine creates/joins it on
 // connect and closes it on teardown. Reads degrade quietly on a project that
@@ -79,45 +80,6 @@ export const loadCallSession = async (sessionId: string): Promise<CallSession | 
   return normalize(firstRow<Record<string, unknown>>(data));
 };
 
-/** Append one chat entry atomically (the RPC owns the JSONB concat). */
-export const appendCallMessage = async (
-  sessionId: string,
-  sender: string,
-  body: string,
-): Promise<CallChatEntry | null> => {
-  if (!sessionId || !body.trim()) return null;
-
-  const { data, error } = await supabase.rpc('append_call_message', {
-    p_session: sessionId,
-    p_sender: sender,
-    p_body: body,
-  });
-
-  if (error) {
-    console.error('CALL ERROR:', error.message);
-    return null;
-  }
-  return (data as CallChatEntry) ?? null;
-};
-
-export const setCallSessionRecording = async (
-  sessionId: string,
-  path: string,
-): Promise<boolean> => {
-  if (!sessionId) return false;
-
-  const { error } = await supabase
-    .from('call_sessions')
-    .update({ has_recording: true, recording_url: path })
-    .eq('id', sessionId);
-
-  if (error) {
-    console.error('CALL ERROR:', error.message);
-    return false;
-  }
-  return true;
-};
-
 /** Mark the session over — this is what locks a 'meeting_only' doc. */
 export const endCallSession = async (sessionId: string): Promise<void> => {
   if (!sessionId) return;
@@ -130,36 +92,3 @@ export const endCallSession = async (sessionId: string): Promise<void> => {
   if (error) console.error('CALL ERROR:', error.message);
 };
 
-/**
- * Stream chat_log updates for one session. Returns an unsubscribe.
- *
- * Uses a DEDICATED channel — never the `call:` signaling channel, which the
- * engine deliberately releases once the mesh settles.
- */
-export const subscribeCallSession = (
-  sessionId: string,
-  onChat: (entries: CallChatEntry[]) => void,
-): (() => void) => {
-  if (!sessionId) return () => {};
-
-  const channel = supabase
-    .channel('call-session:' + sessionId)
-    .on(
-      'postgres_changes',
-      {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'call_sessions',
-        filter: `id=eq.${sessionId}`,
-      },
-      (payload) => {
-        const row = payload.new as Record<string, unknown>;
-        if (Array.isArray(row?.chat_log)) onChat(row.chat_log as CallChatEntry[]);
-      },
-    )
-    .subscribe();
-
-  return () => {
-    void supabase.removeChannel(channel);
-  };
-};
