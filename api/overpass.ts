@@ -2,32 +2,28 @@
 // /api/overpass — Vercel serverless function (Node runtime).
 //
 // FULLY SELF-CONTAINED: zero relative imports, so an extensionless-import
-// error (TS2835) cannot occur here. The mirror array and the whole loop are
-// inlined in this one file.
+// error (TS2835) cannot occur here.
 //
-//   GET /api/overpass?data=<encoded Overpass QL>
+// ONE fast, less-congested mirror (lz4.overpass-api.de), POSTed as a form body
+// (the public server drops long GET URLs), behind a strict 8s AbortController.
+//
+//   GET/POST /api/overpass?data=<encoded Overpass QL>   (or form body `data`)
 //   -> 200 JSON (Overpass payload), Cache-Control: public, s-maxage=600
 //   -> 400 { error: 'missing data' }
 //   -> 405 { error: 'method not allowed' }
-//   -> 502 { error: 'all mirrors failed', reasons: [host:status, ...] }
-//   -> 500 { error: 'route crash', detail }
+//   -> 504 { error: 'Search timed out. Please try again.' }
+//   -> 429 { error: 'rate limited' }
+//   -> 500 { error: 'overpass failed' | 'invalid payload' | 'route crash' }
 // ---------------------------------------------------------------------------
 
 export const config = { runtime: 'nodejs' };
 
-// Global mirrors only — a regional extract (overpass.osm.ch is Switzerland-only)
-// answers 200 with an empty `elements` array elsewhere, which would be accepted
-// as a genuine "no results".
-const MIRRORS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
-];
-
+const ENDPOINT = 'https://lz4.overpass-api.de/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const MIRROR_TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 8_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
+const TIMEOUT_ERROR = 'Search timed out. Please try again.';
 
 type ProxyRequest = {
   method?: string;
@@ -69,24 +65,6 @@ const readQuery = (req: ProxyRequest): string => {
   return '';
 };
 
-/** `${host}:${status}` or `${host}:${ErrorName}` — one entry per failed mirror. */
-const mirrorReason = (mirror: string, reason: string | number): string => {
-  try {
-    return `${new URL(mirror).host}:${reason}`;
-  } catch {
-    return `${mirror}:${reason}`;
-  }
-};
-
-/** 429 if a mirror rate-limited, 504 if every attempt timed out, else 500. */
-const failureStatus = (reasons: string[]): number => {
-  if (reasons.some((reason) => reason.endsWith(':429'))) return 429;
-  if (reasons.length > 0 && reasons.every((reason) => /:(AbortError|TimeoutError)$/.test(reason))) {
-    return 504;
-  }
-  return 500;
-};
-
 export default async function handler(req: ProxyRequest, res: ProxyResponse): Promise<void> {
   try {
     if (req.method && req.method !== 'GET' && req.method !== 'POST') {
@@ -100,61 +78,55 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
       return;
     }
 
-    // Mirrors are tried SEQUENTIALLY, 15s each, collecting every reason.
-    const reasons: string[] = [];
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    for (const mirror of MIRRORS) {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), MIRROR_TIMEOUT_MS);
-
-        try {
-          const upstream = await fetch(mirror, {
-            method: 'POST',
-            body: new URLSearchParams({ data }),
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': USER_AGENT,
-            },
-            signal: controller.signal,
-            cache: 'no-store',
-          });
-
-          if (upstream.ok) {
-            const payload = (await upstream.json()) as { elements?: unknown };
-            if (!Array.isArray(payload?.elements)) {
-              reasons.push(mirrorReason(mirror, 'invalid payload'));
-              continue;
-            }
-
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            // Never let an EMPTY answer sit in the edge cache: it would keep
-            // showing "no results" for ten minutes after a transient miss.
-            res.setHeader('Cache-Control', payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
-            res.status(200).json(payload);
-            return;
-          }
-
-          reasons.push(mirrorReason(mirror, upstream.status));
-        } finally {
-          clearTimeout(timer);
-        }
-      } catch (error) {
-        console.error('Overpass API error:', error);
-        const name = error instanceof Error && error.name ? error.name : 'err';
-        reasons.push(mirrorReason(mirror, name));
-      }
+    let upstream: Response;
+    try {
+      upstream = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+          Accept: 'application/json',
+        },
+        body: new URLSearchParams({ data }),
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+    } finally {
+      clearTimeout(timer);
     }
 
-    const status = failureStatus(reasons);
-    console.error('Overpass API error:', reasons.join(', '));
-    res.status(status).json({
-      error: status === 504 ? 'upstream timeout' : status === 429 ? 'rate limited' : 'all mirrors failed',
-      reasons,
-    });
+    if (!upstream.ok) {
+      console.error('Overpass API error:', upstream.status);
+      if (upstream.status === 429) {
+        res.status(429).json({ error: 'rate limited' });
+        return;
+      }
+      res.status(500).json({ error: 'overpass failed', status: upstream.status });
+      return;
+    }
+
+    const payload = (await upstream.json()) as { elements?: unknown };
+    if (!Array.isArray(payload?.elements)) {
+      console.error('Overpass API error: invalid payload');
+      res.status(500).json({ error: 'invalid payload' });
+      return;
+    }
+
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    // Never cache an EMPTY answer — it would pin "no results" for ten minutes.
+    res.setHeader('Cache-Control', payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
+    res.status(200).json(payload);
   } catch (caught) {
-    // Never throw out of the route: answer 500 with the detail.
     console.error('Overpass API error:', caught);
+    const name = caught instanceof Error ? caught.name : 'err';
+    if (name === 'AbortError' || name === 'TimeoutError') {
+      // A real error state for the frontend → it shows "Search failed" + Retry.
+      res.status(504).json({ error: TIMEOUT_ERROR });
+      return;
+    }
     const detail = String((caught as { message?: unknown })?.message ?? caught);
     res.status(500).json({ error: 'route crash', detail });
   }

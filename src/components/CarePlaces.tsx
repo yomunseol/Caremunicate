@@ -139,11 +139,6 @@ const buildOverpassQuery = (lat: number, lon: number, needle = ''): string => {
   return `[out:json][timeout:25];\n(\n  ${clauses.join('\n  ')}\n);\nout center;`;
 };
 
-/** The mirror the relay fallback targets when the same-origin route is absent. */
-const OVERPASS_FALLBACK_MIRROR = 'https://overpass-api.de/api/interpreter';
-/** Keyless CORS relay used ONLY as the last resort (route missing). */
-const ALLORIGINS_RAW = 'https://api.allorigins.win/raw?url=';
-
 type CodedError = Error & { code?: string; detail?: string };
 
 const overpassError = (code: string, detail: string, message?: string): CodedError => {
@@ -173,14 +168,9 @@ const readFailure = async (
 };
 
 /**
- * Overpass, in order:
- *
- *   1. Same-origin `/api/overpass` — mirror rotation, the per-mirror 15s ceiling
- *      and the edge cache all live server-side.
- *   2. Only if that route is missing (404), relay one mirror through
- *      allorigins, so the map still works on a host without the function.
- *
- * Failures carry a `code` so the caller can append the raw reason.
+ * Overpass through the same-origin `/api/overpass` route (one fast mirror, POST,
+ * strict 8s server timeout). Failures carry a `code` so the caller can append
+ * the raw reason.
  */
 const fetchOverpassOnce = async (
   query: string,
@@ -193,23 +183,6 @@ const fetchOverpassOnce = async (
 
   if (response.ok) {
     return (await response.json()) as { elements?: OverpassElement[] };
-  }
-
-  if (response.status === 404) {
-    const upstream = `${OVERPASS_FALLBACK_MIRROR}?data=${encodeURIComponent(query)}`;
-    const relayed = await fetch(`${ALLORIGINS_RAW}${encodeURIComponent(upstream)}`, {
-      headers: { Accept: 'application/json' },
-      signal,
-    });
-
-    if (!relayed.ok) {
-      throw overpassError(
-        '404',
-        `${OVERPASS_PROXY} responded 404 (route missing) and the mirror relay responded ${relayed.status}`,
-      );
-    }
-
-    return (await relayed.json()) as { elements?: OverpassElement[] };
   }
 
   // 429 / 504 / 500 / 502: read the JSON once and surface the real reasons.
