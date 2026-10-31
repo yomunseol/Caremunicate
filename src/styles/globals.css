@@ -484,15 +484,11 @@ img {
 }
 
 .hero-section {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate;
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 1.5rem;
   align-items: center;
-  min-block-size: 440px;
   margin-top: 1rem;
-  border-radius: 1.35rem;
 }
 
 .hero-card,
@@ -559,53 +555,21 @@ img {
   animation: softPulse 3.6s ease-in-out infinite;
 }
 
-/* Decorative hero map: absolute background, never interactive. */
-.hero-map {
-  position: absolute;
-  inset-block-start: 0;
-  inset-inline: 0;
-  z-index: 0;
-  height: 320px;
-  overflow: hidden;
-  pointer-events: none;
+.hero-visual {
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.hero-map .leaflet-container {
-  background: var(--accent-soft, #eef7f2);
-}
-
-/* Attribution must stay clickable even though the map is decorative. */
-.hero-map .leaflet-control-attribution {
-  pointer-events: auto;
-}
-
-@media (min-width: 768px) {
-  .hero-map {
-    height: 100%;
-  }
-}
-
-/* Gradient scrim between the map and the copy. */
-.hero-scrim {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0.95),
-    rgba(255, 255, 255, 0.8),
-    rgba(255, 255, 255, 0.6)
-  );
-}
-
-/* The copy sits above the scrim; the card is transparent over the map. */
-.hero-section .hero-card {
-  position: relative;
-  z-index: 10;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
+.hero-visual img {
+  border-radius: 1.35rem;
+  width: 100%;
+  max-height: 520px;
+  object-fit: cover;
+  animation: drift 4.4s ease-in-out infinite;
+  box-shadow: 0 20px 50px var(--shadow);
+  border: 1px solid var(--line);
 }
 
 .section-heading {

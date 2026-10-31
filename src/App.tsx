@@ -15,7 +15,6 @@ import CallHub from './components/CallHub';
 import RejoinBanner from './components/RejoinBanner';
 import CalendarPage from './components/CalendarPage';
 import HospitalMap from './components/HospitalMap';
-import HeroMap from './components/HeroMap';
 import DoctorList from './components/DoctorList';
 import MyCare from './components/MyCare';
 import PatientsList from './components/PatientsList';
@@ -871,9 +870,6 @@ function App() {
         {route === 'home' && (
           <>
             <section className="section hero-section">
-              <HeroMap />
-              <div className="hero-scrim" aria-hidden="true" />
-
               <div className="hero-card">
                 <div className="eyebrow">{t('home.heroEyebrow')}</div>
                 <h1 className="hero-title">
@@ -905,6 +901,10 @@ function App() {
                     </>
                   )}
                 </div>
+              </div>
+
+              <div className="hero-visual">
+                <img src="/Caremunicate_carousel_photo.jpg" alt={t('home.heroImageAlt')} />
               </div>
             </section>
 

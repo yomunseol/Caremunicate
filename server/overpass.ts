@@ -10,18 +10,21 @@
 //   • vite.config.ts   — a dev-only middleware standing in for it
 // ---------------------------------------------------------------------------
 
+// Global mirrors only. Regional extracts (e.g. overpass.osm.ch, which only holds
+// Swiss data) answer 200 with an EMPTY `elements` array everywhere else, which
+// the proxy would otherwise accept as a genuine "no results" — the bug that left
+// the Care Places list empty.
 export const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.osm.ch/api/interpreter',
 ] as const;
 
 /** Identifies the app and its purpose to the Overpass operators. */
 export const OVERPASS_USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
 
-/** Per-mirror ceiling. Each mirror gets its own controller. */
-export const MIRROR_TIMEOUT_MS = 15_000;
+/** Per-mirror ceiling (C-01b spec: 8s). Each mirror gets its own controller. */
+export const MIRROR_TIMEOUT_MS = 8_000;
 
 export const OVERPASS_CACHE_CONTROL = 'public, s-maxage=600';
 
@@ -66,7 +69,14 @@ export const proxyOverpass = async (query: string): Promise<OverpassProxyResult>
         });
 
         if (upstream.ok) {
-          return { ok: true, status: 200, body: await upstream.json() };
+          const payload = (await upstream.json()) as { elements?: unknown };
+          // A well-formed Overpass payload always carries an `elements` array.
+          // Anything else (an HTML page, a wrong-region mirror) is not an answer.
+          if (Array.isArray(payload?.elements)) {
+            return { ok: true, status: 200, body: payload };
+          }
+          reasons.push(mirrorReason(mirror, 'invalid payload'));
+          continue;
         }
 
         reasons.push(mirrorReason(mirror, upstream.status));

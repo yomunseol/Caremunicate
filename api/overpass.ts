@@ -15,16 +15,19 @@
 
 export const config = { runtime: 'nodejs' };
 
+// Global mirrors only — a regional extract (overpass.osm.ch is Switzerland-only)
+// answers 200 with an empty `elements` array elsewhere, which would be accepted
+// as a genuine "no results".
 const MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter',
-  'https://overpass.osm.ch/api/interpreter',
 ];
 
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const MIRROR_TIMEOUT_MS = 15_000;
+const MIRROR_TIMEOUT_MS = 8_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
+const NO_STORE = 'no-store';
 
 type ProxyRequest = {
   method?: string;
@@ -109,9 +112,16 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
           });
 
           if (upstream.ok) {
-            const payload = await upstream.json();
+            const payload = (await upstream.json()) as { elements?: unknown };
+            if (!Array.isArray(payload?.elements)) {
+              reasons.push(mirrorReason(mirror, 'invalid payload'));
+              continue;
+            }
+
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            res.setHeader('Cache-Control', CACHE_CONTROL);
+            // Never let an EMPTY answer sit in the edge cache: it would keep
+            // showing "no results" for ten minutes after a transient miss.
+            res.setHeader('Cache-Control', payload.elements.length > 0 ? CACHE_CONTROL : NO_STORE);
             res.status(200).json(payload);
             return;
           }
