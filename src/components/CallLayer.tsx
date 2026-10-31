@@ -158,7 +158,7 @@ function Tile({
       ) : null}
 
       {!camOn && !sharing ? (
-        <span className="call-avatar" style={styles.avatar} aria-hidden="true">
+        <span className="call-avatar" style={styles.avatar} title={t('call.audioOnlyMode')} aria-hidden="true">
           {initials}
         </span>
       ) : null}
@@ -807,11 +807,12 @@ export default function CallLayer() {
                 </div>
               </div>
             ) : (
-              <div style={{ ...styles.gallery, gridTemplateColumns: `repeat(${galleryColumns}, minmax(0, 1fr))` }}>
+              <>
+                <div style={{ ...styles.gallery, gridTemplateColumns: `repeat(${galleryColumns}, minmax(0, 1fr))` }}>
                 {remoteIds.length === 0 ? (
-                  <p style={styles.stageHint}>
-                    {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
-                  </p>
+                  <div style={styles.galleryTile}>
+                    <Tile {...selfTileProps} />
+                  </div>
                 ) : (
                   remoteIds.map((id) => (
                     <div key={id} style={styles.galleryTile}>
@@ -834,7 +835,15 @@ export default function CallLayer() {
                     </div>
                   ))
                 )}
-              </div>
+                </div>
+
+                {/* Local self-view: floating PiP in the bottom-right corner. */}
+                {remoteIds.length > 0 ? (
+                  <div style={styles.selfPip} aria-hidden="true">
+                    <Tile {...selfTileProps} />
+                  </div>
+                ) : null}
+              </>
             )}
 
             {/* Reactions float up from bottom-centre over the stage. */}
@@ -914,8 +923,8 @@ export default function CallLayer() {
                 <button
                   type="button"
                   onClick={toggleMic}
-                  title={t('call.mic')}
-                  aria-label={t('call.mic')}
+                  title={muted ? t('call.unmute') : t('call.mute')}
+                  aria-label={muted ? t('call.unmute') : t('call.mute')}
                   aria-pressed={!muted}
                   style={{ ...styles.circleButton, ...(muted ? styles.circleOff : null) }}
                 >
@@ -925,8 +934,8 @@ export default function CallLayer() {
                 <button
                   type="button"
                   onClick={toggleCamera}
-                  title={t('call.camera')}
-                  aria-label={t('call.camera')}
+                  title={cameraOff || audioOnly ? t('call.turnOnCamera') : t('call.turnOffCamera')}
+                  aria-label={cameraOff || audioOnly ? t('call.turnOnCamera') : t('call.turnOffCamera')}
                   aria-pressed={!cameraOff}
                   disabled={audioOnly}
                   style={{ ...styles.circleButton, ...(cameraOff ? styles.circleOff : null) }}
@@ -1060,11 +1069,11 @@ export default function CallLayer() {
               type="button"
               className="call-leave-pill"
               onClick={isHost ? endForAll : endCall}
-              title={isHost ? t('call.endForAll') : t('call.leave')}
+              title={isHost ? t('call.endForAll') : t('call.endCall')}
               style={styles.leavePill}
             >
               <PhoneOff size={17} aria-hidden="true" />
-              <span>{isHost ? t('call.endForAll') : t('call.leave')}</span>
+              <span>{isHost ? t('call.endForAll') : t('call.endCall')}</span>
             </button>
           </footer>
 
@@ -1252,6 +1261,19 @@ const styles: Record<string, CSSProperties> = {
     minHeight: 0,
   },
   galleryTile: { aspectRatio: '16 / 9', minHeight: 0 },
+  selfPip: {
+    position: 'absolute',
+    insetBlockEnd: 12,
+    insetInlineEnd: 12,
+    width: 'min(150px, 38vw)',
+    aspectRatio: '16 / 9',
+    borderRadius: '0.9rem',
+    overflow: 'hidden',
+    border: '1px solid rgba(255, 255, 255, 0.25)',
+    boxShadow: '0 10px 30px rgba(6, 26, 22, 0.45)',
+    zIndex: 2,
+    pointerEvents: 'none',
+  },
   speakerStage: { display: 'grid', gridTemplateRows: '1fr auto', gap: '10px', height: '100%', minHeight: 0 },
   speakerMain: { position: 'relative', minHeight: 0 },
   filmstrip: { display: 'flex', gap: '10px', overflowX: 'auto', paddingBlockEnd: '0.2rem' },
