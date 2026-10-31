@@ -208,20 +208,22 @@ export default function TwoFactorSetup() {
 
       if (cancelled) return;
 
-      // A real TOTP factor always wins the display state.
+      // TOTP is removed: force any existing authenticator factor OFF. Unenroll
+      // it and reset the profile to 'none'. Email / off users are untouched.
       if (factor) {
-        setFactorId(factor.id);
-        setMethod('app');
+        const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+        if (unenrollError) console.log('[2FA] unenroll error:', unenrollError);
+        setFactorId('');
+        setMethod('none');
         if (userId) {
           await supabase
             .from('profiles')
-            .update({ preferred_2fa_method: 'app' })
-            .eq('user_id', userId)
-            .maybeSingle();
+            .update({ preferred_2fa_method: 'none' })
+            .eq('user_id', userId);
         }
       } else {
         setFactorId('');
-        setMethod(savedMethod);
+        setMethod(savedMethod === 'app' ? 'none' : savedMethod);
       }
 
       if (listError) setError(listError.message);
@@ -534,25 +536,6 @@ export default function TwoFactorSetup() {
                 <small style={{ color: '#557b76' }}>{t('tfa.emailDesc')}</small>
               </span>
               {method === 'email' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.active')}</span>
-              ) : null}
-            </label>
-
-            <label style={methodRowStyle}>
-              <input
-                type="radio"
-                name="two-factor-method"
-                checked={method === 'app'}
-                onChange={() => void handleMethodChange('app')}
-                disabled={loading}
-                style={methodRadioStyle}
-              />
-              <span>
-                <strong>{t('tfa.app')}</strong>
-                <br />
-                <small style={{ color: '#557b76' }}>{t('tfa.appDesc')}</small>
-              </span>
-              {method === 'app' ? (
                 <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.active')}</span>
               ) : null}
             </label>

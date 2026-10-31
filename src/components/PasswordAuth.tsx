@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Mail } from 'lucide-react';
-import type { AuthResponse, Factor } from '@supabase/supabase-js';
+import type { AuthResponse } from '@supabase/supabase-js';
 import {
   clearPersistedSupabaseSession,
   resetMemoryAuthClient,
@@ -9,17 +9,14 @@ import {
 } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
+import { isAuthAllowed, recordAuthAttempt } from '../lib/authRateLimit';
 import CodePanel from './CodePanel';
 
-type View = 'password' | 'app_code' | 'email_code';
+type View = 'password' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
 
 interface PasswordAuthProps {
   onAuthenticated?: () => void;
-}
-
-function findTotpFactor(factors: Factor[] | undefined): Factor | null {
-  return factors?.find((factor) => factor.factor_type === 'totp' && factor.status === 'verified') ?? null;
 }
 
 export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
@@ -28,7 +25,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [view, setView] = useState<View>('password');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [factorId, setFactorId] = useState('');
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -114,6 +110,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       return;
     }
 
+    if (!(await isAuthAllowed(email))) {
+      setError(t('auth.rateLimited'));
+      return;
+    }
+
     setLoading(true);
     setError('');
     setMessage('');
@@ -128,6 +129,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       if (signInError) {
         console.log('Password Response (error):', signInError);
+        await recordAuthAttempt(email, false);
         setError(t('login.err.invalidCredentials'));
         return;
       }
@@ -156,6 +158,29 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       if (profile?.preferred_2fa_method === 'email' || profile?.preferred_2fa_method === 'app') {
         preference = profile.preferred_2fa_method;
       }
+      // 2FA is EMAIL-ONLY now. If the user has any authenticator (TOTP) factor,
+      // force it off: unenroll it and reset the profile preference to 'none'.
+      // Email / already-off users are left untouched.
+      const { data: factorsData } = await supabaseMemory.auth.mfa.listFactors();
+      const totpFactors = (factorsData?.all ?? []).filter(
+        (factor) => factor.factor_type === 'totp',
+      );
+      if (totpFactors.length > 0 || preference === 'app') {
+        for (const factor of totpFactors) {
+          const { error: unenrollError } = await supabaseMemory.auth.mfa.unenroll({
+            factorId: factor.id,
+          });
+          if (unenrollError) console.log('TOTP unenroll failed:', unenrollError);
+        }
+        const { error: prefError } = await supabaseMemory
+          .from('profiles')
+          .update({ preferred_2fa_method: 'none' })
+          .eq('user_id', userId);
+        if (prefError) console.log('2FA preference reset failed:', prefError);
+        preference = 'none';
+      }
+      await recordAuthAttempt(email, true);
+
       console.log('Resolved 2FA preference:', preference);
 
       // Branch A: no 2FA. This is the ONLY branch where we now create the real
@@ -187,53 +212,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       // logged in until the final step below creates the real session.
       setPending2FA(true);
 
-      // Branch B: authenticator app 2FA (real Supabase MFA factor).
-      if (preference === 'app') {
-        const { data: factors, error: listError } = await supabaseMemory.auth.mfa.listFactors();
-        console.log('Intercepted Factors:', factors);
-        console.log('MFA Factors (error):', listError);
-
-        const factor = listError ? null : findTotpFactor(factors?.all ?? []);
-        console.log('Branch B (app): matched totp factor:', factor);
-
-        if (listError) {
-          // Fail closed — cannot confirm the factor, so block sign-in.
-          setPending2FA(false);
-          setError(listError.message);
-          setLoading(false);
-          return;
-        }
-
-        if (factor) {
-          // Hold the factor id and show the authenticator code screen.
-          console.log('Branch B (app): requiring authenticator code. Factor id:', factor.id);
-          setFactorId(factor.id);
-          setCode('');
-          setView('app_code');
-          setLoading(false);
-          return;
-        }
-
-        // Preference says 'app' but no verified factor exists — allow sign-in
-        // rather than locking the user out of a stale preference. Create the
-        // real persistent session.
-        console.log('Branch B (app): no verified totp factor despite preference. Creating persistent session.');
-        const persistent = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-        if (persistent.error) {
-          setPending2FA(false);
-          setError(persistent.error.message);
-          setLoading(false);
-          return;
-        }
-        console.log('2FA complete, persistent session created');
-        goToProfile();
-        return;
-      }
-
-      // Branch C: email 2FA. Trigger a native email OTP code, then always show
+      // Email 2FA. Trigger a native email OTP code, then always show
       // the code entry view — even if the send failed.
       if (preference === 'email') {
         await sendEmailCode();
@@ -268,79 +247,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
-  // Branch B final step: authenticator code. Verify against the real Supabase
-  // MFA factor via challengeAndVerify on the MEMORY client — this confirms the
-  // TOTP factor and issues a session whose tokens we explicitly promote into
-  // the persistent client with setSession(), completing the trap.
-  const handleAppCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
-    const token = code.trim();
-    if (!token) {
-      setError(t('login.err.enterAppCode'));
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    setMessage('');
-    console.log('Verification attempt started');
-
-    try {
-      const { data, error: verifyError } = await supabaseMemory.auth.mfa.challengeAndVerify({
-        factorId,
-        code: token,
-      });
-      console.log('Challenge+Verify Response:', { data, error: verifyError });
-
-      if (verifyError || !data) {
-        setError(verifyError?.message ?? t('login.err.unableVerify'));
-        setCode('');
-        return;
-      }
-
-      if (!data.access_token || !data.refresh_token) {
-        // Fail closed: without tokens we cannot complete the flow.
-        setError(t('login.err.noSession'));
-        setCode('');
-        return;
-      }
-
-      // Promote the memory-only session into the real persistent client.
-      const sessionResult = await supabase.auth.setSession({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-      });
-      console.log('Branch B (app): 2FA verified. Persistent session set:', {
-        data: sessionResult.data,
-        error: sessionResult.error,
-      });
-
-      if (sessionResult.error) {
-        setError(sessionResult.error.message);
-        setCode('');
-        return;
-      }
-
-      console.log('Session created successfully:', sessionResult.data.session);
-      console.log('2FA complete, persistent session created');
-
-      // Clear all pending-2FA state so the app treats the user as fully
-      // authenticated, then hard-redirect. A full page load bypasses any
-      // React state that may not have flushed after the async auth flow.
-      setPending2FA(false);
-      console.log('Redirecting to dashboard now');
-      window.location.href = '/#profile';
-    } catch (caughtError) {
-      console.error('Verification attempt error:', caughtError);
-      setError(caughtError instanceof Error ? caughtError.message : t('login.err.unableVerify'));
-      setCode('');
-    } finally {
-      setLoading(false);
-      console.log('Verification attempt finished');
-    }
-  };
-
   // Branch C final step: email code. Verify the OTP on the MEMORY client, then
   // explicitly create the persistent session with the returned tokens.
   const handleEmailCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -349,6 +255,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     const token = code.trim();
     if (!token) {
       setError(t('login.err.enterEmailCode'));
+      return;
+    }
+
+    if (!(await isAuthAllowed(email))) {
+      setError(t('auth.rateLimited'));
       return;
     }
 
@@ -366,6 +277,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       console.log('Email code verify response:', { verified, error });
 
       if (error || verified !== true) {
+        await recordAuthAttempt(email, false);
         setError(t('login.err.unableVerify'));
         setCode('');
         return;
@@ -388,6 +300,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
         return;
       }
 
+      await recordAuthAttempt(email, true);
       console.log('2FA complete, persistent session created');
 
       // Clear all pending-2FA state so the app treats the user as fully
@@ -570,27 +483,21 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     resendButtonDisabled: { opacity: 0.55, cursor: 'not-allowed' as const },
   };
 
-  const isCodeView = view === 'app_code' || view === 'email_code';
+  const isCodeView = view === 'email_code';
 
   return (
     <div style={styles.card} role="form" aria-label={t('login.eyebrow')}>
       <div>
         <p style={styles.eyebrow}>{t('login.eyebrow')}</p>
         <h2 style={styles.title}>
-          {view === 'app_code'
-            ? t('login.titleApp')
-            : view === 'email_code'
-              ? t('login.titleEmail')
-              : t('login.titleWelcome')}
+          {view === 'email_code' ? t('login.titleEmail') : t('login.titleWelcome')}
         </h2>
         <p style={styles.description}>
-          {view === 'app_code'
-            ? t('login.descApp')
-            : view === 'email_code'
-              ? sendNotice
-                ? t('login.descEmailEnter', { email: email.trim() })
-                : t('login.descEmailSent', { email: email.trim() })
-              : t('login.descPassword')}
+          {view === 'email_code'
+            ? sendNotice
+              ? t('login.descEmailEnter', { email: email.trim() })
+              : t('login.descEmailSent', { email: email.trim() })
+            : t('login.descPassword')}
         </p>
       </div>
 
@@ -710,29 +617,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               )}
             </div>
           ) : null}
-        </form>
-      ) : null}
-
-      {view === 'app_code' ? (
-        <form onSubmit={handleAppCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
-          <div style={styles.field}>
-            <label style={styles.label}>{t('login.labelAppCode')}</label>
-            <CodePanel
-              value={code}
-              onChange={setCode}
-              disabled={loading}
-              autoFocus
-              label={t('login.labelAppCode')}
-            />
-          </div>
-
-          <button type="submit" style={styles.primaryButton} disabled={loading}>
-            {loading ? t('tfa.verifying') : t('login.verifyAndSignIn')}
-          </button>
-
-          <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
-            {t('login.backToSignIn')}
-          </button>
         </form>
       ) : null}
 

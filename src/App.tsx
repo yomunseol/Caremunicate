@@ -37,6 +37,7 @@ import { useAuth } from './context/AuthContext';
 import { useToast } from './context/ToastContext';
 import { isProvider, roleLabelKey } from './lib/roles';
 import { describeError } from './lib/errors';
+import { isAuthAllowed, recordAuthAttempt } from './lib/authRateLimit';
 import { useLang } from './i18n';
 import ResetPassword from './components/ResetPassword';
 
@@ -478,6 +479,7 @@ function App() {
     { label: t('auth.ruleNumber'), met: passwordChecks.hasNumber(signupValues.password) },
     { label: t('auth.ruleSpecial'), met: passwordChecks.hasSpecial(signupValues.password) },
   ];
+  const passwordMeetsRules = passwordChecklist.every((item) => item.met);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -495,6 +497,14 @@ function App() {
 
     if (Object.keys(nextErrors).length > 0) {
       console.log('Validation failed:', nextErrors);
+      return;
+    }
+
+    const signupEmail = signupValues.email.trim();
+    // Brute-force gate (fails open until the FOUNDER SQL is applied).
+    if (!(await isAuthAllowed(signupEmail))) {
+      setAuthMessageType('error');
+      setAuthMessage(t('auth.rateLimited'));
       return;
     }
 
@@ -537,6 +547,7 @@ function App() {
       });
 
       if (error) throw error;
+      await recordAuthAttempt(signupEmail, true);
 
       // Signup resolved: surface the success banner at the top of the form.
       setShowSuccess(true);
@@ -575,6 +586,7 @@ function App() {
       setAuthMessage(t('auth.msg.ready'));
       navigate('profile');
     } catch (error) {
+      await recordAuthAttempt(signupEmail, false);
       setAuthMessageType('error');
       setAuthMessage(error instanceof Error ? error.message : t('auth.msg.errorGeneric'));
     } finally {
@@ -1170,6 +1182,9 @@ function App() {
                             ))}
                           </ul>
                         ) : null}
+                        {signupValues.password.length > 0 && !passwordMeetsRules ? (
+                          <span className="field-error">{t('auth.passwordWeak')}</span>
+                        ) : null}
                       </div>
 
                       <div className="field-wrap">
@@ -1221,7 +1236,12 @@ function App() {
                         })}
                       </div>
 
-                      <button className="primary-button" type="submit" disabled={isAuthLoading || !signupIsValid}>
+                      <button
+                        className="primary-button"
+                        type="submit"
+                        disabled={isAuthLoading || !signupIsValid}
+                        title={!passwordMeetsRules ? t('auth.passwordWeak') : undefined}
+                      >
                         {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}
                       </button>
                     </>
