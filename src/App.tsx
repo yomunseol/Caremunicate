@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { User } from '@supabase/supabase-js';
-import { Building2, Check, Cross, Stethoscope, UserRound, X } from 'lucide-react';
+import { Building2, Cross, Stethoscope, UserRound } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
 import PasswordAuth from './components/PasswordAuth';
+import SignupVerify from './components/SignupVerify';
+import PasswordStrengthMeter, { passwordMeetsRules } from './components/PasswordStrengthMeter';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
@@ -205,13 +207,7 @@ type UserProfile = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-// Individual rules shown live in the password checklist (real-time).
-const passwordRuleMinLength = 8;
-const passwordRuleUpper = /[A-Z]/;
-const passwordRuleLower = /[a-z]/;
-const passwordRuleNumber = /\d/;
-const passwordRuleSpecial = /[!@#$%^&*]/;
-// Aggregate requirement for submit-time validation (all rules above).
+// Aggregate requirement for submit-time validation (all five rules).
 const passwordPattern =
   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/;
 
@@ -269,6 +265,9 @@ function App() {
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   // Signup success banner, shown above the form until dismissed.
   const [showSuccess, setShowSuccess] = useState(false);
+  // Set after signUp() when email confirmation is required: the verify screen
+  // replaces the signup form until the 6-digit code creates a session.
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
 
   useEffect(() => {
     const syncRoute = () => {
@@ -366,6 +365,7 @@ function App() {
     setTouchedFields({});
     setAuthMessage('');
     setShowSuccess(false);
+    setPendingVerifyEmail(null);
     const hash = mode === 'signup' && selectedPlan ? `#signup?plan=${selectedPlan}` : mode === 'login' ? '#login' : '#signup';
     window.history.pushState({}, '', `${window.location.pathname}${hash}`);
   };
@@ -379,15 +379,6 @@ function App() {
   const getFullNameError = (value: string) => {
     if (!value.trim()) return t('auth.err.fullName');
     return '';
-  };
-
-  // Individual live checks shown in the real-time checklist.
-  const passwordChecks = {
-    minLength: (value: string) => value.length >= passwordRuleMinLength,
-    hasUpper: (value: string) => passwordRuleUpper.test(value),
-    hasLower: (value: string) => passwordRuleLower.test(value),
-    hasNumber: (value: string) => passwordRuleNumber.test(value),
-    hasSpecial: (value: string) => passwordRuleSpecial.test(value),
   };
 
   const getPasswordError = (value: string) => {
@@ -470,16 +461,9 @@ function App() {
     !getPasswordError(signupValues.password) &&
     !getConfirmPasswordError(signupValues.confirmPassword);
 
-  // Real-time checklist shown under the password field. Empty password shows
-  // only neutral (unmet) rows.
-  const passwordChecklist = [
-    { label: t('auth.ruleLength'), met: passwordChecks.minLength(signupValues.password) },
-    { label: t('auth.ruleUpper'), met: passwordChecks.hasUpper(signupValues.password) },
-    { label: t('auth.ruleLower'), met: passwordChecks.hasLower(signupValues.password) },
-    { label: t('auth.ruleNumber'), met: passwordChecks.hasNumber(signupValues.password) },
-    { label: t('auth.ruleSpecial'), met: passwordChecks.hasSpecial(signupValues.password) },
-  ];
-  const passwordMeetsRules = passwordChecklist.every((item) => item.met);
+  // The shared meter owns the five rules and their markup, so signup and the
+  // password-reset step can never disagree.
+  const passwordRulesMet = passwordMeetsRules(signupValues.password);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -549,14 +533,16 @@ function App() {
       if (error) throw error;
       await recordAuthAttempt(signupEmail, true);
 
-      // Signup resolved: surface the success banner at the top of the form.
-      setShowSuccess(true);
-
       if (!data.session) {
-        // No session yet (email confirmation pending) so nothing can be written
-        // under RLS; the role travels in the sign-up metadata until then.
+        // Email confirmation is required: park on the verify screen until the
+        // 6-digit code creates a session. Nothing can be written under RLS yet;
+        // the role travels in the sign-up metadata until then.
+        setPendingVerifyEmail(signupEmail);
         return;
       }
+
+      // Signup resolved with a session: surface the success banner.
+      setShowSuccess(true);
 
       // Persist the selected role onto profiles now that we have a session.
       if (data.user) {
@@ -1039,21 +1025,34 @@ function App() {
               <div className="auth-form-shell" key={authMode}>
                 <div className="eyebrow">{authMode === 'signup' ? t('auth.signupEyebrow') : t('auth.loginEyebrow')}</div>
                 <h2>
-                  {authMode === 'signup'
-                    ? isProvider(authRole)
-                      ? t('auth.titleDoctorSignup')
-                      : t('auth.titleSignup')
-                    : t('auth.titleLogin')}
+                  {pendingVerifyEmail
+                    ? t('auth.verifyEmail')
+                    : authMode === 'signup'
+                      ? isProvider(authRole)
+                        ? t('auth.titleDoctorSignup')
+                        : t('auth.titleSignup')
+                      : t('auth.titleLogin')}
                 </h2>
                 <p className="auth-copy">
-                  {authMode === 'signup'
-                    ? isProvider(authRole)
-                      ? t('auth.copyDoctorSignup')
-                      : t('auth.copySignup')
-                    : t('auth.copyLogin')}
+                  {pendingVerifyEmail
+                    ? t('auth.verifyEmailDesc', { email: pendingVerifyEmail })
+                    : authMode === 'signup'
+                      ? isProvider(authRole)
+                        ? t('auth.copyDoctorSignup')
+                        : t('auth.copySignup')
+                      : t('auth.copyLogin')}
                 </p>
 
                 {authMode === 'signup' ? (
+                  pendingVerifyEmail ? (
+                    <SignupVerify
+                      email={pendingVerifyEmail}
+                      onVerified={() => {
+                        window.location.href = '/#profile';
+                      }}
+                      onBack={() => openAuth('login')}
+                    />
+                  ) : (
                   <>
                     {selectedPlanOption ? (
                       <div className="plan-selected-banner">
@@ -1171,20 +1170,9 @@ function App() {
                         />
                         {showFieldError('password') ? <span className="field-error">{signupErrors.password}</span> : null}
 
-                        {/* Real-time password requirements checklist. Hidden until
-                            the user starts typing, then updates live. */}
-                        {signupValues.password.length > 0 ? (
-                          <ul className="password-checklist" aria-label={t('auth.reqAria')}>
-                            {passwordChecklist.map((item) => (
-                              <li key={item.label} className={item.met ? 'password-rule met' : 'password-rule'}>
-                                <span className="password-rule-icon" aria-hidden="true">{item.met ? <Check size={14} /> : <X size={14} />}</span> {item.label}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {signupValues.password.length > 0 && !passwordMeetsRules ? (
-                          <span className="field-error">{t('auth.passwordWeak')}</span>
-                        ) : null}
+                        {/* Real-time password requirements checklist, shared with
+                            the password-reset flow. */}
+                        <PasswordStrengthMeter password={signupValues.password} />
                       </div>
 
                       <div className="field-wrap">
@@ -1240,13 +1228,14 @@ function App() {
                         className="primary-button"
                         type="submit"
                         disabled={isAuthLoading || !signupIsValid}
-                        title={!passwordMeetsRules ? t('auth.passwordWeak') : undefined}
+                        title={!passwordRulesMet ? t('auth.passwordWeak') : undefined}
                       >
                         {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}
                       </button>
                     </>
                   </form>
                   </>
+                  )
                 ) : (
                   <PasswordAuth onAuthenticated={() => navigate('profile')} />
                 )}

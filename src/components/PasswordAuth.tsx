@@ -1,5 +1,4 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Mail } from 'lucide-react';
 import type { AuthResponse } from '@supabase/supabase-js';
 import {
   clearPersistedSupabaseSession,
@@ -11,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import { isAuthAllowed, recordAuthAttempt } from '../lib/authRateLimit';
 import CodePanel from './CodePanel';
+import PasswordResetFlow from './PasswordResetFlow';
 
 type View = 'password' | 'email_code';
 type TwoFactorMethod = 'none' | 'email' | 'app';
@@ -36,12 +36,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const [resendIn, setResendIn] = useState(0);
   // The inline "Forgot password?" panel, shown under the password field.
   const [recoveryOpen, setRecoveryOpen] = useState(false);
-  const [recoveryEmail, setRecoveryEmail] = useState('');
-  const [recoveryError, setRecoveryError] = useState('');
-  const [recoverySent, setRecoverySent] = useState(false);
-  const [recoveryBusy, setRecoveryBusy] = useState(false);
-  // 60s cooldown on the recovery email, counted down one second at a time.
-  const [recoveryCooldown, setRecoveryCooldown] = useState(0);
 
   // Clear any partially-persisted session from a previous attempt whenever the
   // component mounts (arriving at the login screen) or the view resets.
@@ -58,13 +52,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
     return () => clearTimeout(timer);
   }, [resendIn]);
-
-  // Tick the recovery-email cooldown down to zero.
-  useEffect(() => {
-    if (recoveryCooldown <= 0) return;
-    const timer = setTimeout(() => setRecoveryCooldown((seconds) => seconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [recoveryCooldown]);
 
   // Final step for every no-2FA success path. Clear any pending flag, then
   // hard-redirect: a full page load bypasses any React state that may not have
@@ -333,37 +320,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
-  // Sends the Supabase recovery email. The error is surfaced verbatim (the raw
-  // Supabase message) so failures are diagnosable; START of a 60s cooldown on
-  // success.
-  const sendRecovery = async () => {
-    const address = (recoveryEmail || email).trim();
-    if (!address) {
-      setRecoveryError(t('login.err.enterBoth'));
-      return;
-    }
-
-    setRecoveryBusy(true);
-    setRecoveryError('');
-    try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(address, {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      console.log('Recovery email response:', { error: resetError });
-
-      if (resetError) {
-        console.log('Recovery email error:', resetError);
-        setRecoveryError(resetError.message);
-        return;
-      }
-
-      setRecoverySent(true);
-      setRecoveryCooldown(60);
-    } finally {
-      setRecoveryBusy(false);
-    }
-  };
-
   const goBackToPassword = () => {
     setPending2FA(false);
     setView('password');
@@ -552,69 +508,25 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           <button
             type="button"
             style={styles.linkButton}
-            onClick={() => {
-              setRecoveryOpen((open) => !open);
-              setRecoveryError('');
-            }}
-            disabled={loading || recoveryBusy}
+            onClick={() => setRecoveryOpen((open) => !open)}
+            disabled={loading}
           >
             {t('auth.forgotPassword')}
           </button>
 
           {recoveryOpen ? (
             <div style={styles.recoveryPanel}>
-              {recoverySent ? (
-                <>
-                  <p style={styles.recoveryDone} role="status">
-                    <Mail size={16} aria-hidden="true" /> {t('auth.recoverySent')}
-                  </p>
-                  <button
-                    type="button"
-                    style={{
-                      ...styles.ghostButton,
-                      ...(recoveryCooldown > 0 || recoveryBusy ? styles.resendButtonDisabled : null),
-                    }}
-                    onClick={() => void sendRecovery()}
-                    disabled={recoveryCooldown > 0 || recoveryBusy}
-                  >
-                    {recoveryCooldown > 0
-                      ? t('tfa.resendIn', { seconds: recoveryCooldown })
-                      : t('reset.send')}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div style={styles.field}>
-                    <label style={styles.label} htmlFor="pa-recovery-email">
-                      {t('login.labelEmail')}
-                    </label>
-                    <input
-                      id="pa-recovery-email"
-                      style={styles.input}
-                      type="email"
-                      autoComplete="email"
-                      placeholder={t('login.phEmail')}
-                      value={recoveryEmail || email}
-                      onChange={(event) => setRecoveryEmail(event.target.value)}
-                      disabled={recoveryBusy}
-                    />
-                  </div>
-
-                  {recoveryError ? (
-                    <p style={styles.error} role="alert">{recoveryError}</p>
-                  ) : null}
-
-                  {/* Label supplied in the CR4 spec. */}
-                  <button
-                    type="button"
-                    style={styles.ghostButton}
-                    onClick={() => void sendRecovery()}
-                    disabled={recoveryBusy}
-                  >
-                    {t('reset.send')}
-                  </button>
-                </>
-              )}
+              <PasswordResetFlow
+                initialEmail={email}
+                onCancel={() => setRecoveryOpen(false)}
+                onSuccess={() => {
+                  setRecoveryOpen(false);
+                  setPassword('');
+                  setView('password');
+                  setError('');
+                  setMessage(t('auth.passwordResetSuccess'));
+                }}
+              />
             </div>
           ) : null}
         </form>
