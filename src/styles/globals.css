@@ -119,6 +119,21 @@ img {
   flex-wrap: wrap;
 }
 
+/* Header controls share one vertical rhythm: globe, bell, and pill buttons. */
+.nav-actions {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-actions .ghost-button,
+.nav-actions .lang-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding-block: 0;
+}
+
 .profile-menu {
   position: relative;
 }
@@ -3873,3 +3888,65 @@ img {
   font-size: 1.02rem;
 }
 .docs-card .thin-list { margin: 0; }
+
+/* Calls hub — My Documents */
+.call-hub-my-docs { display: grid; gap: 0.75rem; margin-top: 1rem; }
+.call-docs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.call-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(62, 169, 133, 0.2);
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+  text-align: start;
+}
+.call-doc-row:hover {
+  border-color: rgba(62, 169, 133, 0.45);
+  background: rgba(62, 169, 133, 0.06);
+}
+.call-doc-title { font-weight: 700; color: #133b35; overflow-wrap: anywhere; }
+.call-doc-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: #557b76;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+.call-doc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(9, 32, 27, 0.55);
+}
+.call-doc-card {
+  width: min(36rem, 100%);
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: #f7fdf9;
+  border: 1px solid rgba(15, 58, 50, 0.14);
+  box-shadow: 0 30px 70px rgba(6, 26, 22, 0.35);
+}
+.call-doc-card header { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.call-doc-card textarea {
+  min-height: 12rem;
+  resize: vertical;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(15, 58, 50, 0.14);
+  padding: 0.7rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.call-doc-actions { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }

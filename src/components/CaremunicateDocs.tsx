@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Lock, LockOpen, Plus, X } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
@@ -31,7 +30,6 @@ type CaremunicateDocsProps = {
 
 export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
   const { t } = useLang();
-  const { user } = useAuth();
   const { roomId, sessionId, status } = useCallContext();
   const trapRef = useFocusTrap<HTMLElement>(true);
   const callId = roomId ?? '';
@@ -99,7 +97,7 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
     const saved = await saveCareDoc(pending);
     if (!saved) {
       setSaveState('idle');
-      setError(t('auth.msg.errorGeneric'));
+      setError(t('careDocs.error'));
       return;
     }
     setDocs((previous) => previous.map((doc) => (doc.id === saved.id ? saved : doc)));
@@ -143,18 +141,17 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
   };
 
   const create = async () => {
-    if (!callId || !user) return;
+    if (!callId) return;
     setBusy(true);
     setError('');
     try {
       const created = await createCareDoc({
         callId,
-        creatorId: user.id,
         title: newTitle,
         lockStatus: newLock,
       });
       if (!created) {
-        setError(t('auth.msg.errorGeneric'));
+        setError(t('careDocs.error'));
         return;
       }
       setDocs((previous) => [created, ...previous]);

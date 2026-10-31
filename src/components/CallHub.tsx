@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
-import { Clipboard } from 'lucide-react';
+import { Clipboard, Lock, LockOpen, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import {
@@ -10,6 +10,7 @@ import {
   type PersonalRoom,
 } from '../lib/callRooms';
 import { normalizeCode } from '../lib/wordcode';
+import { listMyCareDocs, saveCareDoc, type CareDoc } from '../lib/caremunicateDocs';
 
 // ---------------------------------------------------------------------------
 // The Call Hub — the ONE call entry point (/call).
@@ -36,7 +37,7 @@ const goToRoom = (code: string) => {
 };
 
 export default function CallHub() {
-  const { t } = useLang();
+  const { t, locale } = useLang();
   const { user } = useAuth();
 
   const [joinCode, setJoinCode] = useState('');
@@ -52,6 +53,66 @@ export default function CallHub() {
   const [lineCopied, setLineCopied] = useState(false);
   /** Raw reason the personal line could not be loaded, if it threw. */
   const [lineError, setLineError] = useState<string | null>(null);
+
+  // My Documents — every doc this user created, across calls.
+  const [myDocs, setMyDocs] = useState<CareDoc[]>([]);
+  const [docsLoading, setDocsLoading] = useState(true);
+  const [docsError, setDocsError] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<CareDoc | null>(null);
+  const [draft, setDraft] = useState('');
+  const [savingDoc, setSavingDoc] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+
+  const loadDocs = useCallback(async () => {
+    if (!user?.id) {
+      setDocsLoading(false);
+      return;
+    }
+    setDocsLoading(true);
+    setDocsError(false);
+    const list = await listMyCareDocs(user.id);
+    setMyDocs(list ?? []);
+    setDocsError(list === null);
+    setDocsLoading(false);
+  }, [user?.id]);
+
+  useEffect(() => {
+    void loadDocs();
+  }, [loadDocs]);
+
+  const openDoc = (doc: CareDoc) => {
+    setViewingDoc(doc);
+    setDraft(doc.content ?? '');
+    setSaveError(false);
+  };
+
+  const closeDoc = () => {
+    setViewingDoc(null);
+    setDraft('');
+    setSaveError(false);
+  };
+
+  const saveDoc = async () => {
+    if (!viewingDoc || viewingDoc.lock_status === 'locked') return;
+    setSavingDoc(true);
+    setSaveError(false);
+    try {
+      const saved = await saveCareDoc({
+        id: viewingDoc.id,
+        title: viewingDoc.title,
+        content: draft,
+      });
+      if (!saved) {
+        setSaveError(true);
+        return;
+      }
+      setMyDocs((previous) => previous.map((doc) => (doc.id === saved.id ? saved : doc)));
+      setViewingDoc(saved);
+      setDraft(saved.content ?? '');
+    } finally {
+      setSavingDoc(false);
+    }
+  };
 
   // The personal line is created lazily, once, and keeps its code forever.
   // A throw is reported inline with its raw code and a retry, exactly like
@@ -261,6 +322,103 @@ export default function CallHub() {
           )}
         </div>
       </div>
+
+      <div className="panel call-hub-my-docs">
+        <div className="eyebrow">{t('careDocs.myDocs')}</div>
+
+        {docsLoading ? (
+          <span className="call-hub-muted">{t('places.searching')}</span>
+        ) : docsError ? (
+          <span className="field-error">{t('careDocs.error')}</span>
+        ) : myDocs.length === 0 ? (
+          <span className="call-hub-muted">{t('careDocs.none')}</span>
+        ) : (
+          <ul className="call-docs-list">
+            {myDocs.map((doc) => (
+              <li key={doc.id}>
+                <button type="button" className="call-doc-row" onClick={() => openDoc(doc)}>
+                  <span className="call-doc-title">{doc.title}</span>
+                  <span className="call-doc-meta">
+                    {doc.lock_status === 'locked' ? (
+                      <Lock size={13} aria-hidden="true" />
+                    ) : (
+                      <LockOpen size={13} aria-hidden="true" />
+                    )}
+                    {doc.lock_status === 'locked' ? t('careDocs.locked') : t('careDocs.unlocked')}
+                    <span aria-hidden="true">·</span>
+                    {new Date(doc.updated_at).toLocaleDateString(locale, {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {viewingDoc ? (
+        <div className="call-doc-modal" role="dialog" aria-modal="true" aria-label={viewingDoc.title}>
+          <div className="call-doc-card">
+            <header>
+              <strong>{viewingDoc.title}</strong>
+              <button
+                type="button"
+                className="call-panel-close"
+                onClick={closeDoc}
+                aria-label={t('common.close')}
+              >
+                <X size={16} />
+              </button>
+            </header>
+
+            <span className="call-doc-meta">
+              {viewingDoc.lock_status === 'locked' ? (
+                <Lock size={13} aria-hidden="true" />
+              ) : (
+                <LockOpen size={13} aria-hidden="true" />
+              )}
+              {viewingDoc.lock_status === 'locked' ? t('careDocs.locked') : t('careDocs.unlocked')}
+              <span aria-hidden="true">·</span>
+              {t('careDocs.updated')}{' '}
+              {new Date(viewingDoc.updated_at).toLocaleDateString(locale, {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+              })}
+            </span>
+
+            <textarea
+              value={draft}
+              readOnly={viewingDoc.lock_status === 'locked'}
+              aria-label={viewingDoc.title}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+
+            {saveError ? (
+              <span className="field-error" role="alert">{t('careDocs.error')}</span>
+            ) : null}
+
+            <div className="call-doc-actions">
+              {viewingDoc.lock_status === 'unlocked' ? (
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => void saveDoc()}
+                  disabled={savingDoc}
+                >
+                  {savingDoc ? t('call.saving') : t('careDocs.save')}
+                </button>
+              ) : null}
+              <button type="button" className="ghost-button" onClick={closeDoc}>
+                {t('common.close')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

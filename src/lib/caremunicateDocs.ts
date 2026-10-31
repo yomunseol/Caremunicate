@@ -28,8 +28,25 @@ export const listCareDocs = async (callId: string): Promise<CareDoc[]> => {
     .order('updated_at', { ascending: false });
 
   if (error) {
-    console.error('CAREDOCS ERROR:', error.message);
+    console.error('CAREDOCS ERROR:', error.message, error);
     return [];
+  }
+  return (data ?? []) as CareDoc[];
+};
+
+/** Documents created by one user, across calls. Null on a query error. */
+export const listMyCareDocs = async (userId: string): Promise<CareDoc[] | null> => {
+  if (!userId) return [];
+
+  const { data, error } = await supabase
+    .from('caremunicate_docs')
+    .select('*')
+    .eq('creator_id', userId)
+    .order('updated_at', { ascending: false });
+
+  if (error) {
+    console.error('CAREDOCS ERROR:', error.message, error);
+    return null;
   }
   return (data ?? []) as CareDoc[];
 };
@@ -37,18 +54,24 @@ export const listCareDocs = async (callId: string): Promise<CareDoc[]> => {
 /** Create a document. An empty title falls back to the DB default. */
 export const createCareDoc = async (payload: {
   callId: string;
-  creatorId: string;
   title: string;
   lockStatus: 'locked' | 'unlocked';
 }): Promise<CareDoc | null> => {
-  if (!payload.callId || !payload.creatorId) return null;
+  if (!payload.callId) return null;
+
+  // Resolve the user from the live client — never a possibly-stale prop.
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    console.error('CAREDOCS ERROR: no authenticated user', authError);
+    return null;
+  }
 
   const title = payload.title.trim();
   const { data, error } = await supabase
     .from('caremunicate_docs')
     .insert({
       call_id: payload.callId,
-      creator_id: payload.creatorId,
+      creator_id: user.id,
       ...(title ? { title } : {}),
       lock_status: payload.lockStatus,
       content: '',
@@ -57,7 +80,7 @@ export const createCareDoc = async (payload: {
     .single();
 
   if (error) {
-    console.error('CAREDOCS ERROR:', error.message);
+    console.error('CAREDOCS ERROR:', error.message, error);
     return null;
   }
   return (data as CareDoc) ?? null;
@@ -79,7 +102,7 @@ export const saveCareDoc = async (payload: {
     .single();
 
   if (error) {
-    console.error('CAREDOCS ERROR:', error.message);
+    console.error('CAREDOCS ERROR:', error.message, error);
     return null;
   }
   return (data as CareDoc) ?? null;
