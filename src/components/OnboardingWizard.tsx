@@ -114,14 +114,8 @@ export default function OnboardingWizard() {
           : plan.name;
 
   const reportSaveError = (error: unknown) => {
-    const detail = error as { message?: string; details?: string; hint?: string };
-    console.error(
-      'Supabase Profile Update Error:',
-      detail.message,
-      detail.details,
-      detail.hint,
-    );
-    setError(detail.message || t('onboarding.error'));
+    console.error('Onboarding Save Error:', error);
+    setError(t('onboarding.error'));
   };
 
   const complete = async () => {
@@ -130,30 +124,31 @@ export default function OnboardingWizard() {
     setError('');
 
     const payload = {
-      user_id: user.id,
-      username: form.fullName.trim(),
-      full_name: form.fullName.trim(),
       role: form.role,
       plan: form.plan,
+      full_name: form.fullName.trim(),
+      specialty: form.role === 'doctor' ? form.specialty.trim() || null : null,
+      clinic_name: form.role === 'hospital' ? form.clinicName.trim() || null : null,
       onboarding_complete: true,
-      ...(form.role === 'doctor' ? { specialty: form.specialty.trim() || null } : {}),
-      ...(form.role === 'hospital'
-        ? {
-            clinic: form.clinicName.trim() || null,
-            clinic_name: form.clinicName.trim() || null,
-          }
-        : {}),
     };
 
     console.log('Profile Save Payload:', payload);
 
     try {
-      const { error: saveError } = await supabase
+      const { data, error: saveError } = await supabase
         .from('profiles')
-        .upsert(payload, { onConflict: 'user_id' });
+        .update(payload)
+        .eq('user_id', user.id)
+        .select('user_id')
+        .maybeSingle();
 
       if (saveError) {
         reportSaveError(saveError);
+        return;
+      }
+
+      if (!data) {
+        reportSaveError(new Error('No profile row matched the current user'));
         return;
       }
 
