@@ -247,12 +247,12 @@ export default function DoctorList() {
         </div>
       ) : null}
 
-      {loading ? <p style={styles.muted} aria-busy="true">{t('doctors.loading')}</p> : null}
+      {loading ? <p style={styles.muted} aria-busy="true">{t('loading_natural')}</p> : null}
       {!loading && loadError ? <p role="alert" style={styles.error}>{loadError}</p> : null}
 
       {!loading && !loadError && visibleDoctors.length === 0 ? (
         <p style={styles.muted}>
-          {tab === 'favorites' ? t('doctors.favoritesEmpty') : t('doctors.empty')}
+          {tab === 'favorites' ? t('doctors.favoritesEmpty') : t('empty_state_natural')}
         </p>
       ) : null}
 

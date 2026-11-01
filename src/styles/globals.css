@@ -20,6 +20,10 @@
   --accent-2: #8adbb0;
   --button-text: #072c2a;
   --shadow: rgba(17, 55, 47, 0.14);
+  --ease-smooth: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --shadow-soft: 0 2px 10px -3px rgba(0, 0, 0, 0.06), 0 1px 3px -1px rgba(0, 0, 0, 0.04);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --ring-brand: rgba(5, 150, 105, 0.2);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -34,9 +38,21 @@ body {
   margin: 0;
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(62, 169, 133, 0.22), transparent 22%),
-    linear-gradient(135deg, var(--bg-page) 0%, var(--bg-page-strong) 42%, #d2f1df 100%);
+    radial-gradient(1100px 620px at 12% -8%, rgba(62, 169, 133, 0.12), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(207, 238, 224, 0.35), transparent 55%),
+    var(--bg-page);
   color: var(--text);
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+p {
+  line-height: 1.6;
 }
 
 button,
@@ -435,7 +451,12 @@ img {
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 0.76rem 1rem;
-  transition: transform 220ms cubic-bezier(.22,1,.36,1), box-shadow 220ms cubic-bezier(.22,1,.36,1), border-color 220ms ease, background 220ms ease, color 220ms ease;
+  transition:
+    transform 300ms var(--ease-smooth),
+    box-shadow 300ms var(--ease-smooth),
+    border-color 300ms var(--ease-smooth),
+    background 300ms var(--ease-smooth),
+    color 300ms var(--ease-smooth);
 }
 
 .nav-link {
@@ -455,52 +476,42 @@ img {
 
 .ghost-button,
 .secondary-button {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
   color: var(--accent-strong);
-  border-color: rgba(62, 169, 133, 0.2);
+  border-color: rgba(15, 58, 50, 0.08);
 }
 
-.ghost-button:hover,
-.secondary-button:hover {
-  transform: translateY(-2px) scale(1.01);
-  background: rgba(62, 169, 133, 0.06);
-  border-color: rgba(62, 169, 133, 0.35);
-  box-shadow: 0 12px 26px rgba(62, 169, 133, 0.08);
+.ghost-button:not(:disabled):hover,
+.secondary-button:not(:disabled):hover {
+  transform: scale(1.01);
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(62, 169, 133, 0.22);
+  box-shadow: var(--shadow-soft);
+}
+
+.ghost-button:not(:disabled):active,
+.secondary-button:not(:disabled):active {
+  transform: scale(0.99);
 }
 
 .primary-button {
   background: linear-gradient(120deg, #48b58f, #7adab1);
   color: var(--button-text);
   font-weight: 700;
-  box-shadow: 0 12px 30px rgba(72, 181, 143, 0.2);
+  box-shadow: 0 2px 10px -4px rgba(62, 169, 133, 0.35);
 }
 
-.primary-button:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 16px 36px rgba(72, 181, 143, 0.28);
+.primary-button:not(:disabled):hover {
+  transform: scale(1.01);
+  box-shadow: 0 4px 14px -6px rgba(62, 169, 133, 0.4), var(--shadow-soft);
 }
 
-.primary-button::before,
-.secondary-button::before,
-.ghost-button::before,
-.nav-link::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.45) 45%, transparent 80%);
-  transform: translateX(-120%);
-  transition: transform 800ms cubic-bezier(.22,1,.36,1);
-}
-
-.primary-button:hover::before,
-.secondary-button:hover::before,
-.ghost-button:hover::before,
-.nav-link:hover::before {
-  transform: translateX(120%);
+.primary-button:not(:disabled):active {
+  transform: scale(0.99);
 }
 
 .main-content {
-  padding: clamp(1rem, 3vw, 2rem);
+  padding: clamp(1.25rem, 3.5vw, 2.5rem);
 }
 
 .section {
@@ -522,9 +533,9 @@ img {
 .plan-card,
 .auth-card,
 .profile-card {
-  border: 1px solid var(--line);
+  border: 1px solid var(--border-subtle);
   background: var(--bg-panel);
-  box-shadow: 0 20px 50px var(--shadow);
+  box-shadow: var(--shadow-soft);
   border-radius: 1.35rem;
   animation: fadeInUp 850ms cubic-bezier(.22,1,.36,1) both;
 }
@@ -636,8 +647,8 @@ img {
   object-fit: cover;
   display: block;
   border-radius: 1.5rem;
-  border: 1px solid var(--line);
-  box-shadow: 0 20px 50px var(--shadow);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
   transition: transform 220ms ease, opacity 220ms ease;
 }
 
@@ -654,7 +665,10 @@ img {
 .auth-card,
 .profile-card {
   padding: 1.2rem;
-  transition: transform 220ms cubic-bezier(.22,1,.36,1), box-shadow 220ms ease;
+  transition:
+    transform 300ms var(--ease-smooth),
+    box-shadow 300ms var(--ease-smooth),
+    border-color 300ms var(--ease-smooth);
 }
 
 .feature-card:hover,
@@ -662,8 +676,38 @@ img {
 .panel:hover,
 .auth-card:hover,
 .profile-card:hover {
-  transform: translateY(-6px) scale(1.01);
-  box-shadow: 0 24px 54px rgba(4, 16, 32, 0.3);
+  transform: translateY(-3px) scale(1.005);
+  box-shadow: 0 6px 20px -8px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
+  border-color: rgba(62, 169, 133, 0.12);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .primary-button,
+  .secondary-button,
+  .ghost-button,
+  .nav-link,
+  .feature-card,
+  .plan-card,
+  .panel,
+  .auth-card,
+  .profile-card {
+    transition-duration: 0.01ms;
+  }
+
+  .primary-button:hover,
+  .primary-button:active,
+  .secondary-button:hover,
+  .secondary-button:active,
+  .ghost-button:hover,
+  .ghost-button:active,
+  .nav-link:hover,
+  .feature-card:hover,
+  .plan-card:hover,
+  .panel:hover,
+  .auth-card:hover,
+  .profile-card:hover {
+    transform: none;
+  }
 }
 
 .feature-card h3 {
@@ -695,8 +739,8 @@ img {
   padding: clamp(1.5rem, 3vw, 2.5rem);
   border-radius: 1.5rem;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(201, 242, 217, 0.76));
-  border: 1px solid var(--line);
-  box-shadow: 0 24px 60px rgba(17, 55, 47, 0.08);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-soft);
 }
 
 .cta-banner-copy {
@@ -733,8 +777,8 @@ img {
   width: 100%;
   height: auto;
   object-fit: cover;
-  box-shadow: 0 20px 50px var(--shadow);
-  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid var(--border-subtle);
   animation: fadeInUp 850ms cubic-bezier(.22,1,.36,1) both;
   animation-delay: 160ms;
 }
@@ -967,7 +1011,8 @@ img {
   font-weight: 700;
   background: linear-gradient(120deg, #48b58f, #7adab1);
   color: var(--button-text);
-  box-shadow: 0 18px 40px rgba(17, 55, 47, 0.22);
+  box-shadow: var(--shadow-soft);
+  border: 1px solid rgba(0, 0, 0, 0.04);
   animation: toastIn 150ms ease-out both;
 }
 
@@ -1495,19 +1540,21 @@ img {
 .input,
 .select {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 0.9rem;
   padding: 0.8rem 0.95rem;
-  background: rgba(255,255,255,0.6);
+  background: rgba(255, 255, 255, 0.85);
   color: var(--text);
-  transition: border-color 180ms ease, box-shadow 180ms ease;
+  transition:
+    border-color 300ms var(--ease-smooth),
+    box-shadow 300ms var(--ease-smooth);
 }
 
 .input:focus,
 .select:focus {
   outline: none;
-  border-color: rgba(79, 227, 255, 0.55);
-  box-shadow: 0 0 0 3px rgba(79, 227, 255, 0.16);
+  border-color: rgba(5, 150, 105, 0.55);
+  box-shadow: 0 0 0 3px var(--ring-brand);
 }
 
 .input[aria-invalid='true'],

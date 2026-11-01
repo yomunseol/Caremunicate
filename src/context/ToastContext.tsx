@@ -47,8 +47,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     (message: unknown, kind: ToastKind = 'info') => {
       // Toasts carry a STRING only — never an object. Dev builds assert it.
       let text: string;
-      if (typeof message === 'string') {
+      if (typeof message === 'string' && message.trim()) {
         text = message;
+      } else if (kind === 'success') {
+        text = t('success_natural');
+      } else if (typeof message === 'string') {
+        text = t('loading_natural');
       } else {
         if (import.meta.env?.DEV) {
           console.error('TOAST ASSERTION: toast message must be a string; received', message);
@@ -62,7 +66,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       setToasts((previous) => [...previous, { id, message: text, kind }]);
       window.setTimeout(() => dismiss(id), AUTO_DISMISS_MS);
     },
-    [dismiss],
+    [dismiss, t],
   );
 
   const api = useMemo(() => ({ notify }), [notify]);
