@@ -4,7 +4,7 @@
 // "[object Object]" must be impossible: every failure is reduced to a string in
 // a fixed order — the PostgREST/Supabase code first, then the message, then a
 // JSON dump, then String(). Used by plan writes, availability saves, the
-// verification flow and the Overpass client.
+// verification flow and the map/places client.
 // ---------------------------------------------------------------------------
 
 export const describeError = (error: unknown): string => {

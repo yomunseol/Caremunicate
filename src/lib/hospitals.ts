@@ -6,7 +6,7 @@ import { photonSearch } from './geocode';
 // search that feeds it.
 //
 // Text search goes straight from the browser to Photon with a 3-second abort.
-// Overpass stays reserved for the radial "Near me" query. A centre point is
+// The Care Places nearby search uses /api/places (Mapbox); a centre point is
 // still required.
 // ---------------------------------------------------------------------------
 
@@ -68,15 +68,16 @@ export async function addHospital(input: {
 }
 
 /**
- * Characters that would break Overpass QL or the regex itself. Non-Latin text
- * (Korean, Arabic, Hebrew, …) is preserved — only syntax characters are dropped.
+ * Characters that would break the search query or the regex itself. Non-Latin
+ * text (Korean, Arabic, Hebrew, …) is preserved — only syntax characters are
+ * dropped.
  */
 const sanitizeQuery = (value: string): string =>
   value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 
 /**
  * Search named places around `at` through Photon (client-side, 3s abort).
- * Text search is NEVER sent to Overpass; Overpass is reserved for "Near me".
+ * Nearby category discovery uses /api/places (Mapbox).
  */
 export async function searchPlaces(
   query: string,

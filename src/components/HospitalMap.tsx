@@ -255,14 +255,14 @@ export default function HospitalMap() {
   const handleSearch = () => {
     const needle = query.trim();
     if (!needle) return;
-    // Overpass needs a centre — never block the search on geolocation. Falling
-    // back to the default centre keeps a Seoul hospital reachable even when the
-    // browser refuses a location.
+    // The place search needs a centre — never block the search on geolocation.
+    // Falling back to the default centre keeps a Seoul hospital reachable even
+    // when the browser refuses a location.
     void runSearch(needle, center ?? SEOUL);
   };
 
   // Debounced live search (400ms) — typing no longer waits for a button press,
-  // and rapid keystrokes collapse into one Overpass request.
+  // and rapid keystrokes collapse into one Photon request.
   const debouncedQuery = useDebouncedValue(query, 400);
   useEffect(() => {
     const needle = debouncedQuery.trim();

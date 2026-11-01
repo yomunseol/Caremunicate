@@ -20,21 +20,20 @@ import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
-// Care Places — keyless, credit-card-free map stack.
+// Care Places — OpenStreetMap tiles with Mapbox Searchbox nearby POIs.
 //
-//   Search : category pills (hospital / clinic / pharmacy / doctors) →
-//            /api/overpass?lat&lon&radius&category. No text, no geocoder.
+//   Search : category pills → /api/places (Mapbox Searchbox medical).
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
-// Near me is proximity-based, so a radial Overpass query needs a centre point;
-// clicking a category without one asks for location first.
+// Near me is proximity-based, so a nearby search needs a centre point; clicking
+// a category without one asks for location first.
 // ---------------------------------------------------------------------------
 
-/** Near-me search radius; the backend enforces the same 2km hard cap. */
+/** Near-me search radius; the backend accepts up to 5km. */
 const CASCADE_RADII = [2_000] as const;
-/** Client guard, just above the route's 15s budget so its 408 wins the race. */
-const OVERPASS_TIMEOUT_MS = 16_000;
+/** Client guard, above the route's 8s Mapbox budget so its 408 wins the race. */
+const PLACES_TIMEOUT_MS = 16_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
@@ -55,13 +54,17 @@ L.Icon.Default.mergeOptions({
 
 type OsmElementType = 'node' | 'way' | 'relation';
 
-type OverpassElement = {
-  type: OsmElementType;
-  id: number;
+type PlaceResult = {
+  id?: string;
+  name?: string;
   lat?: number;
   lon?: number;
-  center?: { lat: number; lon: number };
-  tags?: Record<string, string>;
+  category?: string;
+  address?: string;
+};
+
+type PlacesResponse = {
+  results?: PlaceResult[];
 };
 
 type PlaceFavorite = {
@@ -89,7 +92,7 @@ type PlaceView = {
 
 type LatLon = { lat: number; lon: number };
 
-/** The four Overpass categories the UI exposes. */
+/** The four categories the UI exposes. */
 type Category = 'hospital' | 'clinic' | 'pharmacy' | 'doctors';
 
 const CATEGORIES: Array<{ value: Category; labelKey: string }> = [
@@ -106,7 +109,7 @@ type CarePlacesProps = {
   role?: string;
 };
 
-/** Strip quotes/backslashes and escape regex metacharacters for Overpass. */
+/** Strip quotes/backslashes and escape regex metacharacters for a cache key. */
 const sanitizeNeedle = (needle: string): string =>
   needle
     .replace(/['\\]/g, ' ')
@@ -116,7 +119,7 @@ const sanitizeNeedle = (needle: string): string =>
 
 type CodedError = Error & { code?: string; detail?: string };
 
-const overpassError = (code: string, detail: string, message?: string): CodedError => {
+const placesError = (code: string, detail: string, message?: string): CodedError => {
   const error = new Error(message ?? detail) as CodedError;
   error.code = code;
   error.detail = detail;
@@ -142,19 +145,13 @@ const readFailure = async (
   }
 };
 
-type NearbyResponse = {
-  data?: { elements?: OverpassElement[] };
-  source?: 'cache' | 'live' | 'stale_cache' | string;
-  warning?: string;
-};
-
-/** Near me → the lat/lon-only Overpass route (no text ever reaches it). */
-const fetchOverpassNearby = async (
+/** Category pills → the Mapbox-backed places route. */
+const fetchPlacesNearby = async (
   at: LatLon,
   radius: number,
   categories: Category[],
   signal: AbortSignal,
-): Promise<NearbyResponse> => {
+): Promise<PlacesResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
@@ -162,7 +159,7 @@ const fetchOverpassNearby = async (
     categories: categories.join(','),
   });
 
-  const response = await fetch(`/api/overpass?${params.toString()}`, {
+  const response = await fetch(`/api/places?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     signal,
   });
@@ -170,31 +167,31 @@ const fetchOverpassNearby = async (
   // Explicitly treat a timed-out/upstream-failed map as a graceful state; the
   // caller shows the amber notice and keeps the rest of the page interactive.
   if (response.status === 408 || response.status === 500) {
-    throw overpassError('map_unavailable', `overpass responded ${response.status}`);
+    throw placesError('map_unavailable', `places responded ${response.status}`);
   }
 
   if (!response.ok) {
     const { reasons, detail } = await readFailure(response);
-    throw overpassError(
+    throw placesError(
       String(response.status),
-      reasons.join(', ') || detail || `overpass responded ${response.status}`,
+      reasons.join(', ') || detail || `places responded ${response.status}`,
     );
   }
 
-  return (await response.json()) as NearbyResponse;
+  return (await response.json()) as PlacesResponse;
 };
 
 /** Cache key: `cp:{lat2},{lon2}:{category-radius}` — the query is part of it. */
 const cacheKey = (lat: number, lon: number, needle = ''): string =>
   `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
 
-/** Reads a cached element list, dropping entries older than the TTL. */
-const readCache = (key: string): OverpassElement[] | null => {
+/** Reads a cached place list, dropping entries older than the TTL. */
+const readCache = (key: string): PlaceView[] | null => {
   try {
     const raw = window.localStorage.getItem(key);
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw) as { at?: number; elements?: OverpassElement[] };
+    const parsed = JSON.parse(raw) as { at?: number; places?: PlaceView[] };
     if (typeof parsed?.at !== 'number') return null;
 
     if (Date.now() - parsed.at > CACHE_TTL_MS) {
@@ -202,39 +199,35 @@ const readCache = (key: string): OverpassElement[] | null => {
       return null;
     }
 
-    return parsed.elements ?? [];
+    return parsed.places ?? [];
   } catch {
     // Corrupt JSON, or storage blocked (private mode) — behave as a miss.
     return null;
   }
 };
 
-const writeCache = (key: string, elements: OverpassElement[]): void => {
+const writeCache = (key: string, places: PlaceView[]): void => {
   try {
-    window.localStorage.setItem(key, JSON.stringify({ at: Date.now(), elements }));
+    window.localStorage.setItem(key, JSON.stringify({ at: Date.now(), places }));
   } catch {
     // Quota exceeded or storage blocked — caching is best-effort.
   }
 };
 
-const elementToPlace = (element: OverpassElement): PlaceView | null => {
-  const lat = element.lat ?? element.center?.lat;
-  const lon = element.lon ?? element.center?.lon;
-  if (typeof lat !== 'number' || typeof lon !== 'number') return null;
+const resultToPlace = (result: PlaceResult): PlaceView | null => {
+  const lat = Number(result.lat);
+  const lon = Number(result.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-  const tags = element.tags ?? {};
-  const street = [tags['addr:housenumber'], tags['addr:street']].filter(Boolean).join(' ');
-
+  const name = (result.name ?? '').trim();
   return {
-    placeId: `${element.type}/${element.id}`,
-    osmType: element.type,
-    name: tags.name || tags['name:en'] || '',
-    // Kept only for the client-side text filter; nothing renders it as a type.
-    amenity: tags.amenity ?? '',
-    address: street || tags['addr:city'] || tags['addr:suburb'] || '',
+    placeId: result.id || `${lat.toFixed(5)},${lon.toFixed(5)}`,
+    osmType: 'node',
+    name,
+    amenity: result.category ?? '',
+    address: result.address ?? '',
     lat,
     lon,
-    tags,
   };
 };
 
@@ -314,8 +307,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState('');
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
-  // True when the route fell back to stale cache: show the stale-data notice.
-  const [fallbackNotice, setFallbackNotice] = useState(false);
   // True on 408/500 (or legacy 504): map data is unavailable; offer Retry.
   const [isMapUnavailable, setIsMapUnavailable] = useState(false);
   // Cascade feedback: true while trying a wider radius, and true once a wider
@@ -365,14 +356,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   }, [loadFavorites]);
 
   // ---- Search -------------------------------------------------------------
-  // Multi-select category pills → /api/overpass?lat&lon&radius&categories.
+  // Multi-select category pills → /api/places?lat&lon&radius&categories.
   // The filter input is client-side only; it never touches the network.
   const executeSearch = useCallback(
     async (
       at: LatLon,
       categories: Category[],
       load: (signal: AbortSignal) => Promise<PlaceView[]>,
-      timeoutMs = OVERPASS_TIMEOUT_MS,
+      timeoutMs = PLACES_TIMEOUT_MS,
     ) => {
       lastSearchRef.current = { at, categories };
       // Supersede any in-flight request so only the newest one settles state.
@@ -391,7 +382,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setIsLoading(true);
       setSearched(false);
       setError('');
-      setFallbackNotice(false);
       setIsMapUnavailable(false);
       setExpanding(false);
       setWide(false);
@@ -452,17 +442,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [t],
   );
 
-  /** Selected categories → one Overpass radial query (with the cascade). */
+  /** Selected categories → one Mapbox nearby query. */
   const runCategories = useCallback(
     async (categories: Category[], at: LatLon) => {
       const effective = categories.length > 0 ? categories : ALL_CATEGORIES;
       await executeSearch(at, effective, async (signal) => {
-        const toPlaces = (elements: OverpassElement[]) =>
-          elements
-            .map(elementToPlace)
-            .filter((place): place is PlaceView => place !== null);
-
-        // 2km cap; the backend enforces the same hard maximum.
         for (let index = 0; index < CASCADE_RADII.length; index += 1) {
           const radius = CASCADE_RADII[index];
           if (index > 0) setExpanding(true);
@@ -473,34 +457,29 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           const local = readCache(localKey);
           if (local !== null && local.length > 0) {
             setExpanding(false);
-            setWide(radius > CASCADE_RADII[0]);
-            return toPlaces(local);
+            setWide(false);
+            return local;
           }
 
-          // The route owns the shared Supabase cache and the direct fallback.
-          const payload = await fetchOverpassNearby(at, radius, effective, signal);
-          const elements = payload.data?.elements ?? [];
-          // Stale cache / warning = live data is down: calm yellow notice; the
-          // existing favourites above stay visible and usable.
-          setFallbackNotice(payload.source === 'stale_cache' || Boolean(payload.warning));
+          const payload = await fetchPlacesNearby(at, radius, effective, signal);
+          const places = (payload.results ?? [])
+            .map(resultToPlace)
+            .filter((place): place is PlaceView => place !== null);
 
-          if (elements.length > 0) {
-            writeCache(localKey, elements);
+          if (places.length > 0) {
+            writeCache(localKey, places);
             setExpanding(false);
-            setWide(radius > CASCADE_RADII[0]);
-            return toPlaces(elements);
+            setWide(false);
+            return places;
           }
         }
-
-        setExpanding(false);
-        setWide(false);
         return [];
       });
     },
     [executeSearch],
   );
 
-  // Abort any in-flight Overpass request on unmount.
+  // Abort any in-flight places request on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const requestLocation = (onSuccess?: (at: LatLon) => void) => {
@@ -780,7 +759,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         )}
       </div>
 
-      {/* SEARCH — category pills drive Overpass directly (no text, no geocoder). */}
+      {/* SEARCH — category pills drive /api/places (Mapbox Searchbox). */}
       <div style={styles.section}>
         <div style={styles.categoryRow} role="group" aria-label={t('places.selectCategories')}>
           {CATEGORIES.map((item) => {
@@ -836,10 +815,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
               {t('common.retry')}
             </button>
-          </p>
-        ) : fallbackNotice ? (
-          <p role="status" style={styles.fallbackBanner}>
-            {t('places.liveSearchUnavailable')}
           </p>
         ) : null}
         {locationError ? <p role="alert" style={styles.error}>{locationError}</p> : null}
