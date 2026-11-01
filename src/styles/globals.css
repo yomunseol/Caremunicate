@@ -3950,3 +3950,71 @@ img {
   line-height: 1.5;
 }
 .call-doc-actions { display: flex; justify-content: flex-end; gap: 0.5rem; flex-wrap: wrap; }
+.call-doc-item { position: relative; display: flex; align-items: stretch; gap: 0.35rem; }
+.call-doc-row { flex: 1; min-width: 0; }
+.call-doc-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(62, 169, 133, 0.2);
+  background: #fff;
+  color: #216e5d;
+  cursor: pointer;
+}
+.call-doc-more:hover {
+  border-color: rgba(62, 169, 133, 0.45);
+  background: rgba(62, 169, 133, 0.06);
+}
+.call-doc-menu {
+  position: absolute;
+  inset-inline-end: 0;
+  top: calc(100% + 4px);
+  z-index: 6;
+  min-width: 11rem;
+  display: grid;
+  gap: 2px;
+  padding: 0.35rem;
+  border-radius: 0.8rem;
+  border: 1px solid rgba(15, 58, 50, 0.14);
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(6, 26, 22, 0.18);
+}
+.call-doc-menu button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: #133b35;
+  font: inherit;
+  font-size: 0.82rem;
+  text-align: start;
+  cursor: pointer;
+}
+.call-doc-menu button:hover { background: rgba(62, 169, 133, 0.1); }
+.call-doc-menu button.is-danger { color: #9c3636; }
+.call-doc-menu button.is-danger:hover { background: rgba(224, 101, 90, 0.12); }
+.call-doc-notice {
+  display: inline-block;
+  justify-self: start;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(62, 169, 133, 0.14);
+  color: #216e5d;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+.danger-button {
+  border: none;
+  border-radius: 999px;
+  padding: 0.76rem 1rem;
+  background: #c6544a;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}

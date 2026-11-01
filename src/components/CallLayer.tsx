@@ -299,6 +299,28 @@ export default function CallLayer() {
   const duration = useElapsed(connectedAt);
   const activeSpeakerId = useActiveSpeaker(localStream, peers, inSession);
 
+  // A call that has ended (or a terminal room notice) must never leave a side
+  // panel floating over the dashboard. This also covers the case where the
+  // transport status lags behind the "ended for everyone" notice.
+  useEffect(() => {
+    const terminal =
+      status === 'ended' ||
+      !inSession ||
+      notice === 'room-ended' ||
+      notice === 'room-not-found' ||
+      notice === 'meeting-locked' ||
+      notice === 'meeting-full' ||
+      notice === 'kicked' ||
+      notice === 'line-closed';
+    if (!terminal) return;
+    setPanel('none');
+    setParticipantsOpen(false);
+    setStatsOpen(false);
+    setOverflowOpen(false);
+    setReactionsOpen(false);
+    setInviteOpen(false);
+  }, [status, inSession, notice]);
+
   // The chip shows WORDS. The transport key (a UUID) is deliberately NOT part
   // of this chain — it must never be rendered.
   const rawChip = roomCode ?? '';

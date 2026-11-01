@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Lock, LockOpen, Plus, X } from 'lucide-react';
+import { Copy, Lock, LockOpen, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useCallContext } from '../context/CallContext';
 import { useLang } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { loadCallSession } from '../lib/callSessions';
 import {
   createCareDoc,
+  duplicateCareDoc,
   listCareDocs,
   saveCareDoc,
+  softDeleteCareDoc,
   type CareDoc,
 } from '../lib/caremunicateDocs';
 
@@ -50,6 +52,10 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
 
   const pendingRef = useRef<{ id: string; title: string; content: string } | null>(null);
   const timerRef = useRef<number | null>(null);
+  const titleRef = useRef<HTMLInputElement | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionNotice, setActionNotice] = useState('');
 
   const activeDoc = docs.find((doc) => doc.id === activeId) ?? null;
   const readOnly = Boolean(activeDoc && activeDoc.lock_status === 'locked' && sessionEnded);
@@ -138,6 +144,8 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
     setLockStatus(doc.lock_status);
     setSaveState('idle');
     setError('');
+    setConfirmDelete(false);
+    setActionNotice('');
   };
 
   const create = async () => {
@@ -163,9 +171,51 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
       setNewLock('unlocked');
       setCreating(false);
       setSaveState('idle');
+      setConfirmDelete(false);
+      setActionNotice('');
     } finally {
       setBusy(false);
     }
+  };
+
+  const duplicate = async () => {
+    if (!activeDoc) return;
+    setActionBusy(true);
+    setError('');
+    const copy = await duplicateCareDoc(activeDoc);
+    setActionBusy(false);
+    if (!copy) {
+      setError(t('careDocs.error'));
+      return;
+    }
+    setDocs((previous) => [copy, ...previous]);
+    setActiveId(copy.id);
+    setTitle(copy.title);
+    setContent(copy.content ?? '');
+    setLockStatus(copy.lock_status);
+    setSaveState('idle');
+    setConfirmDelete(false);
+    setActionNotice(t('careDocs.copied'));
+    window.setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const remove = async () => {
+    if (!activeDoc) return;
+    const id = activeDoc.id;
+    setActionBusy(true);
+    setError('');
+    const removed = await softDeleteCareDoc(id);
+    setActionBusy(false);
+    setConfirmDelete(false);
+    if (!removed) {
+      setError(t('careDocs.error'));
+      return;
+    }
+    setDocs((previous) => previous.filter((doc) => doc.id !== id));
+    setActiveId(null);
+    setTitle('');
+    setContent('');
+    setSaveState('idle');
   };
 
   const onChangeTitle = (value: string) => {
@@ -289,6 +339,7 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
               </div>
 
               <input
+                ref={titleRef}
                 style={styles.input}
                 value={title}
                 placeholder={t('careDocs.titleLabel')}
@@ -296,6 +347,62 @@ export default function CaremunicateDocs({ onClose }: CaremunicateDocsProps) {
                 disabled={readOnly}
                 onChange={(event) => onChangeTitle(event.target.value)}
               />
+
+              <div style={styles.actions}>
+                <button
+                  type="button"
+                  style={styles.actionButton}
+                  onClick={() => {
+                    titleRef.current?.focus();
+                    titleRef.current?.select();
+                  }}
+                  disabled={readOnly}
+                >
+                  <Pencil size={13} aria-hidden="true" /> {t('careDocs.rename')}
+                </button>
+                <button
+                  type="button"
+                  style={styles.actionButton}
+                  onClick={() => void duplicate()}
+                  disabled={actionBusy}
+                >
+                  <Copy size={13} aria-hidden="true" /> {t('careDocs.duplicate')}
+                </button>
+                <button
+                  type="button"
+                  style={styles.actionDanger}
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={actionBusy}
+                >
+                  <Trash2 size={13} aria-hidden="true" /> {t('careDocs.delete')}
+                </button>
+              </div>
+
+              {actionNotice ? <span style={styles.status} role="status">{actionNotice}</span> : null}
+
+              {confirmDelete ? (
+                <div style={styles.confirmBox} role="alertdialog" aria-label={t('careDocs.confirmDelete')}>
+                  <p style={styles.confirmText}>{t('careDocs.confirmDelete')}</p>
+                  <div style={styles.formActions}>
+                    <button
+                      type="button"
+                      style={styles.ghost}
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={actionBusy}
+                    >
+                      {t('common.cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.actionDanger}
+                      onClick={() => void remove()}
+                      disabled={actionBusy}
+                    >
+                      {t('careDocs.delete')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
 
               <textarea
                 style={styles.textarea}
@@ -453,4 +560,40 @@ const styles: Record<string, CSSProperties> = {
   },
   status: { minHeight: '1rem', fontSize: '0.72rem', color: '#9fc4b8' },
   error: { margin: 0, color: '#ffd9d4', fontSize: '0.8rem', fontWeight: 600 },
+  actions: { display: 'flex', gap: '0.4rem', flexWrap: 'wrap' },
+  actionButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    border: '1px solid rgba(255, 255, 255, 0.22)',
+    borderRadius: '999px',
+    padding: '0.35rem 0.65rem',
+    background: 'transparent',
+    color: '#d9fff0',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: '0.74rem',
+  },
+  actionDanger: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
+    border: '1px solid rgba(224, 101, 90, 0.55)',
+    borderRadius: '999px',
+    padding: '0.35rem 0.65rem',
+    background: 'transparent',
+    color: '#ffd9d4',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontSize: '0.74rem',
+  },
+  confirmBox: {
+    display: 'grid',
+    gap: '0.5rem',
+    padding: '0.7rem',
+    borderRadius: '0.7rem',
+    border: '1px solid rgba(224, 101, 90, 0.45)',
+    background: 'rgba(224, 101, 90, 0.12)',
+  },
+  confirmText: { margin: 0, color: '#ffd9d4', fontSize: '0.82rem', lineHeight: 1.45 },
 };

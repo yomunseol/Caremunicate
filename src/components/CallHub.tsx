@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from 'react';
-import { Clipboard, Lock, LockOpen, X } from 'lucide-react';
+import { Clipboard, Copy, Lock, LockOpen, MoreVertical, Pencil, Trash2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import {
@@ -10,7 +10,14 @@ import {
   type PersonalRoom,
 } from '../lib/callRooms';
 import { normalizeCode } from '../lib/wordcode';
-import { listMyCareDocs, saveCareDoc, type CareDoc } from '../lib/caremunicateDocs';
+import {
+  duplicateCareDoc,
+  listMyCareDocs,
+  renameCareDoc,
+  saveCareDoc,
+  softDeleteCareDoc,
+  type CareDoc,
+} from '../lib/caremunicateDocs';
 
 // ---------------------------------------------------------------------------
 // The Call Hub — the ONE call entry point (/call).
@@ -62,6 +69,13 @@ export default function CallHub() {
   const [draft, setDraft] = useState('');
   const [savingDoc, setSavingDoc] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  // Per-row actions: ⋯ menu, rename dialog, delete confirmation.
+  const [menuDocId, setMenuDocId] = useState<string | null>(null);
+  const [renameDoc, setRenameDoc] = useState<CareDoc | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteDoc, setDeleteDoc] = useState<CareDoc | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionNotice, setActionNotice] = useState('');
 
   const loadDocs = useCallback(async () => {
     if (!user?.id) {
@@ -81,6 +95,7 @@ export default function CallHub() {
   }, [loadDocs]);
 
   const openDoc = (doc: CareDoc) => {
+    setMenuDocId(null);
     setViewingDoc(doc);
     setDraft(doc.content ?? '');
     setSaveError(false);
@@ -112,6 +127,56 @@ export default function CallHub() {
     } finally {
       setSavingDoc(false);
     }
+  };
+
+  const showNotice = (text: string) => {
+    setActionNotice(text);
+    window.setTimeout(() => setActionNotice(''), 2500);
+  };
+
+  const duplicate = async (doc: CareDoc) => {
+    setMenuDocId(null);
+    setActionBusy(true);
+    const copy = await duplicateCareDoc(doc);
+    setActionBusy(false);
+    if (!copy) {
+      showNotice(t('careDocs.error'));
+      return;
+    }
+    setMyDocs((previous) => [copy, ...previous]);
+    showNotice(t('careDocs.copied'));
+  };
+
+  const saveRename = async () => {
+    if (!renameDoc) return;
+    const nextTitle = renameValue.trim();
+    if (!nextTitle) return;
+    setActionBusy(true);
+    const saved = await renameCareDoc(renameDoc.id, nextTitle);
+    setActionBusy(false);
+    if (!saved) {
+      showNotice(t('careDocs.error'));
+      return;
+    }
+    setMyDocs((previous) => previous.map((doc) => (doc.id === saved.id ? saved : doc)));
+    setViewingDoc((current) => (current?.id === saved.id ? saved : current));
+    setRenameDoc(null);
+    setRenameValue('');
+  };
+
+  const confirmDeleteDoc = async () => {
+    if (!deleteDoc) return;
+    const id = deleteDoc.id;
+    setActionBusy(true);
+    const removed = await softDeleteCareDoc(id);
+    setActionBusy(false);
+    if (!removed) {
+      showNotice(t('careDocs.error'));
+      return;
+    }
+    setMyDocs((previous) => previous.filter((doc) => doc.id !== id));
+    setViewingDoc((current) => (current?.id === id ? null : current));
+    setDeleteDoc(null);
   };
 
   // The personal line is created lazily, once, and keeps its code forever.
@@ -335,7 +400,7 @@ export default function CallHub() {
         ) : (
           <ul className="call-docs-list">
             {myDocs.map((doc) => (
-              <li key={doc.id}>
+              <li key={doc.id} className="call-doc-item">
                 <button type="button" className="call-doc-row" onClick={() => openDoc(doc)}>
                   <span className="call-doc-title">{doc.title}</span>
                   <span className="call-doc-meta">
@@ -353,10 +418,62 @@ export default function CallHub() {
                     })}
                   </span>
                 </button>
+
+                <button
+                  type="button"
+                  className="call-doc-more"
+                  aria-label={t('common.more')}
+                  aria-haspopup="menu"
+                  aria-expanded={menuDocId === doc.id}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setMenuDocId((current) => (current === doc.id ? null : doc.id));
+                  }}
+                >
+                  <MoreVertical size={16} />
+                </button>
+
+                {menuDocId === doc.id ? (
+                  <div className="call-doc-menu" role="menu">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuDocId(null);
+                        setRenameDoc(doc);
+                        setRenameValue(doc.title);
+                      }}
+                    >
+                      <Pencil size={14} aria-hidden="true" /> {t('careDocs.rename')}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void duplicate(doc)}
+                      disabled={actionBusy}
+                    >
+                      <Copy size={14} aria-hidden="true" /> {t('careDocs.duplicate')}
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="is-danger"
+                      onClick={() => {
+                        setMenuDocId(null);
+                        setDeleteDoc(doc);
+                      }}
+                    >
+                      <Trash2 size={14} aria-hidden="true" /> {t('careDocs.delete')}
+                    </button>
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
         )}
+        {actionNotice ? (
+          <span className="call-doc-notice" role="status">{actionNotice}</span>
+        ) : null}
       </div>
 
       {viewingDoc ? (
@@ -419,12 +536,82 @@ export default function CallHub() {
           </div>
         </div>
       ) : null}
+
+      {renameDoc ? (
+        <div className="call-doc-modal" role="dialog" aria-modal="true" aria-label={t('careDocs.rename')}>
+          <div className="call-doc-card">
+            <header>
+              <strong>{t('careDocs.rename')}</strong>
+              <button
+                type="button"
+                className="call-panel-close"
+                onClick={() => setRenameDoc(null)}
+                aria-label={t('common.close')}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <input
+              className="input"
+              value={renameValue}
+              aria-label={t('careDocs.titleLabel')}
+              onChange={(event) => setRenameValue(event.target.value)}
+            />
+            <div className="call-doc-actions">
+              <button type="button" className="ghost-button" onClick={() => setRenameDoc(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => void saveRename()}
+                disabled={actionBusy || !renameValue.trim()}
+              >
+                {actionBusy ? t('call.saving') : t('careDocs.save')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteDoc ? (
+        <div className="call-doc-modal" role="dialog" aria-modal="true" aria-label={t('careDocs.delete')}>
+          <div className="call-doc-card">
+            <header>
+              <strong>{t('careDocs.delete')}</strong>
+              <button
+                type="button"
+                className="call-panel-close"
+                onClick={() => setDeleteDoc(null)}
+                aria-label={t('common.close')}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <p style={styles.confirmText}>{t('careDocs.confirmDelete')}</p>
+            <div className="call-doc-actions">
+              <button type="button" className="ghost-button" onClick={() => setDeleteDoc(null)}>
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                onClick={() => void confirmDeleteDoc()}
+                disabled={actionBusy}
+              >
+                {t('careDocs.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 const styles: Record<string, CSSProperties> = {
   joinForm: { display: 'grid', gap: '0.5rem' },
+  confirmText: { margin: 0, color: '#133b35', fontSize: '0.9rem', lineHeight: 1.5 },
   lineChip: {
     // Light-surface skin; layout comes from .call-code-chip.
     background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',

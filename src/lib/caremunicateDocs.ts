@@ -15,6 +15,7 @@ export type CareDoc = {
   lock_status: 'locked' | 'unlocked';
   created_at: string;
   updated_at: string;
+  deleted_at: string | null;
 };
 
 /** Every document for one call, newest first. Fails soft. */
@@ -25,6 +26,7 @@ export const listCareDocs = async (callId: string): Promise<CareDoc[]> => {
     .from('caremunicate_docs')
     .select('*')
     .eq('call_id', callId)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false });
 
   if (error) {
@@ -42,6 +44,7 @@ export const listMyCareDocs = async (userId: string): Promise<CareDoc[] | null> 
     .from('caremunicate_docs')
     .select('*')
     .eq('creator_id', userId)
+    .is('deleted_at', null)
     .order('updated_at', { ascending: false });
 
   if (error) {
@@ -106,4 +109,68 @@ export const saveCareDoc = async (payload: {
     return null;
   }
   return (data as CareDoc) ?? null;
+};
+
+/** Rename only — content and lock status are untouched. */
+export const renameCareDoc = async (id: string, title: string): Promise<CareDoc | null> => {
+  const nextTitle = title.trim();
+  if (!id || !nextTitle) return null;
+
+  const { data, error } = await supabase
+    .from('caremunicate_docs')
+    .update({ title: nextTitle })
+    .eq('id', id)
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('CAREDOCS ERROR:', error.message, error);
+    return null;
+  }
+  return (data as CareDoc) ?? null;
+};
+
+/** Copy a document under the current user, title suffixed with " (Copy)". */
+export const duplicateCareDoc = async (doc: CareDoc): Promise<CareDoc | null> => {
+  if (!doc?.id) return null;
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    console.error('CAREDOCS ERROR: no authenticated user', authError);
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('caremunicate_docs')
+    .insert({
+      call_id: doc.call_id,
+      creator_id: user.id,
+      title: `${doc.title} (Copy)`,
+      content: doc.content ?? '',
+      lock_status: doc.lock_status,
+    })
+    .select('*')
+    .single();
+
+  if (error) {
+    console.error('CAREDOCS ERROR:', error.message, error);
+    return null;
+  }
+  return (data as CareDoc) ?? null;
+};
+
+/** Soft delete — sets deleted_at; the row is never hard-deleted. */
+export const softDeleteCareDoc = async (id: string): Promise<boolean> => {
+  if (!id) return false;
+
+  const { error } = await supabase
+    .from('caremunicate_docs')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id);
+
+  if (error) {
+    console.error('CAREDOCS ERROR:', error.message, error);
+    return false;
+  }
+  return true;
 };
