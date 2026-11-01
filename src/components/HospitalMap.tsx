@@ -10,6 +10,7 @@ import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { geocodeInBackground } from '../lib/geocode';
 import {
   SEARCH_TIMEOUT_MS,
   addHospital,
@@ -25,7 +26,7 @@ import {
 //
 //   Tiles  : OpenStreetMap raster tiles, no key.
 //   Pins   : a custom MINT DivIcon (never Leaflet's default blue marker).
-//   Search : typed name → /api/geocode (MapTiler) via src/lib/hospitals.ts.
+//   Search : typed name → client-side Photon with a 3s abort.
 //   Add    : providers only; click the map or pick a search result, name it,
 //            then insert into public.hospitals with the current user as author.
 // ---------------------------------------------------------------------------
@@ -318,9 +319,12 @@ export default function HospitalMap() {
         userId: user.id,
       });
       closeForm();
+      notify(tString('hospital.added', { name: row.name }), 'success');
+      // Coordinate repair is strictly post-save: never blocks the modal close,
+      // the toast, or the list refresh. onlyIfMissing preserves a picked pin.
+      void geocodeInBackground(trimmed, row.id, { onlyIfMissing: true });
       await load();
       setFocus({ lat: row.latitude, lon: row.longitude, key: row.id });
-      notify(tString('hospital.added', { name: row.name }), 'success');
     } catch (error) {
       console.error('HOSPITAL_ERROR:', error);
       notify(`${t('hospital.addError')} (${describeError(error)})`, 'error');

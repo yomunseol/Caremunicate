@@ -1,23 +1,20 @@
-import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { ServerResponse } from 'node:http';
 
 // ---------------------------------------------------------------------------
-// Dev-only stand-ins for api/geocode.ts and api/overpass.ts.
+// Dev-only stand-in for api/overpass.ts.
 //
-// `vite dev` has no serverless runtime, so these mirror the production
-// functions: text search -> MapTiler (key read from the environment, never the
-// bundle); "Near me" -> Overpass with a required lat/lon radial query.
+// Geocoding is intentionally NOT proxied here: the browser calls Photon
+// directly with a 3-second AbortController (src/lib/geocode.ts), so there is no
+// serverless geocode route to time out behind Cloudflare.
 // ---------------------------------------------------------------------------
 
 const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
 const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
 const CATEGORY_TAGS = new Set(['hospital', 'clinic', 'pharmacy', 'doctors']);
 
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '');
-  const apiKey = env.NEXT_PUBLIC_GEOCODER_API_KEY || env.GEOCODER_API_KEY || '';
-
+export default defineConfig(() => {
   const apiDevProxy = (): Plugin => ({
     name: 'caremunicate-api-dev-proxy',
     apply: 'serve',
@@ -27,52 +24,6 @@ export default defineConfig(({ mode }) => {
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify(body));
       };
-
-      server.middlewares.use('/api/geocode', (req, res) => {
-        const url = new URL(req.url ?? '/', 'http://localhost');
-        const query = (url.searchParams.get('q') ?? '').trim();
-        const rawLang = (url.searchParams.get('lang') ?? '').trim();
-        const lang = rawLang ? rawLang.split('-')[0] : 'en';
-
-        if (!query) {
-          send(res, 400, { error: 'Query is required' });
-          return;
-        }
-        console.log('Geocoding query:', query, 'lang:', lang);
-        if (!apiKey) {
-          console.error(
-            '[GEOCODE] API key missing (dev) — set NEXT_PUBLIC_GEOCODER_API_KEY or GEOCODER_API_KEY in .env.local',
-          );
-          send(res, 500, { error: 'Geocoder API key is missing in environment variables' });
-          return;
-        }
-
-        const target =
-          `https://api.maptiler.com/geocoding/${encodeURIComponent(query)}.json` +
-          `?key=${apiKey}` +
-          `&lang=${lang}`;
-        console.log('Maptiler Request URL:', target);
-
-        void fetch(target, { headers: { Accept: 'application/json' } })
-          .then(async (upstream) => {
-            if (!upstream.ok) {
-              const raw = await upstream.text().catch(() => '');
-              console.error('Maptiler Raw Error:', raw);
-              send(res, upstream.status, { error: `Geocoder failed: ${upstream.status}` });
-              return;
-            }
-            const payload = (await upstream.json()) as { features?: unknown };
-            if (!payload || !Array.isArray(payload.features)) {
-              send(res, 500, { error: 'invalid payload' });
-              return;
-            }
-            send(res, 200, payload);
-          })
-          .catch((error: unknown) => {
-            console.error('Geocoder API error:', error);
-            send(res, 500, { error: 'route crash', detail: String(error) });
-          });
-      });
 
       server.middlewares.use('/api/overpass', (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');

@@ -1,16 +1,18 @@
 import { supabase } from './supabase';
+import { photonSearch } from './geocode';
 
 // ---------------------------------------------------------------------------
 // Hospitals: the community map backed by public.hospitals, plus the location
 // search that feeds it.
 //
-// Text search goes through /api/geocode (MapTiler); Overpass stays reserved for
-// the radial "Near me" query. A centre point is still required.
+// Text search goes straight from the browser to Photon with a 3-second abort.
+// Overpass stays reserved for the radial "Near me" query. A centre point is
+// still required.
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-export const SEARCH_TIMEOUT_MS = 25_000;
+export const SEARCH_TIMEOUT_MS = 3000;
 
 export type Hospital = {
   id: string;
@@ -72,34 +74,9 @@ export async function addHospital(input: {
 const sanitizeQuery = (value: string): string =>
   value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 
-type GeocodeFeature = {
-  geometry?: { coordinates?: [number, number] };
-  properties?: {
-    id?: string | number;
-    name?: string;
-    text?: string;
-    place_name?: string;
-  };
-};
-
-/** Normalize a geocoder feature into the map's OsmPlace shape. */
-const featureToPlace = (feature: GeocodeFeature): OsmPlace | null => {
-  const coords = feature?.geometry?.coordinates;
-  const lat = Number(coords?.[1]);
-  const lon = Number(coords?.[0]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-
-  const props = feature.properties ?? {};
-  const display = props.place_name ?? '';
-  const name = props.name || props.text || display.split(',')[0]?.trim() || display;
-  if (!name) return null;
-
-  return { id: `geocode/${props.id ?? `${lat},${lon}`}`, name, lat, lon };
-};
-
 /**
- * Search named places around `at` through the geocoder route. Text search is
- * NEVER sent to Overpass; Overpass is reserved for the radial "Near me" query.
+ * Search named places around `at` through Photon (client-side, 3s abort).
+ * Text search is NEVER sent to Overpass; Overpass is reserved for "Near me".
  */
 export async function searchPlaces(
   query: string,
@@ -110,27 +87,11 @@ export async function searchPlaces(
   const needle = sanitizeQuery(query);
   if (!needle) return [];
 
-  const params = new URLSearchParams({
-    q: needle,
+  return photonSearch(needle, {
+    limit: 5,
+    lat: at.lat,
+    lon: at.lon,
     lang,
-    lat: String(at.lat),
-    lon: String(at.lon),
-  });
-  const response = await fetch(`/api/geocode?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
     signal,
   });
-
-  if (!response.ok) {
-    throw new Error(`Geocoder ${response.status}`);
-  }
-
-  const payload = (await response.json()) as { features?: GeocodeFeature[] };
-  const byId = new Map<string, OsmPlace>();
-  for (const feature of payload.features ?? []) {
-    const place = featureToPlace(feature);
-    if (place && !byId.has(place.id)) byId.set(place.id, place);
-  }
-
-  return [...byId.values()];
 }
