@@ -4032,3 +4032,130 @@ img {
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Onboarding wizard */
+.onboarding-page {
+  display: grid;
+  place-items: center;
+  min-height: 60vh;
+}
+.onboarding-card {
+  width: min(46rem, 100%);
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  border: 1px solid rgba(62, 169, 133, 0.18);
+  border-radius: 1.35rem;
+  background: linear-gradient(180deg, rgba(250, 255, 252, 0.98), rgba(238, 249, 244, 0.92));
+  box-shadow: 0 22px 46px rgba(17, 55, 47, 0.1);
+}
+.onboarding-progress {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #216e5d;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.onboarding-heading h2 {
+  margin: 0;
+  color: #133b35;
+  font-size: 1.25rem;
+}
+.onboarding-roles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.75rem;
+}
+.onboarding-role {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(15, 58, 50, 0.12);
+  background: #fff;
+  color: #133b35;
+  text-align: start;
+  cursor: pointer;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.onboarding-role:hover {
+  border-color: rgba(62, 169, 133, 0.45);
+}
+.onboarding-role.active {
+  border-color: #3ea985;
+  background: rgba(62, 169, 133, 0.1);
+  box-shadow: 0 0 0 3px rgba(62, 169, 133, 0.14);
+}
+.onboarding-role-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.8rem;
+  background: rgba(62, 169, 133, 0.14);
+  color: #216e5d;
+  flex: 0 0 auto;
+}
+.onboarding-role-copy {
+  display: grid;
+  gap: 0.2rem;
+}
+.onboarding-role-copy strong {
+  font-size: 0.92rem;
+}
+.onboarding-role-copy small {
+  color: #557b76;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+.onboarding-form {
+  display: grid;
+  gap: 0.75rem;
+}
+.onboarding-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #216e5d;
+  letter-spacing: 0.04em;
+}
+.onboarding-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+.onboarding-success {
+  display: grid;
+  place-items: center;
+  gap: 0.6rem;
+  text-align: center;
+  padding-block: 1.5rem;
+}
+.onboarding-success h2 {
+  margin: 0;
+  color: #133b35;
+}
+.onboarding-success p {
+  margin: 0;
+  color: #557b76;
+}
+.onboarding-check {
+  display: inline-flex;
+  color: #216e5d;
+  animation: onboarding-pop 520ms cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes onboarding-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

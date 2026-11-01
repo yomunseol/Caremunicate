@@ -43,6 +43,7 @@ import { isAuthAllowed, recordAuthAttempt } from './lib/authRateLimit';
 import { useLang } from './i18n';
 import ResetPassword from './components/ResetPassword';
 import HelpPage from './components/HelpPage';
+import OnboardingWizard from './components/OnboardingWizard';
 
 type RouteKey =
   | 'home'
@@ -59,7 +60,8 @@ type RouteKey =
   | 'care'
   | 'patients'
   | 'reset'
-  | 'help';
+  | 'help'
+  | 'onboarding';
 type AuthMode = 'signup' | 'login';
 type AuthRole = 'patient' | 'doctor' | 'department' | 'hospital';
 
@@ -117,7 +119,7 @@ const parseHash = (hash: string): ParsedRoute => {
     };
   }
 
-  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients', 'help'];
+  const validRoutes: RouteKey[] = ['home', 'signup', 'login', 'profile', 'pricing', 'calendar', 'hospitals', 'doctors', 'verify', 'care', 'patients', 'help', 'onboarding'];
   return {
     route: validRoutes.includes(name as RouteKey) ? (name as RouteKey) : 'home',
     conversationId: null,
@@ -147,6 +149,12 @@ const HELP_PATH = /^\/help\/?$/;
 const isHelpPath = (): boolean =>
   typeof window !== 'undefined' && HELP_PATH.test(window.location.pathname);
 
+/** `/onboarding` — the authenticated post-signup profile wizard. */
+const ONBOARDING_PATH = /^\/onboarding\/?$/;
+
+const isOnboardingPath = (): boolean =>
+  typeof window !== 'undefined' && ONBOARDING_PATH.test(window.location.pathname);
+
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
   const match = window.location.pathname.match(CALL_PATH);
@@ -163,6 +171,7 @@ const getInitialRoute = (): RouteKey => {
   // A recovery link lands on a real path, with the tokens in the fragment.
   if (isResetPasswordPath()) return 'reset';
   if (isHelpPath()) return 'help';
+  if (isOnboardingPath()) return 'onboarding';
   if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
 };
@@ -175,7 +184,7 @@ const getInitialRoute = (): RouteKey => {
 const routerBasePath = (): string => {
   if (typeof window === 'undefined') return '/';
   const path = window.location.pathname;
-  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || HELP_PATH.test(path)) return '/';
+  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || HELP_PATH.test(path) || ONBOARDING_PATH.test(path)) return '/';
   return path;
 };
 
@@ -262,6 +271,9 @@ function App() {
   const [authMessage, setAuthMessage] = useState('');
   const [authMessageType, setAuthMessageType] = useState<'success' | 'error'>('error');
   const [profileData, setProfileData] = useState<Record<string, unknown> | null>(null);
+  // True once the profile read has settled successfully; the onboarding gate
+  // waits for this so a complete user never flashes the wizard on load.
+  const [profileChecked, setProfileChecked] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   // Plan chosen on the pricing page. Persisted in the URL as
   // #signup?plan=<id> so it survives a refresh on the sign-up screen.
@@ -282,6 +294,12 @@ function App() {
     const syncRoute = () => {
       if (isHelpPath()) {
         setRoute('help');
+        setConversationId(null);
+        setCallCode(null);
+        return;
+      }
+      if (isOnboardingPath()) {
+        setRoute('onboarding');
         setConversationId(null);
         setCallCode(null);
         return;
@@ -329,8 +347,11 @@ function App() {
       // authenticated (gated view of the session).
       if (!currentUser) {
         setProfileData(null);
+        setProfileChecked(false);
         return;
       }
+
+      setProfileChecked(false);
 
       // `.maybeSingle()` because a user may legitimately have no profiles row
       // yet — that is a normal state, not an error.
@@ -345,8 +366,11 @@ function App() {
       if (error) {
         console.error('Could not load profile:', error.message);
         setProfileData(null);
+        // A transient read failure must not force the wizard; retry later.
+        setProfileChecked(false);
       } else {
         setProfileData(data);
+        setProfileChecked(true);
       }
     };
 
@@ -356,6 +380,19 @@ function App() {
       cancelled = true;
     };
   }, [currentUser, profileRefreshKey]);
+
+  // Onboarding gate: an authenticated user whose profile is missing or not
+  // complete is sent to /onboarding from any in-app route.
+  useEffect(() => {
+    if (!currentUser || !profileChecked) return;
+    if (route === 'onboarding' || route === 'login' || route === 'signup') return;
+    if (profileData?.onboarding_complete !== true) {
+      setRoute('onboarding');
+      setConversationId(null);
+      setCallCode(null);
+      window.history.replaceState({}, '', '/onboarding');
+    }
+  }, [currentUser, profileChecked, profileData, route]);
 
   const navigate = (nextRoute: RouteKey) => {
     if (
@@ -367,7 +404,8 @@ function App() {
         nextRoute === 'doctors' ||
         nextRoute === 'verify' ||
         nextRoute === 'care' ||
-        nextRoute === 'patients') &&
+        nextRoute === 'patients' ||
+        nextRoute === 'onboarding') &&
       (!currentUser || pending2FA)
     ) {
       nextRoute = 'login';
@@ -378,8 +416,8 @@ function App() {
     setRoute(nextRoute);
     setConversationId(null);
     setCallCode(null);
-    if (nextRoute === 'help') {
-      window.history.pushState({}, '', '/help');
+    if (nextRoute === 'help' || nextRoute === 'onboarding') {
+      window.history.pushState({}, '', `/${nextRoute}`);
       return;
     }
     const hash = nextRoute === 'home' ? '' : `#${nextRoute}`;
@@ -583,6 +621,10 @@ function App() {
               user_id: data.user.id,
               role: authRole,
               plan: signupPlan,
+              // New accounts go through the onboarding wizard; the wizard
+              // flips this to true. Existing rows default to true in the
+              // founder SQL so they are not forced through it.
+              onboarding_complete: false,
               username: signupValues.fullName.trim(),
               // Doctor directory fields live on profiles so other users can read
               // them (auth metadata is private). Only doctors carry these.
@@ -1030,6 +1072,12 @@ function App() {
 
         {/* Public help manual (footer only). */}
         {route === 'help' && <HelpPage />}
+
+        {route === 'onboarding' && (
+          <ProtectedRoute>
+            <OnboardingWizard />
+          </ProtectedRoute>
+        )}
 
         {(route === 'signup' || route === 'login') && (
           <section className="section form-grid auth-combined-layout">
