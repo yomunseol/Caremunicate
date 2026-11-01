@@ -33,6 +33,7 @@ const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
 const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
+const CATEGORY_TAGS = new Set(['hospital', 'clinic', 'pharmacy', 'doctors']);
 const TIMEOUT_ERROR = 'Search timed out. Please try again.';
 const STALE_WARNING = 'Live search unavailable';
 
@@ -129,17 +130,23 @@ async function runOverpass(req: ProxyRequest): Promise<Outcome> {
     ? Math.min(Math.max(radiusRaw, 100), 50_000)
     : DEFAULT_RADIUS_M;
 
-  // STRICT medical whitelist only: hospitals, clinics, doctors, pharmacies.
-  // No retail/marts/convenience/supermarkets can match; both the amenity and
-  // healthcare tagging schemes are included.
-  const query = `[out:json][timeout:25];
+  const categoryRaw = asString(req.query?.category).trim().toLowerCase();
+  const category = CATEGORY_TAGS.has(categoryRaw) ? categoryRaw : '';
+
+  // A category click maps to ONE exact amenity tag. With no category, fall back
+  // to the strict medical union for older callers.
+  const query = category
+    ? `[out:json][timeout:25];
+nwr["amenity"="${category}"](around:${radius},${lat},${lon});
+out center;`
+    : `[out:json][timeout:25];
 (
   nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
   nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});
 );
 out center;`;
 
-  const cacheKey = `${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const cacheKey = `${category || 'all'}:${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
 
   // ---- Step 1: fresh cache ----
   if (supabase) {

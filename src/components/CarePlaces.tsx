@@ -5,9 +5,8 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
 } from 'react';
-import { Search, Star } from 'lucide-react';
+import { Star } from 'lucide-react';
 import L from 'leaflet';
 import { MapContainer, Marker, Popup, TileLayer, useMap } from 'react-leaflet';
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -19,18 +18,17 @@ import { supabase } from '../lib/supabase';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
-import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 // ---------------------------------------------------------------------------
 // Care Places — keyless, credit-card-free map stack.
 //
-//   Search : STRICT split — typed text → /api/geocode (MapTiler), "Near me" →
-//            /api/overpass?lat&lon&radius (never text). No key in the bundle.
+//   Search : category pills (hospital / clinic / pharmacy / doctors) →
+//            /api/overpass?lat&lon&radius&category. No text, no geocoder.
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
-// Near me is proximity-based, so a radial Overpass query needs a centre point.
-// Typed names go to MapTiler geocoding (see fetchMaptiler) instead.
+// Near me is proximity-based, so a radial Overpass query needs a centre point;
+// clicking a category without one asks for location first.
 // ---------------------------------------------------------------------------
 
 /** Local → regional → city-wide cascade for "Near me". */
@@ -39,8 +37,6 @@ const CASCADE_RADII = [5_000, 20_000, 50_000] as const;
 const OVERPASS_TIMEOUT_MS = 28_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
-/** Text search is a single commercial-geocoder call; keep a bounded budget. */
-const TEXT_SEARCH_TIMEOUT_MS = 15_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
 const CACHE_PREFIX = 'cp:';
 const CACHE_TTL_MS = 10 * 60 * 1000;
@@ -90,6 +86,16 @@ type PlaceView = {
 };
 
 type LatLon = { lat: number; lon: number };
+
+/** The four Overpass categories the UI exposes. */
+type Category = 'hospital' | 'clinic' | 'pharmacy' | 'doctors';
+
+const CATEGORIES: Array<{ value: Category; labelKey: string }> = [
+  { value: 'hospital', labelKey: 'places.catHospital' },
+  { value: 'clinic', labelKey: 'places.catClinic' },
+  { value: 'pharmacy', labelKey: 'places.catPharmacy' },
+  { value: 'doctors', labelKey: 'places.catDoctor' },
+];
 
 type CarePlacesProps = {
   /** Dashboard role (profiles.role). Drives the role-aware heading. */
@@ -142,12 +148,14 @@ type NearbyResponse = {
 const fetchOverpassNearby = async (
   at: LatLon,
   radius: number,
+  category: Category,
   signal: AbortSignal,
 ): Promise<NearbyResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
     radius: String(radius),
+    category,
   });
 
   const response = await fetch(`/api/overpass?${params.toString()}`, {
@@ -166,80 +174,7 @@ const fetchOverpassNearby = async (
   return (await response.json()) as NearbyResponse;
 };
 
-/** Typed search is one network call; 800ms respects the geocoder's limits. */
-const DEBOUNCE_MS = 800;
-
-type MapTilerFeature = {
-  geometry?: { coordinates?: [number, number] };
-  properties?: {
-    id?: string | number;
-    name?: string;
-    text?: string;
-    place_name?: string;
-    address?: string;
-    type?: string;
-    [key: string]: unknown;
-  };
-};
-
-/** Normalize a MapTiler feature into the shared list/map view model. */
-const maptilerToPlace = (feature: MapTilerFeature): PlaceView | null => {
-  const coords = feature?.geometry?.coordinates;
-  const lat = Number(coords?.[1]);
-  const lon = Number(coords?.[0]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
-
-  const props = feature.properties ?? {};
-  const placeName = typeof props.place_name === 'string' ? props.place_name : '';
-  const address = placeName || (typeof props.address === 'string' ? props.address : '');
-  const name = props.name || props.text || placeName.split(',')[0]?.trim() || address;
-  if (!name) return null;
-
-  return {
-    placeId: `maptiler/${props.id ?? `${lat},${lon}`}`,
-    osmType: 'node',
-    name,
-    amenity: typeof props.type === 'string' ? props.type : '',
-    address,
-    lat,
-    lon,
-  };
-};
-
-/** Typed-name search through MapTiler, proximity-biased when a centre exists. */
-const fetchMaptiler = async (
-  needle: string,
-  lang: string,
-  at: LatLon | null,
-  signal: AbortSignal,
-): Promise<MapTilerFeature[]> => {
-  // Server proxy reads the key at runtime (no key in the bundle).
-  const params = new URLSearchParams({ q: needle, lang });
-  if (at) {
-    params.set('lat', String(at.lat));
-    params.set('lon', String(at.lon));
-  }
-
-  const response = await fetch(`/api/geocode?${params.toString()}`, {
-    headers: { Accept: 'application/json' },
-    signal,
-  });
-
-  if (!response.ok) {
-    const { reasons, detail } = await readFailure(response);
-    throw overpassError(
-      String(response.status),
-      reasons.join(', ') || detail || `geocoder responded ${response.status}`,
-    );
-  }
-
-  const payload = (await response.json().catch(() => null)) as
-    | { features?: MapTilerFeature[] }
-    | null;
-  return Array.isArray(payload?.features) ? payload.features : [];
-};
-
-/** Cache key: `cp:{lat2},{lon2}:{needle}` — the text is part of the identity. */
+/** Cache key: `cp:{lat2},{lon2}:{category-radius}` — the query is part of it. */
 const cacheKey = (lat: number, lon: number, needle = ''): string =>
   `${CACHE_PREFIX}${lat.toFixed(2)},${lon.toFixed(2)}:${sanitizeNeedle(needle).toLowerCase()}`;
 
@@ -346,14 +281,14 @@ function FitBounds({
 
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
-  const { t, tString, locale } = useLang();
+  const { t, tString } = useLang();
 
   const { role: profileRole } = useRole();
   const effectiveRole = (role || profileRole).toLowerCase();
   // Provider accounts (doctor / department / hospital) get the network heading.
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
-  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<Category>('hospital');
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -376,12 +311,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [wide, setWide] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
-  /** The last search (kind + centre + text), so Retry can repeat it exactly. */
-  const lastSearchRef = useRef<{
-    kind: 'nearby' | 'text';
-    at: LatLon | null;
-    needle: string;
-  } | null>(null);
+  /** The last search (centre + category), so Retry can repeat it exactly. */
+  const lastSearchRef = useRef<{ at: LatLon; category: Category } | null>(null);
 
   const placeName = useCallback(
     (place: PlaceView) => place.name || t('places.eyebrow'),
@@ -421,27 +352,22 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   }, [loadFavorites]);
 
   // ---- Search -------------------------------------------------------------
-  // Two sources, deliberately split:
-  //   • Near me    → /api/overpass?lat&lon&radius (bounded; never text).
-  //   • Typed name → MapTiler geocoding (commercial, global, proximity-biased).
-  const lastTextRef = useRef('');
-
+  // Category pills → /api/overpass?lat&lon&radius&category. No text path.
   const executeSearch = useCallback(
     async (
-      kind: 'nearby' | 'text',
-      at: LatLon | null,
-      needle: string,
+      at: LatLon,
+      category: Category,
       load: (signal: AbortSignal) => Promise<PlaceView[]>,
       timeoutMs = OVERPASS_TIMEOUT_MS,
     ) => {
-      lastSearchRef.current = { kind, at, needle };
+      lastSearchRef.current = { at, category };
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Hard ceiling per search; the text cascade gets a longer budget than the
-      // 8s nearby query.
+      // Hard ceiling per search; the client guard sits just above the route's
+      // own budget.
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
         timedOut = true;
@@ -478,7 +404,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         // A nearby 504 with no cached data at all: show the calm yellow notice
         // (the favourites above remain usable), not a red error.
-        if (kind === 'nearby' && code === '504') {
+        if (code === '504') {
           console.warn('SEARCH_FALLBACK:', caught);
           setFallbackNotice(true);
           setResults([]);
@@ -506,10 +432,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [t],
   );
 
-  /** Near me → Overpass radial query, backed by the shared DB cache. */
-  const runNearby = useCallback(
-    async (at: LatLon) => {
-      await executeSearch('nearby', at, '', async (signal) => {
+  /** Category → Overpass radial query, backed by the shared DB cache. */
+  const runCategory = useCallback(
+    async (next: Category, at: LatLon) => {
+      setCategory(next);
+      await executeSearch(at, next, async (signal) => {
         const toPlaces = (elements: OverpassElement[]) =>
           elements
             .map(elementToPlace)
@@ -520,8 +447,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           const radius = CASCADE_RADII[index];
           if (index > 0) setExpanding(true);
 
-          // Per-browser cache, keyed by radius so rings never collide.
-          const localKey = cacheKey(at.lat, at.lon, `nearby-${radius}`);
+          // Per-browser cache, keyed by category + radius.
+          const localKey = cacheKey(at.lat, at.lon, `${next}-${radius}`);
           const local = readCache(localKey);
           if (local !== null && local.length > 0) {
             setExpanding(false);
@@ -530,7 +457,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           }
 
           // The route owns the shared Supabase cache and the direct fallback.
-          const payload = await fetchOverpassNearby(at, radius, signal);
+          const payload = await fetchOverpassNearby(at, radius, next, signal);
           const elements = payload.data?.elements ?? [];
           // Stale cache / warning = live data is down: calm yellow notice; the
           // existing favourites above stay visible and usable.
@@ -550,26 +477,6 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       });
     },
     [executeSearch],
-  );
-
-  /** Typed name → MapTiler geocoding (proximity-biased when a centre exists). */
-  const runText = useCallback(
-    async (needle: string) => {
-      lastTextRef.current = needle;
-      await executeSearch(
-        'text',
-        null,
-        needle,
-        async (signal) => {
-          const features = await fetchMaptiler(needle, locale, center, signal);
-          return features
-            .map(maptilerToPlace)
-            .filter((place): place is PlaceView => place !== null);
-        },
-        TEXT_SEARCH_TIMEOUT_MS,
-      );
-    },
-    [executeSearch, locale, center],
   );
 
   // Abort any in-flight Overpass request on unmount.
@@ -623,47 +530,21 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     );
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const needle = query.trim();
-    // A typed name goes to MapTiler; an empty submit means "find nearby".
-    if (needle) {
-      void runText(needle);
-    } else if (center) {
-      void runNearby(center);
-    } else {
-      requestLocation((at) => void runNearby(at));
+  /** Category click: run at the known centre, or ask for location first. */
+  const handleCategory = (next: Category) => {
+    setCategory(next);
+    if (center) {
+      void runCategory(next, center);
+      return;
     }
+    requestLocation((at) => void runCategory(next, at));
   };
 
   /** Retry the last search after a failure (inline error action). */
   const retrySearch = () => {
     const last = lastSearchRef.current;
-    if (!last) return;
-    if (last.kind === 'text') void runText(last.needle);
-    else if (last.at) void runNearby(last.at);
+    if (last) void runCategory(last.category, last.at);
   };
-
-  // Typed text drives a debounced MAPTILER search. 1100ms keeps typing calm
-  // without hammering the geocoder.
-  const debouncedQuery = useDebouncedValue(query, DEBOUNCE_MS);
-  useEffect(() => {
-    const needle = debouncedQuery.trim();
-    if (!needle) {
-      lastTextRef.current = '';
-      return;
-    }
-    // Skip when the submit/Retry path already searched this exact text.
-    if (needle === lastTextRef.current) return;
-    void runText(needle);
-  }, [debouncedQuery, runText]);
-
-  // A new keystroke cancels any in-flight request immediately (the debounced
-  // effect above then starts the next one), so a slow response never lands on
-  // top of newer input.
-  useEffect(() => {
-    abortRef.current?.abort();
-  }, [query]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = results.find((place) => place.placeId === selectedId);
@@ -861,34 +742,34 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         )}
       </div>
 
-      {/* SEARCH — Overpass is proximity-based, so a centre is required. */}
+      {/* SEARCH — category pills drive Overpass directly (no text, no geocoder). */}
       <div style={styles.section}>
-        <form onSubmit={handleSubmit} style={styles.searchRow}>
-          <div style={styles.searchBox}>
-            <Search size={16} style={styles.searchIcon} aria-hidden="true" />
-            <input
-              id="care-places-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={t('places.searchPlaceholder')}
-              aria-label={t('places.searchAria')}
-              autoComplete="off"
-              style={styles.input}
-            />
-          </div>
-          <button type="submit" disabled={isLoading} style={styles.nearMeButton}>
-            {isLoading ? t('places.searching') : t('places.searchAria')}
-          </button>
+        <div style={styles.categoryRow} role="group" aria-label={t('places.catAria')}>
+          {CATEGORIES.map((item) => {
+            const active = category === item.value;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={active}
+                disabled={isLoading && active}
+                style={{ ...styles.categoryPill, ...(active ? styles.categoryPillActive : null) }}
+                onClick={() => handleCategory(item.value)}
+              >
+                {t(item.labelKey)}
+              </button>
+            );
+          })}
           <button
             type="button"
-            onClick={() => requestLocation((at) => void runNearby(at))}
+            onClick={() => requestLocation((at) => void runCategory(category, at))}
             disabled={locating}
             aria-pressed={center !== null}
-            style={{ ...styles.nearMeButton, ...(center ? styles.nearMeButtonOn : null) }}
+            style={{ ...styles.categoryPill, ...(center ? styles.categoryPillOn : null) }}
           >
             {t('places.nearMe')}
           </button>
-        </form>
+        </div>
 
         <p style={styles.locationHint}>
           {center ? t('places.usingLocation') : t('places.needLocation')}
@@ -1086,36 +967,26 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '0.74rem',
     fontWeight: 800,
   },
-  searchRow: { display: 'flex', alignItems: 'stretch', gap: '0.5rem', flexWrap: 'wrap' },
-  searchBox: { position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 },
-  searchIcon: { position: 'absolute', insetInlineStart: 12, color: '#557b76' },
-  input: {
-    width: '100%',
-    border: '1px solid rgba(15, 58, 50, 0.12)',
-    borderRadius: '999px',
-    paddingBlock: '0.75rem',
-    paddingInline: '2.3rem 1rem',
-    background: '#fff',
-    fontSize: '0.92rem',
-    color: '#133b35',
-  },
-  nearMeButton: {
-    flexShrink: 0,
+  categoryRow: { display: 'flex', flexWrap: 'wrap', gap: '0.45rem' },
+  categoryPill: {
     border: '1px solid rgba(62, 169, 133, 0.3)',
     borderRadius: '999px',
-    paddingBlock: '0.65rem',
+    paddingBlock: '0.5rem',
     paddingInline: '0.9rem',
     background: '#fff',
     color: '#216e5d',
     fontWeight: 700,
-    fontSize: '0.84rem',
+    fontSize: '0.82rem',
     cursor: 'pointer',
-    whiteSpace: 'nowrap',
   },
-  nearMeButtonOn: {
+  categoryPillActive: {
     background: 'linear-gradient(120deg, #48b58f, #7adab1)',
-    borderColor: 'rgba(62, 169, 133, 0.5)',
+    borderColor: 'transparent',
     color: '#072c2a',
+  },
+  categoryPillOn: {
+    background: 'rgba(62, 169, 133, 0.18)',
+    borderColor: 'rgba(62, 169, 133, 0.6)',
   },
   locationHint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
   favoritesGrid: {

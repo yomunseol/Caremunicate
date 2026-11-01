@@ -12,6 +12,7 @@ import type { ServerResponse } from 'node:http';
 
 const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
 const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
+const CATEGORY_TAGS = new Set(['hospital', 'clinic', 'pharmacy', 'doctors']);
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -94,7 +95,14 @@ export default defineConfig(({ mode }) => {
           ? Math.min(Math.max(radiusRaw, 100), 50_000)
           : 3_000;
 
-        const query = `[out:json][timeout:25];
+        const categoryRaw = (url.searchParams.get('category') ?? '').trim().toLowerCase();
+        const category = CATEGORY_TAGS.has(categoryRaw) ? categoryRaw : '';
+
+        const query = category
+          ? `[out:json][timeout:25];
+nwr["amenity"="${category}"](around:${radius},${lat},${lon});
+out center;`
+          : `[out:json][timeout:25];
 (
   nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
   nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});
