@@ -15,10 +15,10 @@ import {
   SEARCH_TIMEOUT_MS,
   addHospital,
   listHospitals,
-  searchPlaces,
+  searchPlacesByQuery,
   type Hospital,
   type LatLon,
-  type OsmPlace,
+  type SearchPlace,
 } from '../lib/hospitals';
 
 // ---------------------------------------------------------------------------
@@ -38,8 +38,6 @@ const DEFAULT_ZOOM = 10;
 const FOCUS_ZOOM = 14;
 /** The modal's pick map opens on a city-level view, not the country view. */
 const PICK_DEFAULT_ZOOM = 12;
-/** Fallback search centre (Seoul) when the browser has no location. */
-const SEOUL: LatLon = { lat: DEFAULT_CENTER[0], lon: DEFAULT_CENTER[1] };
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
 const pinSvg = (fill: string): string => `
@@ -127,7 +125,7 @@ function PickOnMap({ onPick }: { onPick: (lat: number, lon: number) => void }) {
 export default function HospitalMap() {
   const { user } = useAuth();
   const { notify } = useToast();
-  const { t, tString, locale } = useLang();
+  const { t, tString } = useLang();
 
   // Adding a hospital is a provider action (doctor / department / hospital).
   const { provider } = useRole();
@@ -145,7 +143,8 @@ export default function HospitalMap() {
   const [draftError, setDraftError] = useState('');
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<OsmPlace[]>([]);
+  const [results, setResults] = useState<SearchPlace[]>([]);
+  const [searchAddress, setSearchAddress] = useState('');
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -205,15 +204,15 @@ export default function HospitalMap() {
   };
 
   const abortRef = useRef<AbortController | null>(null);
-  const lastSearchRef = useRef<{ needle: string; at: LatLon } | null>(null);
+  const lastSearchRef = useRef<string | null>(null);
 
   const runSearch = useCallback(
-    async (needle: string, at: LatLon) => {
+    async (needle: string) => {
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      lastSearchRef.current = { needle, at };
+      lastSearchRef.current = needle;
 
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
@@ -226,7 +225,7 @@ export default function HospitalMap() {
       setSearched(false);
 
       try {
-        const places = await searchPlaces(needle, at, controller.signal, locale);
+        const places = await searchPlacesByQuery(needle, controller.signal);
         if (abortRef.current !== controller) return;
         setResults(places);
         setSearched(true);
@@ -249,42 +248,43 @@ export default function HospitalMap() {
 
   const retrySearch = () => {
     const last = lastSearchRef.current;
-    if (last) void runSearch(last.needle, last.at);
+    if (last) void runSearch(last);
   };
 
   const handleSearch = () => {
     const needle = query.trim();
     if (!needle) return;
-    // The place search needs a centre — never block the search on geolocation.
-    // Falling back to the default centre keeps a Seoul hospital reachable even
-    // when the browser refuses a location.
-    void runSearch(needle, center ?? SEOUL);
+    void runSearch(needle);
   };
 
   // Debounced live search (400ms) — typing no longer waits for a button press,
-  // and rapid keystrokes collapse into one Photon request.
+  // and rapid keystrokes collapse into one places request.
   const debouncedQuery = useDebouncedValue(query, 400);
   useEffect(() => {
     const needle = debouncedQuery.trim();
     if (!needle) return;
-    void runSearch(needle, center ?? SEOUL);
-  }, [debouncedQuery, center, runSearch]);
+    void runSearch(needle);
+  }, [debouncedQuery, runSearch]);
 
   // Abort any in-flight search on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const pickResult = (place: OsmPlace) => {
+  const pickResult = (place: SearchPlace) => {
     setDraft({ lat: place.lat, lon: place.lon });
-    setOsmId(place.id);
+    setOsmId(null);
+    setSearchAddress(place.address ?? '');
     setDraftError('');
     if (!name.trim()) setName(place.name);
-    setFocus({ lat: place.lat, lon: place.lon, key: place.id });
+    setFocus({ lat: place.lat, lon: place.lon, key: `${place.lat},${place.lon}` });
+    setResults([]);
+    setSearched(false);
   };
 
   const dropPin = (lat: number, lon: number) => {
     setDraft({ lat, lon });
     // A hand-placed pin is not tied to an OSM element.
     setOsmId(null);
+    setSearchAddress('');
     setDraftError('');
   };
 
@@ -297,6 +297,7 @@ export default function HospitalMap() {
     setResults([]);
     setSearched(false);
     setSearchError('');
+    setSearchAddress('');
     setNameError('');
     setDraftError('');
   };
@@ -358,29 +359,13 @@ export default function HospitalMap() {
           </div>
 
           <div style={styles.field}>
-            <label htmlFor="hospital-name" style={styles.label}>{t('hospital.nameLabel')}</label>
-            <input
-              id="hospital-name"
-              className="input"
-              value={name}
-              placeholder={t('hospital.namePlaceholder')}
-              aria-invalid={Boolean(nameError)}
-              onChange={(event) => {
-                setName(event.target.value);
-                if (nameError) setNameError('');
-              }}
-            />
-            {nameError ? <span className="field-error">{nameError}</span> : null}
-          </div>
-
-          <div style={styles.field}>
             <label htmlFor="hospital-search" style={styles.label}>{t('hospital.searchLabel')}</label>
             <div style={styles.searchRow}>
               <input
                 id="hospital-search"
                 className="input"
                 value={query}
-                placeholder={t('hospital.searchPlaceholder')}
+                placeholder={t('hospitals.search_placeholder')}
                 autoComplete="off"
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
@@ -398,7 +383,7 @@ export default function HospitalMap() {
                 style={styles.searchButton}
               >
                 <Search size={15} aria-hidden="true" />
-                {searching ? t('places.searching') : t('hospital.searchButton')}
+                {searching ? t('places.searching') : t('hospitals.search_button')}
               </button>
               <button
                 type="button"
@@ -425,24 +410,49 @@ export default function HospitalMap() {
               <p style={styles.muted}>{t('hospital.noResultsHint')}</p>
             ) : null}
             {results.length > 0 ? (
-              <ul style={styles.results}>
-                {results.map((place) => (
-                  <li key={place.id}>
-                    <button
-                      type="button"
-                      style={{
-                        ...styles.resultRow,
-                        ...(osmId === place.id ? styles.resultRowActive : null),
-                      }}
-                      onClick={() => pickResult(place)}
-                    >
-                      <MapPin size={15} aria-hidden="true" />
-                      {place.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <p style={styles.hint}>{t('hospitals.select_result')}</p>
+                <ul style={styles.results}>
+                  {results.map((place) => {
+                    const active = draft?.lat === place.lat && draft?.lon === place.lon;
+                    return (
+                      <li key={`${place.lat},${place.lon}`}>
+                        <button
+                          type="button"
+                          style={{
+                            ...styles.resultRow,
+                            ...(active ? styles.resultRowActive : null),
+                          }}
+                          onClick={() => pickResult(place)}
+                        >
+                          <MapPin size={15} aria-hidden="true" />
+                          <span style={styles.resultCopy}>
+                            <span>{place.name}</span>
+                            {place.address ? <small style={styles.resultAddress}>{place.address}</small> : null}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             ) : null}
+          </div>
+
+          <div style={styles.field}>
+            <label htmlFor="hospital-name" style={styles.label}>{t('hospital.nameLabel')}</label>
+            <input
+              id="hospital-name"
+              className="input"
+              value={name}
+              placeholder={t('hospital.namePlaceholder')}
+              aria-invalid={Boolean(nameError)}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (nameError) setNameError('');
+              }}
+            />
+            {nameError ? <span className="field-error">{nameError}</span> : null}
           </div>
 
           <div style={styles.field}>
@@ -472,6 +482,7 @@ export default function HospitalMap() {
                 t('hospital.noLocation')
               )}
             </p>
+            {searchAddress ? <p style={styles.muted}>{searchAddress}</p> : null}
             {draftError ? <p role="alert" style={styles.error}>{draftError}</p> : null}
           </div>
 
@@ -663,6 +674,8 @@ const styles: Record<string, CSSProperties> = {
     boxShadow: '0 0 0 2px rgba(82, 183, 136, 0.2)',
     background: 'rgba(82, 183, 136, 0.08)',
   },
+  resultCopy: { display: 'grid', gap: '0.1rem', minWidth: 0, textAlign: 'start' },
+  resultAddress: { color: '#557b76', fontSize: '0.74rem', lineHeight: 1.3, overflowWrap: 'anywhere' },
   pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },

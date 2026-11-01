@@ -1,18 +1,16 @@
 import { supabase } from './supabase';
-import { photonSearch } from './geocode';
 
 // ---------------------------------------------------------------------------
 // Hospitals: the community map backed by public.hospitals, plus the location
 // search that feeds it.
 //
-// Text search goes straight from the browser to Photon with a 3-second abort.
-// The Care Places nearby search uses /api/places (Mapbox); a centre point is
-// still required.
+// The modal's search and Care Places' nearby search both go through
+// /api/places (Mapbox). A centre point is still required for "Near me".
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-export const SEARCH_TIMEOUT_MS = 3000;
+export const SEARCH_TIMEOUT_MS = 9_000;
 
 export type Hospital = {
   id: string;
@@ -25,9 +23,9 @@ export type Hospital = {
 
 export type LatLon = { lat: number; lon: number };
 
-export type OsmPlace = {
-  id: string;
+export type SearchPlace = {
   name: string;
+  address: string;
   lat: number;
   lon: number;
 };
@@ -76,23 +74,27 @@ const sanitizeQuery = (value: string): string =>
   value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
 
 /**
- * Search named places around `at` through Photon (client-side, 3s abort).
- * Nearby category discovery uses /api/places (Mapbox).
+ * Search Mapbox Geocoding through /api/places for a hospital or address.
+ * The caller owns the abort signal; the route itself caps at 8s.
  */
-export async function searchPlaces(
+export async function searchPlacesByQuery(
   query: string,
-  at: LatLon,
   signal?: AbortSignal,
-  lang = 'en',
-): Promise<OsmPlace[]> {
+): Promise<SearchPlace[]> {
   const needle = sanitizeQuery(query);
   if (!needle) return [];
 
-  return photonSearch(needle, {
-    limit: 5,
-    lat: at.lat,
-    lon: at.lon,
-    lang,
+  const response = await fetch(`/api/places?q=${encodeURIComponent(needle)}`, {
+    headers: { Accept: 'application/json' },
     signal,
   });
+
+  if (!response.ok) {
+    throw new Error(`Places ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { results?: SearchPlace[] };
+  return (payload.results ?? []).filter(
+    (place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)),
+  );
 }

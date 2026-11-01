@@ -18,6 +18,9 @@ const UPSTREAM_FAILED = 'Failed to fetch map data';
 
 type MapboxFeature = {
   geometry?: { coordinates?: [number, number] };
+  center?: [number, number];
+  text?: string;
+  place_name?: string;
   properties?: {
     name?: string;
     category?: string;
@@ -43,6 +46,65 @@ export default defineConfig(({ mode }) => {
 
       server.middlewares.use('/api/places', (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
+        console.log('Mapbox Token exists in env:', !!mapboxToken);
+
+        const query = (url.searchParams.get('q') ?? '').trim();
+
+        if (!mapboxToken) {
+          send(res, 500, {
+            error: query ? 'Mapbox token missing in environment' : UPSTREAM_FAILED,
+          });
+          return;
+        }
+
+        if (query) {
+          const searchTarget =
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json` +
+            `?access_token=${encodeURIComponent(mapboxToken)}` +
+            `&limit=5` +
+            `&types=poi,address`;
+
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+          void fetch(searchTarget, {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' },
+          })
+            .then(async (upstream) => {
+              if (!upstream.ok) {
+                const errorText = await upstream.text().catch(() => '');
+                console.error('Mapbox API Error:', upstream.status, errorText);
+                throw new Error(`Mapbox API error: ${upstream.status}`);
+              }
+              const data = (await upstream.json()) as { features?: MapboxFeature[] };
+              const results: Array<{ name: string; address: string; lat: number; lon: number }> = [];
+              for (const feature of data.features ?? []) {
+                const lat = Number(feature.center?.[1]);
+                const lon = Number(feature.center?.[0]);
+                if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+                results.push({
+                  name: feature.text || feature.place_name || 'Unknown place',
+                  address: feature.place_name ?? '',
+                  lat,
+                  lon,
+                });
+              }
+              send(res, 200, { results });
+            })
+            .catch((error: unknown) => {
+              const name = error instanceof Error ? error.name : 'err';
+              if (name === 'AbortError' || name === 'TimeoutError') {
+                send(res, 408, { error: 'Search timed out' });
+                return;
+              }
+              console.error('Places API error:', error);
+              send(res, 500, { error: 'Failed to fetch search results' });
+            })
+            .finally(() => clearTimeout(timer));
+          return;
+        }
+
         const latRaw = url.searchParams.get('lat') ?? '';
         const lonRaw = url.searchParams.get('lon') ?? '';
 
@@ -58,12 +120,6 @@ export default defineConfig(({ mode }) => {
         }
 
         const radius = Math.min(Number(url.searchParams.get('radius')) || 1_000, MAX_RADIUS_M);
-
-        if (!mapboxToken) {
-          console.error('Mapbox token missing (NEXT_PUBLIC_MAPBOX_TOKEN)');
-          send(res, 500, { error: UPSTREAM_FAILED });
-          return;
-        }
 
         const target =
           `https://api.mapbox.com/search/searchbox/v1/category/${MAPBOX_CATEGORY}` +
