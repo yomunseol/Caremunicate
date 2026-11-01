@@ -60,7 +60,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
   const save = async () => {
     if (saving) return;
     if (!user) {
-      console.error('Care Plan Save Error:', 'No authenticated user');
+      console.error('CARE PLAN SAVE ERROR:', 'No authenticated user', null);
       setError('createFailed');
       return;
     }
@@ -90,7 +90,8 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
       onCreated();
       onClose();
     } catch (saveError) {
-      console.error('Care Plan Save Error:', saveError);
+      const detail = saveError as { message?: string; details?: string };
+      console.error('CARE PLAN SAVE ERROR:', detail.message, detail.details);
       setError('createFailed');
     } finally {
       setSaving(false);

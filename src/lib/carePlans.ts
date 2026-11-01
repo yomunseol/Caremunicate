@@ -127,7 +127,7 @@ export const createCarePlan = async (payload: {
   title: string;
   tasks: NewTask[];
 }): Promise<CarePlan | null> => {
-  // A: insert the plan and B: capture its id before touching the tasks.
+  // Step A: insert the plan. Step B: capture its id before touching the tasks.
   const { data, error: planError } = await supabase
     .from('care_plans')
     .insert({
@@ -139,23 +139,24 @@ export const createCarePlan = async (payload: {
     .single();
 
   if (planError) {
-    console.error('Care Plan Save Error:', planError);
+    console.error('CARE PLAN SAVE ERROR:', planError.message, planError.details);
     if (SAVE_SCHEMA_CODES.has(String(planError.code ?? ''))) {
-      console.error('Care Plan Save Error: run setup_care_plans_rls.sql against the project.');
+      console.error('CARE PLAN SAVE ERROR: run setup_care_plans_rls.sql against the project.');
     }
     return null;
   }
 
   const plan = firstRow<CarePlan>(data);
-  if (!plan) {
-    console.error('Care Plan Save Error:', 'No plan row returned');
+  const planId = plan?.id;
+  if (!plan || !planId) {
+    console.error('CARE PLAN SAVE ERROR:', 'No plan id returned', null);
     return null;
   }
 
-  // C: attach the captured plan_id to every task and insert as one batch.
+  // Step C: attach the captured plan_id to every task and insert as one batch.
   const { error: taskError } = await supabase.from('care_plan_tasks').insert(
     payload.tasks.map((task) => ({
-      plan_id: plan.id,
+      plan_id: planId,
       task_name: task.task_name,
       task_type: task.task_type,
       frequency: task.frequency,
@@ -165,15 +166,17 @@ export const createCarePlan = async (payload: {
   );
 
   if (taskError) {
-    console.error('Care Plan Save Error:', taskError);
+    console.error('CARE PLAN SAVE ERROR:', taskError.message, taskError.details);
     // Compensate for the two-step write so a failed task batch does not leave
     // an orphan plan. The care_plans_delete_author policy permits this.
     const { error: cleanupError } = await supabase
       .from('care_plans')
       .delete()
-      .eq('id', plan.id)
+      .eq('id', planId)
       .eq('doctor_id', payload.doctorId);
-    if (cleanupError) console.error('Care Plan Cleanup Error:', cleanupError);
+    if (cleanupError) {
+      console.error('CARE PLAN CLEANUP ERROR:', cleanupError.message, cleanupError.details);
+    }
     return null;
   }
 
