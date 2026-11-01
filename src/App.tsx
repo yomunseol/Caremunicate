@@ -1497,18 +1497,8 @@ function App() {
       <FloatingChatWidget />
 
       <footer className="footer">
-        <p dir="ltr">
-          2026 Yomunseol • Also building{' '}
-          <a
-            className="footer-link"
-            href="https://lancerments.vercel.app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            LancerMents
-          </a>
-        </p>
-        <p>
+        <div className="footer-row">
+          <p dir="auto">{t('footer.copyright')}</p>
           <a
             className="footer-link"
             href="/help"
@@ -1517,9 +1507,9 @@ function App() {
               navigate('help');
             }}
           >
-            {t('docs.title')}
+            {t('documentation')}
           </a>
-        </p>
+        </div>
       </footer>
     </div>
   );

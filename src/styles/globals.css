@@ -1815,6 +1815,19 @@ img {
   margin: 0;
 }
 
+.footer-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+@media (min-width: 640px) {
+  .footer-row { flex-direction: row; }
+}
+
 .footer-link {
   color: #52b788;
   font-weight: 500;

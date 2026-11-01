@@ -299,6 +299,10 @@ const translations = {
 
     'footer.tagline': 'Caremunicate • A calm, postmodern medical communication experience.',
 
+    'footer.copyright': '2026 Yomunseol • Also building LancerMents',
+
+    'documentation': 'Documentation',
+
     'tfa.eyebrow': 'Account security',
     'tfa.title': 'Two-Factor Authentication',
     'tfa.desc':
@@ -1116,6 +1120,8 @@ const translations = {
       'De nouvelles informations hospitalières, notes de cas et mises à jour de suivi sont prêtes à être consultées quand vous le souhaitez.',
     'profile.chatInvalidLink': 'Ce lien de discussion est invalide.',
     'footer.tagline': 'Caremunicate • Une expérience de communication médicale sereine et postmoderne.',
+    'footer.copyright': '2026 Yomunseol • Développe aussi LancerMents',
+    'documentation': 'Documentation',
     'tfa.eyebrow': 'Sécurité du compte',
     'tfa.title': 'Authentification à deux facteurs',
     'tfa.desc':
@@ -1936,6 +1942,8 @@ const translations = {
       'Hay nueva información hospitalaria, notas de casos y novedades de seguimiento listas para revisar cuando las necesites.',
     'profile.chatInvalidLink': 'Este enlace de chat no es válido.',
     'footer.tagline': 'Caremunicate • Una experiencia serena y posmoderna de comunicación médica.',
+    'footer.copyright': '2026 Yomunseol • También creando LancerMents',
+    'documentation': 'Documentación',
     'tfa.eyebrow': 'Seguridad de la cuenta',
     'tfa.title': 'Autenticación en dos pasos',
     'tfa.desc':
@@ -2739,6 +2747,8 @@ const translations = {
     'profile.updatesCopy': '최신 병원 정보, 케이스 노트, 후속 업데이트를 필요할 때 언제든 확인할 수 있습니다.',
     'profile.chatInvalidLink': '이 채팅 링크는 유효하지 않습니다.',
     'footer.tagline': 'Caremunicate • 차분하고 현대적인 의료 커뮤니케이션 경험.',
+    'footer.copyright': '2026 Yomunseol • LancerMents 개발 중',
+    'documentation': '사용 설명서',
     'tfa.eyebrow': '계정 보안',
     'tfa.title': '2단계 인증',
     'tfa.desc': '로그인할 때 추가 확인 단계를 더하세요. 기본값은 이메일 코드이며, 대신 인증 앱을 사용할 수 있습니다.',
@@ -3532,6 +3542,8 @@ const translations = {
     'profile.updatesCopy': '最新的医院信息、病例记录和跟进更新随时可供查看。',
     'profile.chatInvalidLink': '此聊天链接无效。',
     'footer.tagline': 'Caremunicate • 从容而现代的医疗沟通体验。',
+    'footer.copyright': '2026 Yomunseol • 同时开发 LancerMents',
+    'documentation': '文档',
     'tfa.eyebrow': '账户安全',
     'tfa.title': '双重验证',
     'tfa.desc': '登录时增加一步验证。默认使用邮箱验证码，也可以改用身份验证器应用。',
@@ -4342,6 +4354,8 @@ const translations = {
       'Novas informações hospitalares, notas de casos e atualizações de acompanhamento estão prontas para consulta quando você precisar.',
     'profile.chatInvalidLink': 'Este link de conversa é inválido.',
     'footer.tagline': 'Caremunicate • Uma experiência tranquila e pós-moderna de comunicação médica.',
+    'footer.copyright': '2026 Yomunseol • Também criando LancerMents',
+    'documentation': 'Documentação',
     'tfa.eyebrow': 'Segurança da conta',
     'tfa.title': 'Autenticação em dois fatores',
     'tfa.desc':
@@ -5157,6 +5171,8 @@ const translations = {
       'Aktuelle Krankenhausinformationen, Fallnotizen und Nachsorge-Updates stehen jederzeit zur Einsicht bereit.',
     'profile.chatInvalidLink': 'Dieser Chat-Link ist ungültig.',
     'footer.tagline': 'Caremunicate • Eine ruhige, postmoderne Erfahrung medizinischer Kommunikation.',
+    'footer.copyright': '2026 Yomunseol • Baut auch LancerMents',
+    'documentation': 'Dokumentation',
     'tfa.eyebrow': 'Kontosicherheit',
     'tfa.title': 'Zwei-Faktor-Authentifizierung',
     'tfa.desc':
@@ -5974,6 +5990,8 @@ const translations = {
       'Nuove informazioni ospedaliere, note sui casi e aggiornamenti di follow-up sono pronti da consultare quando ti servono.',
     'profile.chatInvalidLink': 'Questo link alla chat non è valido.',
     'footer.tagline': "Caremunicate • Un'esperienza calma e postmoderna di comunicazione medica.",
+    'footer.copyright': '2026 Yomunseol • Sta anche creando LancerMents',
+    'documentation': 'Documentazione',
     'tfa.eyebrow': 'Sicurezza dell’account',
     'tfa.title': 'Autenticazione a due fattori',
     'tfa.desc':
@@ -6782,6 +6800,8 @@ const translations = {
     'profile.updatesCopy': 'تتوفر معلومات مستشفى جديدة وملاحظات حالات وتحديثات متابعة للاطلاع عليها متى احتجت.',
     'profile.chatInvalidLink': 'رابط المحادثة هذا غير صالح.',
     'footer.tagline': 'Caremunicate • تجربة تواصل طبي هادئة وعصرية.',
+    'footer.copyright': '2026 Yomunseol • يبني أيضًا LancerMents',
+    'documentation': 'التوثيق',
     'tfa.eyebrow': 'أمان الحساب',
     'tfa.title': 'المصادقة الثنائية',
     'tfa.desc':
@@ -7585,6 +7605,8 @@ const translations = {
     'profile.updatesCopy': 'מידע חדש מבתי החולים, הערות מקרים ועדכוני מעקב זמינים לעיון בכל עת.',
     'profile.chatInvalidLink': 'קישור הצ׳אט הזה אינו תקין.',
     'footer.tagline': 'Caremunicate • חוויית תקשורת רפואית רגועה ומודרנית.',
+    'footer.copyright': '2026 Yomunseol • בונה גם את LancerMents',
+    'documentation': 'תיעוד',
     'tfa.eyebrow': 'אבטחת החשבון',
     'tfa.title': 'אימות דו-שלבי',
     'tfa.desc':
