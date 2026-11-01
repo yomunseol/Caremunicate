@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Building2, CheckCircle2, Stethoscope, UserRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import { getPlans, type PlanId } from './PricingSection';
 
@@ -67,7 +66,6 @@ const plansForRole = (role: OnboardingRole | ''): PlanId[] =>
       : ['basic', 'plus', 'pro'];
 
 export default function OnboardingWizard() {
-  const { user } = useAuth();
   const { t, tString } = useLang();
   const [step, setStep] = useState<Step>(1);
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
@@ -113,48 +111,51 @@ export default function OnboardingWizard() {
           ? t('onboarding.plan_hospital')
           : plan.name;
 
-  const reportSaveError = (error: unknown) => {
-    console.error('Onboarding Save Error:', error);
+  const reportUpsertError = (message?: string, details?: string) => {
+    console.error('Profile Upsert Error:', message, details);
     setError(t('onboarding.error'));
   };
 
   const complete = async () => {
-    if (!user || !form.role || !form.plan || !form.fullName.trim() || busy) return;
+    if (!form.role || !form.plan || !form.fullName.trim() || busy) return;
     setBusy(true);
     setError('');
 
-    const payload = {
-      role: form.role,
-      plan: form.plan,
-      full_name: form.fullName.trim(),
-      specialty: form.role === 'doctor' ? form.specialty.trim() || null : null,
-      clinic_name: form.role === 'hospital' ? form.clinicName.trim() || null : null,
-      onboarding_complete: true,
-    };
-
-    console.log('Profile Save Payload:', payload);
-
     try {
-      const { data, error: saveError } = await supabase
-        .from('profiles')
-        .update(payload)
-        .eq('user_id', user.id)
-        .select('user_id')
-        .maybeSingle();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-      if (saveError) {
-        reportSaveError(saveError);
+      if (!user) {
+        reportUpsertError('No authenticated user', '');
         return;
       }
 
-      if (!data) {
-        reportSaveError(new Error('No profile row matched the current user'));
+      const payload = {
+        user_id: user.id,
+        role: form.role,
+        plan: form.plan,
+        full_name: form.fullName,
+        specialty: form.specialty || null,
+        clinic_name: form.clinicName || null,
+        onboarding_complete: true,
+      };
+
+      console.log('Profile Save Payload:', payload);
+
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(payload, { onConflict: 'user_id' });
+
+      if (error) {
+        reportUpsertError(error.message, error.details);
         return;
       }
 
       setStep(4);
     } catch (caught) {
-      reportSaveError(caught);
+      const detail = caught as { message?: string; details?: string };
+      reportUpsertError(detail.message, detail.details);
     } finally {
       setBusy(false);
     }
