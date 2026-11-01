@@ -16,6 +16,7 @@ import {
 } from '../lib/doctors';
 import { createDirectConversation } from '../lib/conversations';
 import VerificationBadge from './VerificationBadge';
+import DoctorAvailabilityToggle from './DoctorAvailabilityToggle';
 
 // ---------------------------------------------------------------------------
 // Doctor directory — the public list of doctors on the network.
@@ -219,6 +220,8 @@ export default function DoctorList() {
         <p style={styles.description}>{t('doctors.description')}</p>
       </div>
 
+      {provider ? <DoctorAvailabilityToggle /> : null}
+
       {isPatient ? (
         <div style={styles.tabs} role="tablist" aria-label={t('doctors.title')}>
           <button
@@ -354,16 +357,15 @@ const styles: Record<string, CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 40,
-    height: 40,
+    width: 38,
+    height: 38,
     borderRadius: '50%',
-    border: 'none',
-    background: 'var(--accent, #3ea985)',
-    color: '#fff',
+    border: '1px solid rgba(62, 169, 133, 0.25)',
+    background: '#fff',
+    color: '#3ea985',
     cursor: 'pointer',
-    boxShadow: '0 6px 16px rgba(62, 169, 133, 0.3)',
   },
-  chatDisabled: { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
+  chatDisabled: { opacity: 0.45, cursor: 'not-allowed' },
   heart: {
     flexShrink: 0,
     display: 'inline-flex',
