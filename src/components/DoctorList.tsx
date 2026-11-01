@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Heart } from 'lucide-react';
+import { Heart, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRole } from '../context/RoleContext';
 import { useToast } from '../context/ToastContext';
@@ -14,6 +14,7 @@ import {
   removeDoctorFavorite,
   type DoctorEntry,
 } from '../lib/doctors';
+import { createDirectConversation } from '../lib/conversations';
 import VerificationBadge from './VerificationBadge';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +46,7 @@ export default function DoctorList() {
   const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState<Tab>('all');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [chatBusyId, setChatBusyId] = useState<string | null>(null);
 
   const loadDoctors = useCallback(async () => {
     setLoading(true);
@@ -118,6 +120,20 @@ export default function DoctorList() {
     }
   };
 
+  const startChat = async (doctorId: string) => {
+    if (!user || chatBusyId !== null || doctorId === user.id) return;
+    setChatBusyId(doctorId);
+    try {
+      const conversationId = await createDirectConversation(user.id, doctorId);
+      window.location.hash = `#/chat/${conversationId}`;
+    } catch (error) {
+      console.error('DOCTORS_ERROR:', error);
+      notify(`${t('chat.startFailed')} (${describeError(error)})`, 'error');
+    } finally {
+      setChatBusyId(null);
+    }
+  };
+
   const visibleDoctors = useMemo(
     () => (tab === 'favorites' ? doctors.filter((doctor) => favoriteIds.has(doctor.user_id)) : doctors),
     [tab, doctors, favoriteIds],
@@ -139,6 +155,19 @@ export default function DoctorList() {
       </button>
     );
   };
+
+  const renderChat = (doctorId: string) => (
+    <button
+      type="button"
+      onClick={() => void startChat(doctorId)}
+      disabled={chatBusyId !== null}
+      aria-label={tString('start_chat')}
+      title={t('start_chat')}
+      style={styles.chat}
+    >
+      <MessageCircle size={18} aria-hidden="true" />
+    </button>
+  );
 
   const renderCard = (doctor: DoctorEntry) => {
     const name = resolveDisplayName(doctor.username, doctor.email, t('chat.participant'));
@@ -164,7 +193,10 @@ export default function DoctorList() {
           )}
         </div>
 
-        {renderHeart(doctor.user_id)}
+        <div style={styles.cardActions}>
+          {doctor.user_id !== user?.id ? renderChat(doctor.user_id) : null}
+          {renderHeart(doctor.user_id)}
+        </div>
       </li>
     );
   };
@@ -306,6 +338,20 @@ const styles: Record<string, CSSProperties> = {
     fontWeight: 700,
   },
   sub: { color: '#557b76', fontSize: '0.78rem', lineHeight: 1.4, overflowWrap: 'anywhere' },
+  cardActions: { display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 },
+  chat: {
+    flexShrink: 0,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 38,
+    height: 38,
+    borderRadius: '50%',
+    border: '1px solid rgba(62, 169, 133, 0.25)',
+    background: 'rgba(62, 169, 133, 0.08)',
+    color: '#216e5d',
+    cursor: 'pointer',
+  },
   heart: {
     flexShrink: 0,
     display: 'inline-flex',

@@ -2240,31 +2240,48 @@ img {
   background: var(--accent, #3ea985);
 }
 
-/* The create-plan task row: instruction · type · frequency · goal · unit · ×.
-   The instruction takes the remaining ~40%; the selects are fixed so they can
-   never crush together; the × is a 44px touch target. */
-.care-plan-row { grid-template-columns: minmax(0, 1fr) 120px 120px 72px 72px 44px; }
-.care-goal-count { width: 100%; }
-.care-goal-unit { width: 100%; }
-.care-remove {
+/* The create-plan task row: task name (flex) · frequency · duration · delete.
+   The name takes the free space; the fixed controls never crush together. */
+.care-plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.care-plan-row .care-task-name { flex: 1 1 12rem; min-inline-size: 0; }
+.care-plan-row .care-task-frequency { flex: 0 0 8.5rem; }
+.care-plan-row .care-duration {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+.care-plan-row .care-duration-value { inline-size: 4.75rem; }
+.care-plan-row .care-duration-unit { inline-size: 5.5rem; }
+.care-plan-row .care-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  min-width: 44px;
+  inline-size: 2.75rem;
+  block-size: 2.75rem;
+  min-inline-size: 2.75rem;
   padding: 0;
   border-radius: 999px;
+  color: #b42318;
 }
+.care-plan-row .care-remove:hover { background: rgba(180, 35, 24, 0.08); }
 
 @media (max-width: 720px) {
   .care-task { grid-template-columns: minmax(0, 1fr); }
   /* Stack the task row; every control fills the width so nothing overflows. */
-  .care-plan-row { grid-template-columns: minmax(0, 1fr); }
-  .care-plan-row .input,
-  .care-plan-row .select,
-  .care-plan-row .care-remove { width: 100%; }
-  .care-plan-row .care-remove { min-width: 0; }
+  .care-plan-row { flex-direction: column; align-items: stretch; }
+  .care-plan-row .care-task-name,
+  .care-plan-row .care-task-frequency,
+  .care-plan-row .care-duration,
+  .care-plan-row .care-remove { inline-size: 100%; }
+  .care-plan-row .care-duration-value,
+  .care-plan-row .care-duration-unit { flex: 1 1 0; inline-size: auto; }
+  .care-plan-row .care-remove { min-inline-size: 0; }
 }
 
 /* ---------------------------------------------------------------------------

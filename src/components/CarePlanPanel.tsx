@@ -75,7 +75,7 @@ export default function CarePlanPanel({ patientId }: CarePlanPanelProps) {
                   const pct = Math.min(100, Math.round((compliance.done / compliance.target) * 100));
                   return (
                     <li key={task.id} className="care-task is-summary">
-                      <span style={styles.instruction}>{task.instruction}</span>
+                      <span style={styles.instruction}>{task.task_name}</span>
                       <span style={styles.sentence}>
                         {t('care.compliance', {
                           done: compliance.done,

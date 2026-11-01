@@ -1,26 +1,27 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, X } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { createCarePlan, type Frequency, type GoalUnit, type MetricType, type NewTask } from '../lib/carePlans';
+import { createCarePlan, type Frequency, type GoalUnit, type NewTask } from '../lib/carePlans';
 
 // ---------------------------------------------------------------------------
 // Create Care Plan — a portaled dialog (a `.panel` ancestor carries an
 // animation transform that would otherwise trap a fixed child).
 //
-//   title + N task rows (instruction · answer type · frequency · goal)
-//   Save → create_care_plan (atomic plan + tasks)
+//   title + N task rows (task name · frequency · duration · delete)
+//   Save → insert care_plans, then its care_plan_tasks rows.
 // ---------------------------------------------------------------------------
 
 type Row = NewTask;
 
 const emptyRow = (): Row => ({
-  instruction: '',
-  metric_type: 'boolean',
+  task_name: '',
+  task_type: 'boolean',
   frequency: 'daily',
-  goal_count: 7,
-  goal_unit: 'day',
+  duration_value: 7,
+  duration_unit: 'day',
 });
 
 type CreateCarePlanModalProps = {
@@ -31,6 +32,7 @@ type CreateCarePlanModalProps = {
 
 export default function CreateCarePlanModal({ patientId, onClose, onCreated }: CreateCarePlanModalProps) {
   const { t } = useLang();
+  const { user } = useAuth();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   const [title, setTitle] = useState('');
@@ -57,21 +59,39 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
 
   const save = async () => {
     if (saving) return;
-    const tasks = rows.filter((row) => row.instruction.trim());
+    if (!user) {
+      console.error('Care Plan Save Error:', 'No authenticated user');
+      setError('createFailed');
+      return;
+    }
+
+    const tasks = rows
+      .filter((row) => row.task_name.trim())
+      .map((row) => ({ ...row, task_name: row.task_name.trim() }));
+
     if (!title.trim() || tasks.length === 0) {
       setError('invalid');
       return;
     }
+
     setSaving(true);
     setError('');
     try {
-      const plan = await createCarePlan({ patientId, title: title.trim(), tasks });
+      const plan = await createCarePlan({
+        patientId,
+        doctorId: user.id,
+        title: title.trim(),
+        tasks,
+      });
       if (!plan) {
         setError('createFailed');
         return;
       }
       onCreated();
       onClose();
+    } catch (saveError) {
+      console.error('Care Plan Save Error:', saveError);
+      setError('createFailed');
     } finally {
       setSaving(false);
     }
@@ -107,25 +127,16 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
 
         <div style={styles.taskList}>
           {rows.map((row, index) => (
-            <div key={index} className="care-plan-row" style={styles.taskRow}>
+            <div key={index} className="care-plan-row">
               <input
-                className="input"
-                value={row.instruction}
-                placeholder={t('care.instruction')}
-                aria-label={t('care.instruction')}
-                onChange={(event) => patch(index, { instruction: event.target.value })}
+                className="input care-task-name"
+                value={row.task_name}
+                placeholder={t('task_name')}
+                aria-label={t('task_name')}
+                onChange={(event) => patch(index, { task_name: event.target.value })}
               />
               <select
-                className="select"
-                value={row.metric_type}
-                aria-label={t('care.metricType')}
-                onChange={(event) => patch(index, { metric_type: event.target.value as MetricType })}
-              >
-                <option value="boolean">{t('care.metricBoolean')}</option>
-                <option value="number">{t('care.metricNumber')}</option>
-              </select>
-              <select
-                className="select"
+                className="select care-task-frequency"
                 value={row.frequency}
                 aria-label={t('care.frequency')}
                 onChange={(event) => patch(index, { frequency: event.target.value as Frequency })}
@@ -133,34 +144,39 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                 <option value="daily">{t('care.freqDaily')}</option>
                 <option value="weekly">{t('care.freqWeekly')}</option>
               </select>
-              {/* Goal count + unit are direct grid children, one track each. */}
-              <input
-                className="input care-goal-count"
-                type="number"
-                min={1}
-                max={31}
-                value={row.goal_count}
-                aria-label={t('care.goal')}
-                onChange={(event) =>
-                  patch(index, { goal_count: Math.min(31, Math.max(1, Number(event.target.value) || 1)) })
-                }
-              />
-              <select
-                className="select care-goal-unit"
-                value={row.goal_unit}
-                aria-label={t('care.goal')}
-                onChange={(event) => patch(index, { goal_unit: event.target.value as GoalUnit })}
-              >
-                <option value="day">{t('care.goalDays')}</option>
-                <option value="week">{t('care.goalWeeks')}</option>
-              </select>
+              <span className="care-duration">
+                <input
+                  className="input care-duration-value"
+                  type="number"
+                  min={1}
+                  max={31}
+                  value={row.duration_value}
+                  aria-label={t('duration')}
+                  onChange={(event) =>
+                    patch(index, {
+                      duration_value: Math.min(31, Math.max(1, Number(event.target.value) || 1)),
+                    })
+                  }
+                />
+                <select
+                  className="select care-duration-unit"
+                  value={row.duration_unit}
+                  aria-label={t('duration')}
+                  onChange={(event) =>
+                    patch(index, { duration_unit: event.target.value as GoalUnit })
+                  }
+                >
+                  <option value="day">{t('care.goalDays')}</option>
+                  <option value="week">{t('care.goalWeeks')}</option>
+                </select>
+              </span>
               <button
                 type="button"
                 className="ghost-button care-remove"
                 aria-label={t('common.close')}
                 onClick={() => setRows((previous) => previous.filter((_, i) => i !== index))}
               >
-                <X size={14} aria-hidden="true" />
+                <Trash2 size={15} aria-hidden="true" />
               </button>
             </div>
           ))}
@@ -228,11 +244,6 @@ const styles: Record<string, CSSProperties> = {
   field: { display: 'grid', gap: '0.35rem' },
   label: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', fontWeight: 700 },
   taskList: { display: 'grid', gap: '0.6rem' },
-  taskRow: {
-    display: 'grid',
-    gap: '0.75rem',
-    alignItems: 'center',
-  },
   addTask: { width: '100%', marginBlockStart: '0.75rem' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' },
 };

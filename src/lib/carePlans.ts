@@ -18,21 +18,19 @@ export type GoalUnit = 'day' | 'week';
 export type CarePlan = {
   id: string;
   patient_id: string;
-  provider_id: string;
+  doctor_id: string | null;
   title: string;
-  status: 'active' | 'archived';
   created_at: string;
 };
 
 export type CarePlanTask = {
   id: string;
   plan_id: string;
-  instruction: string;
-  metric_type: MetricType;
+  task_name: string;
+  task_type: MetricType;
   frequency: Frequency;
-  goal_count: number;
-  goal_unit: GoalUnit;
-  position: number;
+  duration_value: number;
+  duration_unit: GoalUnit;
 };
 
 export type CarePlanLog = {
@@ -45,11 +43,11 @@ export type CarePlanLog = {
 };
 
 export type NewTask = {
-  instruction: string;
-  metric_type: MetricType;
+  task_name: string;
+  task_type: MetricType;
   frequency: Frequency;
-  goal_count: number;
-  goal_unit: GoalUnit;
+  duration_value: number;
+  duration_unit: GoalUnit;
 };
 
 /** Codes that mean "that column or table does not exist". */
@@ -67,7 +65,6 @@ export const loadPlansForPatient = async (patientId: string): Promise<CarePlan[]
     .from('care_plans')
     .select('*')
     .eq('patient_id', patientId)
-    .eq('status', 'active')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -84,7 +81,7 @@ export const loadTasksForPlans = async (planIds: string[]): Promise<CarePlanTask
     .from('care_plan_tasks')
     .select('*')
     .in('plan_id', ids)
-    .order('position', { ascending: true });
+    .order('task_name', { ascending: true });
 
   if (error) {
     console.error('CARE ERROR:', error.message);
@@ -113,23 +110,51 @@ export const loadLogs = async (patientId: string, fromDate: string): Promise<Car
 // Writes
 // ---------------------------------------------------------------------------
 
-/** Atomic plan + tasks creation (the SECURITY DEFINER RPC owns the write). */
+/** Plan + tasks creation against the care_plans / care_plan_tasks schema. */
 export const createCarePlan = async (payload: {
   patientId: string;
+  doctorId: string;
   title: string;
   tasks: NewTask[];
 }): Promise<CarePlan | null> => {
-  const { data, error } = await supabase.rpc('create_care_plan', {
-    p_patient: payload.patientId,
-    p_title: payload.title,
-    p_tasks: payload.tasks,
-  });
+  const { data, error: planError } = await supabase
+    .from('care_plans')
+    .insert({
+      patient_id: payload.patientId,
+      doctor_id: payload.doctorId,
+      title: payload.title,
+    })
+    .select('*')
+    .maybeSingle();
 
-  if (error) {
-    console.error('CARE ERROR:', error.message);
+  if (planError) {
+    console.error('Care Plan Save Error:', planError);
     return null;
   }
-  return firstRow<CarePlan>(data);
+
+  const plan = firstRow<CarePlan>(data);
+  if (!plan) {
+    console.error('Care Plan Save Error:', 'No plan row returned');
+    return null;
+  }
+
+  const { error: taskError } = await supabase.from('care_plan_tasks').insert(
+    payload.tasks.map((task) => ({
+      plan_id: plan.id,
+      task_name: task.task_name,
+      task_type: task.task_type,
+      frequency: task.frequency,
+      duration_value: task.duration_value,
+      duration_unit: task.duration_unit,
+    })),
+  );
+
+  if (taskError) {
+    console.error('Care Plan Save Error:', taskError);
+    return null;
+  }
+
+  return plan;
 };
 
 /** Log (or correct) one task for today. Upsert on (task_id, log_date). */
@@ -262,8 +287,8 @@ export type Compliance = { done: number; target: number; unit: GoalUnit };
 
 /**
  * The "Task completed 4/7 days this week" metric.
- *   goal_unit 'day'  → distinct days logged this week vs. the day target.
- *   goal_unit 'week' → how many of the last N weeks (including this one) had
+ *   duration_unit 'day'  → distinct days logged this week vs. the day target.
+ *   duration_unit 'week' → how many of the last N weeks (including this one) had
  *                      at least one log, vs. the week target.
  */
 export const complianceForTask = (
@@ -274,8 +299,8 @@ export const complianceForTask = (
 ): Compliance => {
   const mine = logs.filter((log) => log.task_id === task.id);
 
-  if (task.goal_unit === 'week') {
-    const target = Math.max(1, task.goal_count);
+  if (task.duration_unit === 'week') {
+    const target = Math.max(1, task.duration_value);
     const start = weekStart(now, locale);
     if (!start) return { done: 0, target, unit: 'week' };
 
@@ -292,7 +317,7 @@ export const complianceForTask = (
     return { done, target, unit: 'week' };
   }
 
-  const target = Math.min(7, Math.max(1, task.goal_count));
+  const target = Math.min(7, Math.max(1, task.duration_value));
   const keys = new Set(weekDayKeys(now, locale));
   const done = new Set(
     mine.filter((log) => keys.has(log.log_date)).map((log) => log.log_date),

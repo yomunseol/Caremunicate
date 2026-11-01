@@ -83,9 +83,9 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
     try {
       const existing = loggedToday(task.id);
       const raw = drafts[task.id] ?? '';
-      const valueBoolean = task.metric_type === 'boolean' ? raw === 'true' : null;
+      const valueBoolean = task.task_type === 'boolean' ? raw === 'true' : null;
       const valueNumber =
-        task.metric_type === 'number' ? Number(raw === '' ? existing?.value_number ?? 0 : raw) : null;
+        task.task_type === 'number' ? Number(raw === '' ? existing?.value_number ?? 0 : raw) : null;
 
       const saved = await logTask({
         taskId: task.id,
@@ -136,7 +136,7 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
                 const compliance = complianceForTask(task, logs, locale);
                 const draft =
                   drafts[task.id] ??
-                  (task.metric_type === 'boolean'
+                  (task.task_type === 'boolean'
                     ? done?.value_boolean
                       ? 'true'
                       : 'false'
@@ -145,15 +145,15 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
                       : '');
                 return (
                   <li key={task.id} className={done ? 'care-task is-done' : 'care-task'}>
-                    <span style={styles.instruction}>{task.instruction}</span>
+                    <span style={styles.instruction}>{task.task_name}</span>
 
-                    {task.metric_type === 'boolean' ? (
+                    {task.task_type === 'boolean' ? (
                       <label style={styles.control}>
                         <input
                           type="checkbox"
                           checked={draft === 'true'}
                           disabled={savingId === task.id}
-                          aria-label={task.instruction}
+                          aria-label={task.task_name}
                           onChange={(event) =>
                             setDrafts((previous) => ({
                               ...previous,
@@ -170,7 +170,7 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
                           inputMode="decimal"
                           value={draft}
                           disabled={savingId === task.id}
-                          aria-label={task.instruction}
+                          aria-label={task.task_name}
                           onChange={(event) =>
                             setDrafts((previous) => ({ ...previous, [task.id]: event.target.value }))
                           }
