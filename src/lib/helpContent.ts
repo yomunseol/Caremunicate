@@ -1,85 +1,50 @@
 export type HelpSection = {
   id: string;
-  title: string;
-  items: string[];
+  titleKey: string;
+  itemKeys: string[];
 };
 
-// Product help content. Kept in a .ts module (not scanned by the JSX i18n guard)
-// so the help page can render variables instead of literal JSX text.
+// Localized product help content. Every visible string resolves through i18n
+// (docs.*); this module only carries stable section/point keys.
 export const HELP_SECTIONS: HelpSection[] = [
   {
     id: 'start',
-    title: 'Getting started',
-    items: [
-      'Create an account with your email and a strong password.',
-      'Verify your email with the 6-digit code we send you.',
-      'Choose your role: patient, doctor, department, or hospital.',
-      'Your dashboard opens after verification. Use the top bar to reach Calls, Calendar, Hospitals, and Doctors.',
-    ],
+    titleKey: 'docs.start.title',
+    itemKeys: ['docs.start.p1', 'docs.start.p2', 'docs.start.p3', 'docs.start.p4'],
   },
   {
     id: 'calls',
-    title: 'Calls',
-    items: [
-      'Open Calls from the top bar to see your personal line and the join box.',
-      'Share your personal code, or enter someone else’s code to join their room.',
-      'Calls support video, audio, screen sharing, reactions, and a raise-hand.',
-      'Calls are not recorded.',
-    ],
+    titleKey: 'docs.calls.title',
+    itemKeys: ['docs.calls.p1', 'docs.calls.p2', 'docs.calls.p3', 'docs.calls.p4'],
   },
   {
     id: 'chat',
-    title: 'In-call chat',
-    items: [
-      'Open the chat bubble in the call control bar.',
-      'Type a message and press Enter, or use the send button.',
-      'Messages are stored for the call, so joining late or refreshing loads the history.',
-    ],
+    titleKey: 'docs.chat.title',
+    itemKeys: ['docs.chat.p1', 'docs.chat.p2', 'docs.chat.p3'],
   },
   {
-    id: 'docs',
-    title: 'Caremunicate Docs',
-    items: [
-      'Doctors can open Docs from the call control bar or the overflow menu.',
-      'Create a new doc and choose Locked or Unlocked.',
-      'Locked docs become read-only when the call ends; unlocked docs stay editable.',
-      'Docs autosave as you type.',
-    ],
+    id: 'feature',
+    titleKey: 'docs.feature.title',
+    itemKeys: ['docs.feature.p1', 'docs.feature.p2', 'docs.feature.p3', 'docs.feature.p4'],
   },
   {
     id: 'appointments',
-    title: 'Appointments and calendar',
-    items: [
-      'Use Calendar to see upcoming appointments and availability.',
-      'Doctors can publish weekly availability and confirm bookings.',
-      'Patients can book an open slot and join the call from the appointment.',
-    ],
+    titleKey: 'docs.appointments.title',
+    itemKeys: ['docs.appointments.p1', 'docs.appointments.p2', 'docs.appointments.p3'],
   },
   {
     id: 'care',
-    title: 'Care plans',
-    items: [
-      'Providers can create care plans with daily or weekly tasks.',
-      'Patients mark tasks complete and track progress over time.',
-      'Care plans live alongside appointments and conversations in each patient profile.',
-    ],
+    titleKey: 'docs.care.title',
+    itemKeys: ['docs.care.p1', 'docs.care.p2', 'docs.care.p3'],
   },
   {
     id: 'places',
-    title: 'Hospitals and places',
-    items: [
-      'Search for hospitals, clinics, and pharmacies by name or use Near me.',
-      'Save places to your favourites for quick access.',
-      'Map results fall back to cached data when the live map service is unavailable.',
-    ],
+    titleKey: 'docs.places.title',
+    itemKeys: ['docs.places.p1', 'docs.places.p2', 'docs.places.p3'],
   },
   {
     id: 'privacy',
-    title: 'Privacy and security',
-    items: [
-      'Accounts require a verified email and a strong password.',
-      'Data access is enforced at the database level with row-level security.',
-      'Calls are peer-to-peer; recording has been removed from the product.',
-    ],
+    titleKey: 'docs.privacy.title',
+    itemKeys: ['docs.privacy.p1', 'docs.privacy.p2', 'docs.privacy.p3'],
   },
 ];

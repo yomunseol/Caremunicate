@@ -698,7 +698,7 @@ function App() {
   //  - Logged in, same family + a patient tier: write profiles.plan directly.
   //  - Anything else (cross-family, or any provider tier): the role changes
   //    too, so confirm, then set_own_plan (arg key p_plan).
-  const writePlan = async (plan: PlanId, option: Plan, viaRpc: boolean) => {
+  const writePlan = async (plan: PlanId, viaRpc: boolean) => {
     if (!currentUser) return;
     setPendingPlan(plan);
     try {
@@ -716,7 +716,7 @@ function App() {
       // Re-read profiles.plan: drives the header badge AND the pricing
       // CURRENT PLAN chip.
       setProfileRefreshKey((key) => key + 1);
-      showToast(tString('auth.toast.planActivated', { name: option.name }), 'success');
+      showToast(t('pricing.planUpdated'), 'success');
     } catch (error) {
       console.error('Plan update failed:', error);
       showToast(`${t('auth.toast.planError')} (${describeError(error)})`, 'error');
@@ -754,7 +754,7 @@ function App() {
     // Same family as the account, and a patient tier: the role does not change,
     // so write it straight away.
     if (roleFamily === 'patient' && !isProviderPlan(plan)) {
-      void writePlan(plan, option, false);
+      void writePlan(plan, false);
       return;
     }
 
@@ -1423,7 +1423,7 @@ function App() {
                 onClick={() => {
                   const target = conversion;
                   setConversion(null);
-                  void writePlan(target.plan, target.option, true);
+                  void writePlan(target.plan, true);
                 }}
               >
                 {t('plans.confirmCta')}

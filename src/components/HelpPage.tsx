@@ -19,10 +19,10 @@ export default function HelpPage() {
       <div className="docs-grid">
         {HELP_SECTIONS.map((section) => (
           <article key={section.id} className="panel docs-card">
-            <h3>{section.title}</h3>
+            <h3>{t(section.titleKey)}</h3>
             <ul className="thin-list">
-              {section.items.map((item) => (
-                <li key={item}>{item}</li>
+              {section.itemKeys.map((key) => (
+                <li key={key}>{t(key)}</li>
               ))}
             </ul>
           </article>

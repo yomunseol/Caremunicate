@@ -260,7 +260,18 @@ export default function PricingSection({
               {authed ? (
                 isCurrent ? (
                   <span className="plan-current-chip">{t('pricing.currentPlan')}</span>
-                ) : null
+                ) : (
+                  <button
+                    className="primary-button cta-button"
+                    type="button"
+                    onClick={() => onSelectPlan(plan.id)}
+                    aria-busy={isBusy}
+                    disabled={busy}
+                    aria-label={`${t('pricing.selectPlan')} — ${plan.name} ${t('common.plan')}`}
+                  >
+                    {isBusy ? t('pricing.saving') : t('pricing.selectPlan')}
+                  </button>
+                )
               ) : (
                 <button
                   className="primary-button cta-button"
