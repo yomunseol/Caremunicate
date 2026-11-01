@@ -83,6 +83,8 @@ type PlaceView = {
   address: string;
   lat: number;
   lon: number;
+  /** Raw OSM tags, so the client filter can also match tags.name / name:en. */
+  tags?: Record<string, string>;
 };
 
 type LatLon = { lat: number; lon: number };
@@ -226,6 +228,7 @@ const elementToPlace = (element: OverpassElement): PlaceView | null => {
     address: street || tags['addr:city'] || tags['addr:suburb'] || '',
     lat,
     lon,
+    tags,
   };
 };
 
@@ -291,7 +294,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
   const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
-  const [filter, setFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -556,11 +559,17 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   };
 
   // Client-side only: filters the already-fetched array, never the network.
+  // Both the results list and the Leaflet markers read filteredResults.
   const filteredResults = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return results;
-    return results.filter((place) => place.name.toLowerCase().includes(needle));
-  }, [filter, results]);
+    const lowerQuery = searchQuery.trim().toLowerCase();
+    if (!lowerQuery) return results;
+    return results.filter((place) => {
+      const names = [place.name, place.tags?.name, place.tags?.['name:en']];
+      return names.some(
+        (value) => typeof value === 'string' && value.toLowerCase().includes(lowerQuery),
+      );
+    });
+  }, [results, searchQuery]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = filteredResults.find((place) => place.placeId === selectedId);
@@ -798,8 +807,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         <input
           className="input"
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.target.value)}
           placeholder={t('places.filterResults')}
           aria-label={t('places.filterResults')}
         />
