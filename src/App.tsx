@@ -4,6 +4,7 @@ import { Building2, Cross, Stethoscope, UserRound } from 'lucide-react';
 import { supabase } from './lib/supabase';
 import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
+import DoctorAvailabilityToggle from './components/DoctorAvailabilityToggle';
 import PasswordAuth from './components/PasswordAuth';
 import SignupVerify from './components/SignupVerify';
 import PasswordStrengthMeter, { passwordMeetsRules } from './components/PasswordStrengthMeter';
@@ -1367,6 +1368,8 @@ function App() {
               </div>
 
               <TwoFactorSetup />
+
+              {isProvider(profileRole) ? <DoctorAvailabilityToggle /> : null}
 
               <div className="panel">
                 <div className="eyebrow">{t('profile.updatesEyebrow')}</div>

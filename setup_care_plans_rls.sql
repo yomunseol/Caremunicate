@@ -136,3 +136,14 @@ begin
   end if;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 4) Author cleanup delete — used when the tasks batch insert fails after the
+--    plan row was created (the client compensates for the two-step write).
+-- ---------------------------------------------------------------------------
+
+drop policy if exists "care_plans_delete_author" on public.care_plans;
+create policy "care_plans_delete_author"
+  on public.care_plans for delete
+  to authenticated
+  using (doctor_id = auth.uid());

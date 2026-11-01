@@ -118,7 +118,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
         <label style={styles.field}>
           <span style={styles.label}>{t('care.planTitle')}</span>
           <input
-            className="input"
+            className="input care-plan-control"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             autoFocus
@@ -129,14 +129,14 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
           {rows.map((row, index) => (
             <div key={index} className="care-plan-row">
               <input
-                className="input care-task-name"
+                className="input care-plan-control care-task-name"
                 value={row.task_name}
                 placeholder={t('task_name')}
                 aria-label={t('task_name')}
                 onChange={(event) => patch(index, { task_name: event.target.value })}
               />
               <select
-                className="select care-task-frequency"
+                className="select care-plan-control care-task-frequency"
                 value={row.frequency}
                 aria-label={t('care.frequency')}
                 onChange={(event) => patch(index, { frequency: event.target.value as Frequency })}
@@ -146,7 +146,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
               </select>
               <span className="care-duration">
                 <input
-                  className="input care-duration-value"
+                  className="input care-plan-control care-duration-value"
                   type="number"
                   min={1}
                   max={31}
@@ -159,7 +159,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                   }
                 />
                 <select
-                  className="select care-duration-unit"
+                  className="select care-plan-control care-duration-unit"
                   value={row.duration_unit}
                   aria-label={t('duration')}
                   onChange={(event) =>
@@ -172,7 +172,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
               </span>
               <button
                 type="button"
-                className="ghost-button care-remove"
+                className="care-remove"
                 aria-label={t('common.close')}
                 onClick={() => setRows((previous) => previous.filter((_, i) => i !== index))}
               >

@@ -120,11 +120,18 @@ export default function DoctorList() {
     }
   };
 
-  const startChat = async (doctorId: string) => {
-    if (!user || chatBusyId !== null || doctorId === user.id) return;
-    setChatBusyId(doctorId);
+  const startChat = async (doctor: DoctorEntry) => {
+    if (
+      !user ||
+      chatBusyId !== null ||
+      doctor.user_id === user.id ||
+      doctor.is_chattable === false
+    ) {
+      return;
+    }
+    setChatBusyId(doctor.user_id);
     try {
-      const conversationId = await createDirectConversation(user.id, doctorId);
+      const conversationId = await createDirectConversation(user.id, doctor.user_id);
       window.location.hash = `#/chat/${conversationId}`;
     } catch (error) {
       console.error('DOCTORS_ERROR:', error);
@@ -156,18 +163,21 @@ export default function DoctorList() {
     );
   };
 
-  const renderChat = (doctorId: string) => (
-    <button
-      type="button"
-      onClick={() => void startChat(doctorId)}
-      disabled={chatBusyId !== null}
-      aria-label={tString('start_chat')}
-      title={t('start_chat')}
-      style={styles.chat}
-    >
-      <MessageCircle size={18} aria-hidden="true" />
-    </button>
-  );
+  const renderChat = (doctor: DoctorEntry) => {
+    const available = doctor.is_chattable !== false;
+    return (
+      <button
+        type="button"
+        onClick={() => void startChat(doctor)}
+        disabled={chatBusyId !== null || !available}
+        aria-label={available ? tString('start_chat') : tString('doctor_unavailable')}
+        title={available ? t('start_chat') : t('doctor_unavailable')}
+        style={{ ...styles.chat, ...(available ? null : styles.chatDisabled) }}
+      >
+        <MessageCircle size={18} aria-hidden="true" />
+      </button>
+    );
+  };
 
   const renderCard = (doctor: DoctorEntry) => {
     const name = resolveDisplayName(doctor.username, doctor.email, t('chat.participant'));
@@ -194,7 +204,7 @@ export default function DoctorList() {
         </div>
 
         <div style={styles.cardActions}>
-          {doctor.user_id !== user?.id ? renderChat(doctor.user_id) : null}
+          {doctor.user_id !== user?.id ? renderChat(doctor) : null}
           {renderHeart(doctor.user_id)}
         </div>
       </li>
@@ -344,14 +354,16 @@ const styles: Record<string, CSSProperties> = {
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: '50%',
-    border: '1px solid rgba(62, 169, 133, 0.25)',
-    background: 'rgba(62, 169, 133, 0.08)',
-    color: '#216e5d',
+    border: 'none',
+    background: 'var(--accent, #3ea985)',
+    color: '#fff',
     cursor: 'pointer',
+    boxShadow: '0 6px 16px rgba(62, 169, 133, 0.3)',
   },
+  chatDisabled: { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' },
   heart: {
     flexShrink: 0,
     display: 'inline-flex',

@@ -111,12 +111,23 @@ export const loadLogs = async (patientId: string, fromDate: string): Promise<Car
 // ---------------------------------------------------------------------------
 
 /** Plan + tasks creation against the care_plans / care_plan_tasks schema. */
+const SAVE_SCHEMA_CODES = new Set([
+  '42703', // column does not exist
+  '42P01', // table does not exist
+  'PGRST202', // function/table not in schema cache
+  'PGRST204',
+  'PGRST205',
+  '23502', // not-null violation (old provider_id/instruction columns)
+  '42501', // RLS denial
+]);
+
 export const createCarePlan = async (payload: {
   patientId: string;
   doctorId: string;
   title: string;
   tasks: NewTask[];
 }): Promise<CarePlan | null> => {
+  // A: insert the plan and B: capture its id before touching the tasks.
   const { data, error: planError } = await supabase
     .from('care_plans')
     .insert({
@@ -125,10 +136,13 @@ export const createCarePlan = async (payload: {
       title: payload.title,
     })
     .select('*')
-    .maybeSingle();
+    .single();
 
   if (planError) {
     console.error('Care Plan Save Error:', planError);
+    if (SAVE_SCHEMA_CODES.has(String(planError.code ?? ''))) {
+      console.error('Care Plan Save Error: run setup_care_plans_rls.sql against the project.');
+    }
     return null;
   }
 
@@ -138,6 +152,7 @@ export const createCarePlan = async (payload: {
     return null;
   }
 
+  // C: attach the captured plan_id to every task and insert as one batch.
   const { error: taskError } = await supabase.from('care_plan_tasks').insert(
     payload.tasks.map((task) => ({
       plan_id: plan.id,
@@ -151,6 +166,14 @@ export const createCarePlan = async (payload: {
 
   if (taskError) {
     console.error('Care Plan Save Error:', taskError);
+    // Compensate for the two-step write so a failed task batch does not leave
+    // an orphan plan. The care_plans_delete_author policy permits this.
+    const { error: cleanupError } = await supabase
+      .from('care_plans')
+      .delete()
+      .eq('id', plan.id)
+      .eq('doctor_id', payload.doctorId);
+    if (cleanupError) console.error('Care Plan Cleanup Error:', cleanupError);
     return null;
   }
 

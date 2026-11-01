@@ -21,11 +21,12 @@ export type DoctorEntry = {
   clinic?: string | null;
   email?: string | null;
   verification_status?: string | null;
+  is_chattable?: boolean | null;
 };
 
 /** Tried in order; the first that the live schema accepts is used. */
 const DOCTOR_COLUMN_SETS = [
-  'user_id, username, role, specialty, clinic, verification_status, email',
+  'user_id, username, role, specialty, clinic, verification_status, is_chattable, email',
   'user_id, username, role, verification_status, email',
   'user_id, username, role, verification_status',
   'user_id, username, role',
