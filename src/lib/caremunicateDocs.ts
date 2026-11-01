@@ -163,14 +163,32 @@ export const duplicateCareDoc = async (doc: CareDoc): Promise<CareDoc | null> =>
 export const softDeleteCareDoc = async (id: string): Promise<boolean> => {
   if (!id) return false;
 
-  const { error } = await supabase
-    .from('caremunicate_docs')
-    .update({ deleted_at: new Date().toISOString() })
-    .eq('id', id);
+  try {
+    const { error } = await supabase
+      .from('caremunicate_docs')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
 
-  if (error) {
-    console.error('CAREDOCS ERROR:', error.message, error);
+    if (error) {
+      // Exact Supabase reason, not the generic UI text.
+      console.error('Supabase Delete Error:', error.message, error.details, error.hint, error.code);
+
+      if (error.code === '42703' || /deleted_at/i.test(error.message)) {
+        console.error(
+          'CAREDOCS SCHEMA: public.caremunicate_docs.deleted_at is missing. Run: alter table public.caremunicate_docs add column if not exists deleted_at timestamptz;',
+        );
+      }
+      if (error.code === '42501' || /row-level security|permission denied/i.test(error.message)) {
+        console.error(
+          'CAREDOCS RLS: the UPDATE was blocked by RLS. Add an UPDATE policy for public.caremunicate_docs.',
+        );
+      }
+      return false;
+    }
+    return true;
+  } catch (caught) {
+    const failure = caught as { message?: string; details?: string; hint?: string; code?: string };
+    console.error('Supabase Delete Error:', failure?.message ?? String(caught), failure?.details);
     return false;
   }
-  return true;
 };
