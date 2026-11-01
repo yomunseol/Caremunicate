@@ -14,8 +14,8 @@ export default function MyCare() {
 
   return (
     <section className="section">
-      <h2 className="page-title">{t('care.myCare')}</h2>
       <div className="panel">
+        <div className="eyebrow">{t('care.myCare')}</div>
         <CareChecklist patientId={user.id} />
       </div>
     </section>

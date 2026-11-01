@@ -58,8 +58,8 @@ export default function PatientsList() {
 
   return (
     <section className="section">
-      <h2 className="page-title">{t('care.myPatients')}</h2>
       <div className="panel">
+        <div className="eyebrow">{t('care.myPatients')}</div>
         {loading ? (
           <p className="care-muted" aria-busy="true">{t('places.searching')}</p>
         ) : patients.length === 0 ? (
@@ -93,17 +93,17 @@ const styles: Record<string, CSSProperties> = {
     gap: '0.8rem',
     width: '100%',
     padding: '0.7rem 0.9rem',
-    border: '1px solid var(--line)',
-    borderRadius: '0.5rem',
+    border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
+    borderRadius: '0.9rem',
     background: '#fff',
     fontFamily: 'inherit',
     fontSize: '0.88rem',
-    fontWeight: 600,
-    color: 'var(--text)',
+    fontWeight: 700,
+    color: 'var(--text, #133b35)',
     cursor: 'pointer',
     textAlign: 'start',
   },
   name: { display: 'inline-flex', alignItems: 'center', gap: '0.35rem', overflowWrap: 'anywhere' },
-  verified: { color: 'var(--accent-strong)' },
-  role: { color: 'var(--text-muted)', fontSize: '0.76rem', fontWeight: 600 },
+  verified: { color: 'var(--accent-strong, #216e5d)' },
+  role: { color: 'var(--text-muted, #557b76)', fontSize: '0.76rem', fontWeight: 700 },
 };
