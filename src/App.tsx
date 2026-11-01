@@ -861,16 +861,36 @@ function App() {
               {/* Between the language pill and the Calls pill, at every width. */}
               <NotificationBell role={profileRole} onNavigate={(route) => navigate(route)} />
 
-              <button className="ghost-button" type="button" onClick={() => navigate('call')}>
+              <button
+                className={route === 'call' ? 'ghost-button nav-current' : 'ghost-button'}
+                aria-current={route === 'call' ? 'page' : undefined}
+                type="button"
+                onClick={() => navigate('call')}
+              >
                 {t('call.callHub')}
               </button>
-              <button className="ghost-button" type="button" onClick={() => navigate('calendar')}>
+              <button
+                className={route === 'calendar' ? 'ghost-button nav-current' : 'ghost-button'}
+                aria-current={route === 'calendar' ? 'page' : undefined}
+                type="button"
+                onClick={() => navigate('calendar')}
+              >
                 {t('cal.calendar')}
               </button>
-              <button className="ghost-button" type="button" onClick={() => navigate('hospitals')}>
+              <button
+                className={route === 'hospitals' ? 'ghost-button nav-current' : 'ghost-button'}
+                aria-current={route === 'hospitals' ? 'page' : undefined}
+                type="button"
+                onClick={() => navigate('hospitals')}
+              >
                 {t('hospital.title')}
               </button>
-              <button className="ghost-button" type="button" onClick={() => navigate('doctors')}>
+              <button
+                className={route === 'doctors' ? 'ghost-button nav-current' : 'ghost-button'}
+                aria-current={route === 'doctors' ? 'page' : undefined}
+                type="button"
+                onClick={() => navigate('doctors')}
+              >
                 {t('doctors.title')}
               </button>
               <div className="profile-menu">
