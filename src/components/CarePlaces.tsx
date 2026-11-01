@@ -33,7 +33,8 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 // Typed names go to MapTiler geocoding (see fetchMaptiler) instead.
 // ---------------------------------------------------------------------------
 
-const NEAR_RADIUS_M = 3000;
+/** Local → regional → city-wide cascade for "Near me". */
+const CASCADE_RADII = [5_000, 20_000, 50_000] as const;
 /** Client guard, just above the route's 25s budget so its 504 wins the race. */
 const OVERPASS_TIMEOUT_MS = 28_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
@@ -140,12 +141,13 @@ type NearbyResponse = {
 /** Near me → the lat/lon-only Overpass route (no text ever reaches it). */
 const fetchOverpassNearby = async (
   at: LatLon,
+  radius: number,
   signal: AbortSignal,
 ): Promise<NearbyResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
-    radius: String(NEAR_RADIUS_M),
+    radius: String(radius),
   });
 
   const response = await fetch(`/api/overpass?${params.toString()}`, {
@@ -321,6 +323,27 @@ function MapFocus({
   return null;
 }
 
+/**
+ * Fit the map to the cascade's results when they came from a wider radius.
+ * Narrow (5km) results keep the existing focus behaviour.
+ */
+function FitBounds({
+  points,
+  wide,
+}: {
+  points: Array<[number, number]>;
+  wide: boolean;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!wide || points.length === 0) return;
+    map.fitBounds(L.latLngBounds(points), { padding: [50, 50], maxZoom: 15 });
+  }, [map, wide, points]);
+
+  return null;
+}
+
 export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const { user } = useAuth();
   const { t, tString, locale } = useLang();
@@ -347,6 +370,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // True when the route fell back to stale cache (or returned 504): show the
   // calm yellow notice instead of a red error; existing favourites stay above.
   const [fallbackNotice, setFallbackNotice] = useState(false);
+  // Cascade feedback: true while trying a wider radius, and true once a wider
+  // radius produced the current results.
+  const [expanding, setExpanding] = useState(false);
+  const [wide, setWide] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   /** The last search (kind + centre + text), so Retry can repeat it exactly. */
@@ -425,6 +452,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
       setFallbackNotice(false);
+      setExpanding(false);
+      setWide(false);
 
       try {
         const places = await load(controller.signal);
@@ -468,7 +497,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         setResults([]);
       } finally {
         window.clearTimeout(timeoutId);
-        if (abortRef.current === controller) setIsLoading(false);
+        if (abortRef.current === controller) {
+          setIsLoading(false);
+          setExpanding(false);
+        }
       }
     },
     [t],
@@ -478,24 +510,43 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const runNearby = useCallback(
     async (at: LatLon) => {
       await executeSearch('nearby', at, '', async (signal) => {
-        const localKey = cacheKey(at.lat, at.lon, '');
         const toPlaces = (elements: OverpassElement[]) =>
           elements
             .map(elementToPlace)
             .filter((place): place is PlaceView => place !== null);
 
-        // 1) Per-browser cache (instant, even offline).
-        const local = readCache(localKey);
-        if (local !== null && local.length > 0) return toPlaces(local);
+        // 5km → 20km → 50km (city/metro-wide). Stop at the first non-empty ring.
+        for (let index = 0; index < CASCADE_RADII.length; index += 1) {
+          const radius = CASCADE_RADII[index];
+          if (index > 0) setExpanding(true);
 
-        // 2) The route owns the shared Supabase cache and the direct fallback.
-        const payload = await fetchOverpassNearby(at, signal);
-        const elements = payload.data?.elements ?? [];
-        // Stale cache / warning = live data is down: calm yellow notice; the
-        // existing favourites above stay visible and usable.
-        setFallbackNotice(payload.source === 'stale_cache' || Boolean(payload.warning));
-        if (elements.length > 0) writeCache(localKey, elements);
-        return toPlaces(elements);
+          // Per-browser cache, keyed by radius so rings never collide.
+          const localKey = cacheKey(at.lat, at.lon, `nearby-${radius}`);
+          const local = readCache(localKey);
+          if (local !== null && local.length > 0) {
+            setExpanding(false);
+            setWide(radius > CASCADE_RADII[0]);
+            return toPlaces(local);
+          }
+
+          // The route owns the shared Supabase cache and the direct fallback.
+          const payload = await fetchOverpassNearby(at, radius, signal);
+          const elements = payload.data?.elements ?? [];
+          // Stale cache / warning = live data is down: calm yellow notice; the
+          // existing favourites above stay visible and usable.
+          setFallbackNotice(payload.source === 'stale_cache' || Boolean(payload.warning));
+
+          if (elements.length > 0) {
+            writeCache(localKey, elements);
+            setExpanding(false);
+            setWide(radius > CASCADE_RADII[0]);
+            return toPlaces(elements);
+          }
+        }
+
+        setExpanding(false);
+        setWide(false);
+        return [];
       });
     },
     [executeSearch],
@@ -624,6 +675,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const selectedPlace = useMemo(
     () => results.find((place) => place.placeId === selectedId) ?? null,
     [results, selectedId],
+  );
+
+  const resultPoints = useMemo<Array<[number, number]>>(
+    () => results.map((place) => [place.lat, place.lon]),
+    [results],
   );
 
   // ---- Favorites toggle ---------------------------------------------------
@@ -846,6 +902,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         {locationError ? <p role="alert" style={styles.error}>{locationError}</p> : null}
 
         {isLoading ? <p style={styles.muted} aria-busy="true">{t('places.searching')}</p> : null}
+        {expanding ? (
+          <p role="status" style={styles.expandingNotice}>{t('places.expandingSearch')}</p>
+        ) : null}
         {!isLoading && error ? (
           <p role="alert" style={styles.error}>
             {error}{' '}
@@ -860,6 +919,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         {!isLoading && !error && results.length > 0 ? (
           <>
+            {wide ? (
+              <p role="status" style={styles.wideBadge}>{t('places.wideSearch')}</p>
+            ) : null}
             <ul style={styles.results}>{results.map((place) => renderPlaceCard(place, place.placeId))}</ul>
             <p style={styles.attribution}>
               <a
@@ -928,6 +990,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                 </Popup>
               </Marker>
             ))}
+            <FitBounds points={resultPoints} wide={wide} />
             <MapFocus
               lat={focusLatLng.lat}
               lon={focusLatLng.lon}
@@ -1004,6 +1067,24 @@ const styles: Record<string, CSSProperties> = {
     fontSize: '0.82rem',
     fontWeight: 600,
     lineHeight: 1.45,
+  },
+  expandingNotice: {
+    margin: 0,
+    color: '#8a6d1a',
+    fontSize: '0.82rem',
+    fontWeight: 600,
+    lineHeight: 1.45,
+  },
+  wideBadge: {
+    margin: 0,
+    justifySelf: 'start',
+    paddingInline: '0.55rem',
+    paddingBlock: '0.15rem',
+    borderRadius: '999px',
+    background: 'rgba(62, 169, 133, 0.16)',
+    color: '#216e5d',
+    fontSize: '0.74rem',
+    fontWeight: 800,
   },
   searchRow: { display: 'flex', alignItems: 'stretch', gap: '0.5rem', flexWrap: 'wrap' },
   searchBox: { position: 'relative', display: 'flex', alignItems: 'center', flex: 1, minWidth: 0 },

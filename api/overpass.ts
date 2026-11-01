@@ -31,7 +31,8 @@ const GLOBAL_TIMEOUT_MS = 9_000;
 const DEFAULT_RADIUS_M = 3_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
-const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
+const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
+const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
 const TIMEOUT_ERROR = 'Search timed out. Please try again.';
 const STALE_WARNING = 'Live search unavailable';
 
@@ -72,6 +73,19 @@ const outcome = (status: number, body: unknown, cacheControl?: string): Outcome 
 
 const hasElements = (value: unknown): value is { elements: unknown[] } =>
   Boolean(value) && Array.isArray((value as { elements?: unknown }).elements);
+
+/** Union queries can return the same OSM element twice (amenity + healthcare). */
+const dedupeElements = (elements: unknown[]): unknown[] => {
+  const seen = new Set<string>();
+  return elements.filter((element) => {
+    const candidate = element as { type?: unknown; id?: unknown };
+    if (typeof candidate?.type !== 'string' || candidate.id === undefined) return true;
+    const key = `${candidate.type}:${String(candidate.id)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
 
 /** Any cached row for this key, regardless of age — used only as a fallback. */
 async function readStaleCache(cacheKey: string): Promise<unknown | null> {
@@ -115,10 +129,13 @@ async function runOverpass(req: ProxyRequest): Promise<Outcome> {
     ? Math.min(Math.max(radiusRaw, 100), 50_000)
     : DEFAULT_RADIUS_M;
 
+  // STRICT medical whitelist only: hospitals, clinics, doctors, pharmacies.
+  // No retail/marts/convenience/supermarkets can match; both the amenity and
+  // healthcare tagging schemes are included.
   const query = `[out:json][timeout:25];
 (
-  node['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
-  way['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
+  nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
+  nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});
 );
 out center;`;
 
@@ -163,7 +180,7 @@ out center;`;
       console.error('Overpass API error:', upstream.status);
     } else {
       const payload = (await upstream.json()) as { elements?: unknown };
-      if (hasElements(payload)) live = payload;
+      if (hasElements(payload)) live = { elements: dedupeElements(payload.elements) };
       else console.error('Overpass API error: invalid payload');
     }
   } catch (error) {

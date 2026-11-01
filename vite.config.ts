@@ -10,7 +10,8 @@ import type { ServerResponse } from 'node:http';
 // bundle); "Near me" -> Overpass with a required lat/lon radial query.
 // ---------------------------------------------------------------------------
 
-const AMENITY_REGEX = 'hospital|clinic|doctors|pharmacy';
+const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
+const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -95,8 +96,8 @@ export default defineConfig(({ mode }) => {
 
         const query = `[out:json][timeout:25];
 (
-  node['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
-  way['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
+  nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
+  nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});
 );
 out center;`;
 
@@ -128,7 +129,17 @@ out center;`;
               send(res, 500, { error: 'invalid payload' });
               return;
             }
-            send(res, 200, payload);
+            const seen = new Set<string>();
+            const elements = payload.elements.filter((element) => {
+              const candidate = element as { type?: unknown; id?: unknown };
+              if (typeof candidate?.type !== 'string' || candidate.id === undefined) return true;
+              const key = `${candidate.type}:${String(candidate.id)}`;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            // Match the production route's envelope exactly.
+            send(res, 200, { data: { elements }, source: 'live' });
           })
           .catch((error: unknown) => {
             const name = error instanceof Error ? error.name : 'err';
