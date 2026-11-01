@@ -155,6 +155,12 @@ const ONBOARDING_PATH = /^\/onboarding\/?$/;
 const isOnboardingPath = (): boolean =>
   typeof window !== 'undefined' && ONBOARDING_PATH.test(window.location.pathname);
 
+/** `/dashboard` — alias for the authenticated dashboard (#profile). */
+const DASHBOARD_PATH = /^\/dashboard\/?$/;
+
+const isDashboardPath = (): boolean =>
+  typeof window !== 'undefined' && DASHBOARD_PATH.test(window.location.pathname);
+
 const pathCallCode = (): string | null => {
   if (typeof window === 'undefined') return null;
   const match = window.location.pathname.match(CALL_PATH);
@@ -172,6 +178,7 @@ const getInitialRoute = (): RouteKey => {
   if (isResetPasswordPath()) return 'reset';
   if (isHelpPath()) return 'help';
   if (isOnboardingPath()) return 'onboarding';
+  if (isDashboardPath()) return 'profile';
   if (pathCallCode() || isCallHubPath()) return 'call';
   return parseHash(window.location.hash).route;
 };
@@ -184,7 +191,7 @@ const getInitialRoute = (): RouteKey => {
 const routerBasePath = (): string => {
   if (typeof window === 'undefined') return '/';
   const path = window.location.pathname;
-  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || HELP_PATH.test(path) || ONBOARDING_PATH.test(path)) return '/';
+  if (/^\/call(\/|$)/.test(path) || RESET_PASSWORD_PATH.test(path) || HELP_PATH.test(path) || ONBOARDING_PATH.test(path) || DASHBOARD_PATH.test(path)) return '/';
   return path;
 };
 
@@ -300,6 +307,12 @@ function App() {
       }
       if (isOnboardingPath()) {
         setRoute('onboarding');
+        setConversationId(null);
+        setCallCode(null);
+        return;
+      }
+      if (isDashboardPath()) {
+        setRoute('profile');
         setConversationId(null);
         setCallCode(null);
         return;

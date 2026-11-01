@@ -6,4 +6,5 @@
 
 alter table public.profiles
   add column if not exists full_name text,
+  add column if not exists clinic_name text,
   add column if not exists onboarding_complete boolean not null default true;

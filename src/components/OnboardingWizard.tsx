@@ -3,19 +3,35 @@ import { Building2, CheckCircle2, Stethoscope, UserRound } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
-import { planForRole } from './PricingSection';
+import { getPlans, type PlanId } from './PricingSection';
 
 // ---------------------------------------------------------------------------
-// Onboarding wizard — role, then profile, then a short welcome.
+// Onboarding wizard — Role -> Plan -> Profile -> Welcome.
 //
 // Enforced by App: an authenticated user whose profiles.onboarding_complete is
 // not true is routed to /onboarding. The final step upserts the profile row
-// (so the email-confirmation signup, which has no row yet, also works) and
-// hard-redirects to the dashboard after 1.5s.
+// (so email-confirmation signups with no row yet also work) and hard-redirects
+// to /dashboard after 1.5s.
 // ---------------------------------------------------------------------------
 
-type OnboardingRole = 'doctor' | 'patient' | 'department';
-type Step = 1 | 2 | 3;
+type OnboardingRole = 'doctor' | 'patient' | 'hospital';
+type Step = 1 | 2 | 3 | 4;
+
+type FormState = {
+  role: OnboardingRole | '';
+  plan: PlanId | '';
+  fullName: string;
+  specialty: string;
+  clinicName: string;
+};
+
+const INITIAL_FORM: FormState = {
+  role: '',
+  plan: '',
+  fullName: '',
+  specialty: '',
+  clinicName: '',
+};
 
 const ROLE_OPTIONS: Array<{
   value: OnboardingRole;
@@ -36,54 +52,104 @@ const ROLE_OPTIONS: Array<{
     descKey: 'onboarding.role_patient_desc',
   },
   {
-    value: 'department',
+    value: 'hospital',
     Icon: Building2,
-    titleKey: 'onboarding.role_admin',
+    titleKey: 'onboarding.role_hospital_manager',
     descKey: 'onboarding.role_admin_desc',
   },
 ];
+
+const plansForRole = (role: OnboardingRole | ''): PlanId[] =>
+  role === 'doctor'
+    ? ['doctor']
+    : role === 'hospital'
+      ? ['department', 'hospital']
+      : ['basic', 'plus', 'pro'];
 
 export default function OnboardingWizard() {
   const { user } = useAuth();
   const { t, tString } = useLang();
   const [step, setStep] = useState<Step>(1);
-  const [role, setRole] = useState<OnboardingRole | null>(null);
-  const [fullName, setFullName] = useState('');
-  const [specialty, setSpecialty] = useState('');
-  const [clinic, setClinic] = useState('');
+  const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
+  const plans = getPlans(t);
+  const options = plans.filter((plan) => plansForRole(form.role).includes(plan.id));
+  const totalSteps = 3;
+
   useEffect(() => {
-    if (step !== 3) return;
+    if (step !== 4) return;
     const timer = window.setTimeout(() => {
-      window.location.href = '/#profile';
+      window.location.href = '/dashboard';
     }, 1500);
     return () => window.clearTimeout(timer);
   }, [step]);
 
+  const selectRole = (role: OnboardingRole) => {
+    setForm((previous) => ({
+      ...previous,
+      role,
+      // The doctor has one plan, so preselect it. Patient/hospital managers
+      // choose on the next step.
+      plan: role === 'doctor' ? 'doctor' : '',
+      specialty: role === 'doctor' ? previous.specialty : '',
+      clinicName: role === 'hospital' ? previous.clinicName : '',
+    }));
+    setError('');
+  };
+
+  const selectPlan = (plan: PlanId) => {
+    setForm((previous) => ({ ...previous, plan }));
+    setError('');
+  };
+
+  const planLabel = (plan: { id: PlanId; name: string }) =>
+    plan.id === 'doctor'
+      ? t('onboarding.plan_doctor')
+      : plan.id === 'department'
+        ? t('onboarding.plan_department')
+        : plan.id === 'hospital'
+          ? t('onboarding.plan_hospital')
+          : plan.name;
+
   const complete = async () => {
-    if (!user || !role || !fullName.trim() || busy) return;
+    if (!user || !form.role || !form.plan || !form.fullName.trim() || busy) return;
     setBusy(true);
     setError('');
+
+    const payload = {
+      user_id: user.id,
+      username: form.fullName.trim(),
+      full_name: form.fullName.trim(),
+      role: form.role,
+      plan: form.plan,
+      onboarding_complete: true,
+      ...(form.role === 'doctor' ? { specialty: form.specialty.trim() || null } : {}),
+      ...(form.role === 'hospital'
+        ? {
+            clinic: form.clinicName.trim() || null,
+            clinic_name: form.clinicName.trim() || null,
+          }
+        : {}),
+    };
+
+    console.log('Profile Save Payload:', payload);
+
     try {
-      const { error: saveError } = await supabase.from('profiles').upsert(
-        {
-          user_id: user.id,
-          username: fullName.trim(),
-          full_name: fullName.trim(),
-          role,
-          plan: planForRole(role),
-          onboarding_complete: true,
-          ...(role === 'doctor' ? { specialty: specialty.trim() || null } : {}),
-          ...(role === 'department' ? { clinic: clinic.trim() || null } : {}),
-        },
-        { onConflict: 'user_id' },
-      );
-      if (saveError) throw saveError;
-      setStep(3);
+      const { error: saveError } = await supabase
+        .from('profiles')
+        .upsert(payload, { onConflict: 'user_id' });
+
+      if (saveError) {
+        console.error('Profile Save Error:', saveError);
+        setError(t('onboarding.error'));
+        return;
+      }
+
+      setStep(4);
     } catch (caught) {
-      console.error('ONBOARDING SAVE ERROR:', caught);
+      console.error('Profile Save Error:', caught);
       setError(t('onboarding.error'));
     } finally {
       setBusy(false);
@@ -93,15 +159,19 @@ export default function OnboardingWizard() {
   return (
     <section className="section onboarding-page" aria-labelledby="onboarding-heading">
       <div className="onboarding-card">
-        {step < 3 ? (
+        {step < 4 ? (
           <>
             <div className="onboarding-progress">
               <span>{t('onboarding.title')}</span>
-              <span>{tString('onboarding.step_of', { current: step, total: 2 })}</span>
+              <span>{tString('onboarding.step_of', { current: step, total: totalSteps })}</span>
             </div>
             <div className="onboarding-heading">
               <h2 id="onboarding-heading">
-                {step === 1 ? t('onboarding.step_1') : t('onboarding.step_2')}
+                {step === 1
+                  ? t('onboarding.step_1')
+                  : step === 2
+                    ? t('onboarding.step_2')
+                    : t('onboarding.step_3')}
               </h2>
             </div>
           </>
@@ -112,14 +182,14 @@ export default function OnboardingWizard() {
             <div className="onboarding-roles" role="group" aria-label={t('onboarding.step_1')}>
               {ROLE_OPTIONS.map((option) => {
                 const Icon = option.Icon;
-                const active = role === option.value;
+                const active = form.role === option.value;
                 return (
                   <button
                     key={option.value}
                     type="button"
                     className={active ? 'onboarding-role active' : 'onboarding-role'}
                     aria-pressed={active}
-                    onClick={() => setRole(option.value)}
+                    onClick={() => selectRole(option.value)}
                   >
                     <span className="onboarding-role-icon" aria-hidden="true">
                       <Icon size={22} />
@@ -137,7 +207,7 @@ export default function OnboardingWizard() {
               <button
                 type="button"
                 className="primary-button"
-                disabled={!role}
+                disabled={!form.role}
                 onClick={() => setStep(2)}
               >
                 {t('onboarding.next')}
@@ -147,6 +217,47 @@ export default function OnboardingWizard() {
         ) : null}
 
         {step === 2 ? (
+          <>
+            <div className="onboarding-roles" role="group" aria-label={t('onboarding.step_2')}>
+              {options.map((plan) => {
+                const active = form.plan === plan.id;
+                return (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    className={active ? 'onboarding-role active' : 'onboarding-role'}
+                    aria-pressed={active}
+                    onClick={() => selectPlan(plan.id)}
+                  >
+                    <span className="onboarding-role-copy">
+                      <strong>{planLabel(plan)}</strong>
+                      <small>
+                        {plan.price}
+                        {plan.cadence} · {plan.subtitle}
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="onboarding-actions">
+              <button type="button" className="ghost-button" onClick={() => setStep(1)}>
+                {t('onboarding.back')}
+              </button>
+              <button
+                type="button"
+                className="primary-button"
+                disabled={!form.plan}
+                onClick={() => setStep(3)}
+              >
+                {t('onboarding.next')}
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {step === 3 ? (
           <form
             className="onboarding-form"
             onSubmit={(event) => {
@@ -161,13 +272,15 @@ export default function OnboardingWizard() {
               <input
                 id="onboarding-name"
                 className="input"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
+                value={form.fullName}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, fullName: event.target.value }))
+                }
                 required
               />
             </div>
 
-            {role === 'doctor' ? (
+            {form.role === 'doctor' ? (
               <div className="field-wrap">
                 <label className="onboarding-label" htmlFor="onboarding-specialty">
                   {t('onboarding.specialty')}
@@ -175,13 +288,15 @@ export default function OnboardingWizard() {
                 <input
                   id="onboarding-specialty"
                   className="input"
-                  value={specialty}
-                  onChange={(event) => setSpecialty(event.target.value)}
+                  value={form.specialty}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, specialty: event.target.value }))
+                  }
                 />
               </div>
             ) : null}
 
-            {role === 'department' ? (
+            {form.role === 'hospital' ? (
               <div className="field-wrap">
                 <label className="onboarding-label" htmlFor="onboarding-clinic">
                   {t('onboarding.clinic_name')}
@@ -189,8 +304,10 @@ export default function OnboardingWizard() {
                 <input
                   id="onboarding-clinic"
                   className="input"
-                  value={clinic}
-                  onChange={(event) => setClinic(event.target.value)}
+                  value={form.clinicName}
+                  onChange={(event) =>
+                    setForm((previous) => ({ ...previous, clinicName: event.target.value }))
+                  }
                 />
               </div>
             ) : null}
@@ -202,7 +319,7 @@ export default function OnboardingWizard() {
                 type="button"
                 className="ghost-button"
                 onClick={() => {
-                  setStep(1);
+                  setStep(2);
                   setError('');
                 }}
                 disabled={busy}
@@ -212,7 +329,7 @@ export default function OnboardingWizard() {
               <button
                 type="submit"
                 className="primary-button"
-                disabled={busy || !fullName.trim()}
+                disabled={busy || !form.fullName.trim()}
               >
                 {busy ? t('onboarding.saving') : t('onboarding.complete')}
               </button>
@@ -220,7 +337,7 @@ export default function OnboardingWizard() {
           </form>
         ) : null}
 
-        {step === 3 ? (
+        {step === 4 ? (
           <div className="onboarding-success" role="status">
             <span className="onboarding-check" aria-hidden="true">
               <CheckCircle2 size={44} />
