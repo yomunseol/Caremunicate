@@ -43,8 +43,8 @@ export default defineConfig(() => {
 
         const radiusRaw = Number(url.searchParams.get('radius') ?? '');
         const radius = Number.isFinite(radiusRaw) && radiusRaw > 0
-          ? Math.min(Math.max(radiusRaw, 100), 50_000)
-          : 3_000;
+          ? Math.min(Math.max(radiusRaw, 100), 2_000)
+          : 1_000;
 
         const rawCategories = (url.searchParams.get('categories') ?? '')
           .split(',')
@@ -55,10 +55,10 @@ export default defineConfig(() => {
         const categories = [...new Set(rawCategories)].sort();
 
         const query = categories.length > 0
-          ? `[out:json][timeout:25];
+          ? `[out:json][timeout:10];
 nwr["amenity"~"^(${categories.join('|')})$"](around:${radius},${lat},${lon});
 out center;`
-          : `[out:json][timeout:25];
+          : `[out:json][timeout:10];
 (
   nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
   nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});

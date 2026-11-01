@@ -23,13 +23,15 @@ import { createClient } from '@supabase/supabase-js';
 
 export const config = { runtime: 'nodejs' };
 
-const ENDPOINT = 'https://overpass.kumi.systems/api/interpreter';
+const OVERPASS_URL = 'https://overpass.kumi.systems/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
 const FETCH_TIMEOUT_MS = 15_000;
 // Above the fetch budget; the handler catch still answers with clean JSON.
 const GLOBAL_TIMEOUT_MS = 16_000;
 /** Smaller radius = much faster Overpass response. */
-const DEFAULT_RADIUS_M = 3_000;
+const DEFAULT_RADIUS_M = 1_000;
+/** Hard cap: a 5km city query can return tens of thousands of elements. */
+const MAX_RADIUS_M = 2_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
 const NO_STORE = 'no-store';
 const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
@@ -129,7 +131,7 @@ async function runOverpass(req: ProxyRequest): Promise<Outcome> {
 
   const radiusRaw = Number(asString(req.query?.radius).trim());
   const radius = Number.isFinite(radiusRaw) && radiusRaw > 0
-    ? Math.min(Math.max(radiusRaw, 100), 50_000)
+    ? Math.min(Math.max(radiusRaw, 100), MAX_RADIUS_M)
     : DEFAULT_RADIUS_M;
 
   const rawCategories = asString(req.query?.categories)
@@ -144,10 +146,10 @@ async function runOverpass(req: ProxyRequest): Promise<Outcome> {
   // (e.g. amenity ~ "^(hospital|pharmacy)$"). With none, fall back to the
   // strict medical union for older callers.
   const query = categories.length > 0
-    ? `[out:json][timeout:25];
+    ? `[out:json][timeout:10];
 nwr["amenity"~"^(${categories.join('|')})$"](around:${radius},${lat},${lon});
 out center;`
-    : `[out:json][timeout:25];
+    : `[out:json][timeout:10];
 (
   nwr['amenity'~'${AMENITY_REGEX}'](around:${radius},${lat},${lon});
   nwr['healthcare'~'${HEALTHCARE_REGEX}'](around:${radius},${lat},${lon});
@@ -181,7 +183,7 @@ out center;`;
   console.log('Fetching Overpass with 15s timeout...');
   let live: { elements: unknown[] } | null = null;
   try {
-    const upstream = await fetch(ENDPOINT, {
+    const upstream = await fetch(OVERPASS_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',

@@ -31,10 +31,10 @@ import { useLang } from '../i18n';
 // clicking a category without one asks for location first.
 // ---------------------------------------------------------------------------
 
-/** Local → regional → city-wide cascade for "Near me". */
-const CASCADE_RADII = [5_000, 20_000, 50_000] as const;
-/** Client guard, just above the route's 25s budget so its 504 wins the race. */
-const OVERPASS_TIMEOUT_MS = 28_000;
+/** Near-me search radius; the backend enforces the same 2km hard cap. */
+const CASCADE_RADII = [2_000] as const;
+/** Client guard, just above the route's 15s budget so its 408 wins the race. */
+const OVERPASS_TIMEOUT_MS = 16_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
 /** Results are cached per rounded centre + filter for ten minutes. */
@@ -462,7 +462,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             .map(elementToPlace)
             .filter((place): place is PlaceView => place !== null);
 
-        // 5km → 20km → 50km (city/metro-wide). Stop at the first non-empty ring.
+        // 2km cap; the backend enforces the same hard maximum.
         for (let index = 0; index < CASCADE_RADII.length; index += 1) {
           const radius = CASCADE_RADII[index];
           if (index > 0) setExpanding(true);
