@@ -239,6 +239,10 @@ const passwordPattern =
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
   const { t, tString } = useLang();
+
+  // Keep the localized credit intact but make the product name a link.
+  const footerCopyright = tString('footer.copyright');
+  const [copyrightBefore, copyrightAfter] = footerCopyright.split('LancerMents');
   const { notify } = useToast();
   const [route, setRoute] = useState<RouteKey>(getInitialRoute);
   const [conversationId, setConversationId] = useState<string | null>(getInitialConversationId);
@@ -1498,7 +1502,18 @@ function App() {
 
       <footer className="footer">
         <div className="footer-row">
-          <p dir="auto">{t('footer.copyright')}</p>
+          <p dir="auto">
+            {copyrightBefore}
+            <a
+              className="footer-link"
+              href="https://LancerMents.online"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              LancerMents
+            </a>
+            {copyrightAfter ?? ''}
+          </p>
           <a
             className="footer-link"
             href="/help"
