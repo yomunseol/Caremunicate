@@ -32,8 +32,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   // Yellow, non-blocking notice shown when the OTP send fails. It never stops
   // the code-entry view from rendering.
   const [sendNotice, setSendNotice] = useState('');
-  // Resend cooldown, counted down one second at a time.
-  const [resendIn, setResendIn] = useState(0);
   // The inline "Forgot password?" panel, shown under the password field.
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
@@ -45,13 +43,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     setPending2FA(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Tick the resend cooldown down to zero.
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [resendIn]);
 
   // Final step for every no-2FA success path. Clear any pending flag, then
   // hard-redirect: a full page load bypasses any React state that may not have
@@ -82,7 +73,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
 
     setSendNotice('');
-    setResendIn(30);
     return true;
   };
 
@@ -236,10 +226,10 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
   // Branch C final step: email code. Verify the OTP on the MEMORY client, then
   // explicitly create the persistent session with the returned tokens.
-  const handleEmailCodeSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const verifyEmailCode = async (tokenValue: string) => {
+    if (loading) return;
 
-    const token = code.trim();
+    const token = tokenValue.trim();
     if (!token) {
       setError(t('login.err.enterEmailCode'));
       return;
@@ -306,18 +296,9 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     }
   };
 
-  // Resend the email code (30s cooldown). Same send path as Branch C, so it
-  // uses shouldCreateUser: false and never dead-ends on failure.
-  const handleResendCode = async () => {
-    if (resendIn > 0 || loading) return;
-
-    setLoading(true);
-    setError('');
-    try {
-      await sendEmailCode();
-    } finally {
-      setLoading(false);
-    }
+  const handleEmailCodeSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void verifyEmailCode(code);
   };
 
   const goBackToPassword = () => {
@@ -327,7 +308,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
     setMessage('');
     setCode('');
     setSendNotice('');
-    setResendIn(0);
   };
 
   const styles = {
@@ -513,23 +493,25 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
           >
             {t('auth.forgotPassword')}
           </button>
-
-          {recoveryOpen ? (
-            <div style={styles.recoveryPanel}>
-              <PasswordResetFlow
-                initialEmail={email}
-                onCancel={() => setRecoveryOpen(false)}
-                onSuccess={() => {
-                  setRecoveryOpen(false);
-                  setPassword('');
-                  setView('password');
-                  setError('');
-                  setMessage(t('auth.passwordResetSuccess'));
-                }}
-              />
-            </div>
-          ) : null}
         </form>
+      ) : null}
+
+      {/* The recovery flow has its own <form>; keeping it outside the login form
+          avoids invalid nested forms and lets its submit fire normally. */}
+      {view === 'password' && recoveryOpen ? (
+        <div style={styles.recoveryPanel}>
+          <PasswordResetFlow
+            initialEmail={email}
+            onCancel={() => setRecoveryOpen(false)}
+            onSuccess={() => {
+              setRecoveryOpen(false);
+              setPassword('');
+              setView('password');
+              setError('');
+              setMessage(t('auth.passwordResetSuccess'));
+            }}
+          />
+        </div>
       ) : null}
 
       {view === 'email_code' ? (
@@ -543,10 +525,12 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               onChange={setCode}
               disabled={loading}
               autoFocus
-              label={t('login.labelEmailCode')}
-              onResend={() => void handleResendCode()}
-              resendSecondsLeft={resendIn}
+              isError={Boolean(error)}
+              onResend={sendEmailCode}
               resendDisabled={loading}
+              onComplete={(next) => {
+                if (!loading) void verifyEmailCode(next);
+              }}
             />
           </div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 import CodePanel from './CodePanel';
@@ -22,17 +22,11 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [resendIn, setResendIn] = useState(0);
 
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [resendIn]);
-
-  const verify = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (code.trim().length !== 6) {
+  const verifyToken = async (tokenValue: string) => {
+    if (busy) return;
+    const token = tokenValue.trim();
+    if (token.length !== 6) {
       setError(t('auth.err.invalidCode'));
       return;
     }
@@ -42,7 +36,7 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
     try {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         email: email.trim(),
-        token: code.trim(),
+        token: token,
         type: 'signup',
       });
       console.log('Signup verify response:', { error: verifyError });
@@ -62,8 +56,13 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
     }
   };
 
-  const resend = async () => {
-    if (resendIn > 0 || busy) return;
+  const verify = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void verifyToken(code);
+  };
+
+  const resend = async (): Promise<boolean> => {
+    if (busy) return false;
     setBusy(true);
     setError('');
     try {
@@ -75,9 +74,9 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
 
       if (resendError) {
         setError(t('auth.err.codeSend'));
-        return;
+        return false;
       }
-      setResendIn(30);
+      return true;
     } finally {
       setBusy(false);
     }
@@ -91,10 +90,11 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
         disabled={busy}
         autoFocus
         error={error || undefined}
-        label={t('login.labelEmailCode')}
-        onResend={() => void resend()}
-        resendSecondsLeft={resendIn}
+        onResend={resend}
         resendDisabled={busy}
+        onComplete={(next) => {
+          if (!busy) void verifyToken(next);
+        }}
       />
 
       <button className="primary-button" type="submit" disabled={busy || code.length !== 6}>

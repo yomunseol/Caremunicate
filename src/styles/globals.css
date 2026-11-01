@@ -3847,6 +3847,10 @@ img {
   opacity: 0.55;
 }
 
+.code-box[readonly] {
+  opacity: 0.55;
+}
+
 .code-panel-error {
   margin: 0;
   color: #9c3636;

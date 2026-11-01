@@ -1,20 +1,19 @@
-import { useEffect, useRef, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
-// CodePanel — the ONE 6-box verification-code input (C-04).
+// CodePanel — the ONE 6-box verification-code input.
 //
 // Reused by every code-entry surface so verify UI is never duplicated:
-//   - 2FA email code (PasswordAuth branch C)
-//   - authenticator code (PasswordAuth branch B)
-//   - signup confirm / recovery / email change (C-04 Section 2)
+//   - Signup email verification
+//   - Login email 2FA
+//   - Password reset
 //
-// Behaviour: numeric-only boxes, auto-advance on type, backspace steps back,
-// arrow keys navigate, paste splits across the boxes, and the joined value is
-// reported through onChange. Resend is OPTIONAL and may be driven from the
-// parent (controlled countdown) or left off entirely.
-//
-// It owns NO verify logic — callers keep their own submit/verify path.
+// Behaviour: auto-focus, numeric-only boxes, auto-advance on type, backspace
+// steps back, arrow keys navigate, paste splits across the boxes, and the
+// joined value is reported through onChange. onComplete fires once when all
+// boxes are filled. The resend control owns its own 60s countdown; the parent
+// only supplies the send function.
 // ---------------------------------------------------------------------------
 
 export type CodePanelProps = {
@@ -24,14 +23,18 @@ export type CodePanelProps = {
   length?: number;
   disabled?: boolean;
   autoFocus?: boolean;
-  /** Inline error under the boxes (invalid / expired). */
+  /** Inline error message under the boxes (invalid / expired). */
   error?: string;
+  /** Red border without a message (e.g. a failed attempt). */
+  isError?: boolean;
   /** Accessible label for the group. */
   label?: string;
-  /** Resend control — rendered only when onResend is supplied. */
-  onResend?: () => void;
-  /** Remaining cooldown seconds; the button is disabled while > 0. */
-  resendSecondsLeft?: number;
+  /** Called once when the joined value reaches `length`. */
+  onComplete?: (code: string) => void;
+  /** Send a new code. Return false to leave the resend button enabled. */
+  onResend?: () => boolean | void | Promise<boolean | void>;
+  /** Countdown after the code was sent (default 60 seconds). */
+  resendAfterSeconds?: number;
   resendDisabled?: boolean;
 };
 
@@ -42,21 +45,46 @@ export default function CodePanel({
   onChange,
   length = 6,
   disabled = false,
-  autoFocus = false,
+  autoFocus = true,
   error,
+  isError = false,
   label,
+  onComplete,
   onResend,
-  resendSecondsLeft = 0,
+  resendAfterSeconds = 60,
   resendDisabled = false,
 }: CodePanelProps) {
   const { t } = useLang();
   const boxes = useRef<Array<HTMLInputElement | null>>([]);
+  const [secondsLeft, setSecondsLeft] = useState(resendAfterSeconds);
+  const completedRef = useRef(false);
 
   useEffect(() => {
     if (autoFocus) boxes.current[0]?.focus();
   }, [autoFocus]);
 
+  // The panel owns the resend countdown, so no parent duplicates this logic.
+  useEffect(() => {
+    if (secondsLeft <= 0) return;
+    const timer = window.setTimeout(() => setSecondsLeft((seconds) => seconds - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [secondsLeft]);
+
+  useEffect(() => {
+    if (!onComplete) return;
+    if (value.length === length) {
+      if (!completedRef.current) {
+        completedRef.current = true;
+        onComplete(value);
+      }
+      return;
+    }
+    completedRef.current = false;
+  }, [value, length, onComplete]);
+
   const chars = Array.from({ length }, (_, index) => value[index] ?? '');
+  const invalid = Boolean(error) || isError;
+  const groupLabel = label ?? t('auth.enterVerificationCode');
 
   const setAt = (index: number, next: string) => {
     const arr = chars.slice();
@@ -120,29 +148,33 @@ export default function CodePanel({
     fillFrom(index, digits);
   };
 
+  const resend = async () => {
+    if (secondsLeft > 0 || resendDisabled || !onResend) return;
+    const result = await onResend();
+    if (result !== false) setSecondsLeft(resendAfterSeconds);
+  };
+
   return (
     <div className="code-panel">
-      <div
-        className="code-panel-boxes"
-        role="group"
-        aria-label={label ?? t('login.labelEmailCode')}
-      >
+      <div className="code-panel-boxes" role="group" aria-label={groupLabel}>
         {chars.map((char, index) => (
           <input
             key={index}
             ref={(node) => {
               boxes.current[index] = node;
             }}
-            className={`code-box${error ? ' is-invalid' : ''}`}
+            className={`code-box${invalid ? ' is-invalid' : ''}`}
             dir="ltr"
             type="text"
             inputMode="numeric"
+            pattern="[0-9]*"
             autoComplete={index === 0 ? 'one-time-code' : 'off'}
             maxLength={1}
-            aria-label={`${label ?? t('login.labelEmailCode')} ${index + 1}`}
-            aria-invalid={Boolean(error)}
+            aria-label={`${groupLabel} ${index + 1}`}
+            aria-invalid={invalid}
             value={char}
-            disabled={disabled}
+            readOnly={disabled}
+            aria-disabled={disabled}
             onChange={(event) => handleChange(index, event.target.value)}
             onKeyDown={(event) => handleKeyDown(index, event)}
             onPaste={(event) => handlePaste(index, event)}
@@ -161,12 +193,12 @@ export default function CodePanel({
         <button
           type="button"
           className="code-panel-resend"
-          onClick={onResend}
-          disabled={resendDisabled || resendSecondsLeft > 0}
+          onClick={() => void resend()}
+          disabled={resendDisabled || secondsLeft > 0}
         >
-          {resendSecondsLeft > 0
-            ? t('tfa.resendIn', { seconds: resendSecondsLeft })
-            : t('tfa.resend')}
+          {secondsLeft > 0
+            ? t('auth.resendCodeIn', { seconds: secondsLeft })
+            : t('auth.resendCode')}
         </button>
       ) : null}
     </div>

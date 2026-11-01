@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 import CodePanel from './CodePanel';
@@ -36,25 +36,18 @@ export default function PasswordResetFlow({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [resendIn, setResendIn] = useState(0);
-
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const timer = window.setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [resendIn]);
 
   const mapSendError = (message: string): string =>
     /not found|no user|invalid/i.test(message)
       ? t('auth.err.emailNotFound')
       : t('auth.err.codeSend');
 
-  const requestCode = async (event?: FormEvent<HTMLFormElement>) => {
+  const requestCode = async (event?: FormEvent<HTMLFormElement>): Promise<boolean> => {
     event?.preventDefault();
     const address = email.trim();
     if (!address) {
       setError(t('auth.err.emailRequired'));
-      return;
+      return false;
     }
 
     setBusy(true);
@@ -67,19 +60,19 @@ export default function PasswordResetFlow({
 
       if (resetError) {
         setError(mapSendError(resetError.message ?? ''));
-        return;
+        return false;
       }
 
       setStep('code');
-      setResendIn(60);
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
-  const verifyCode = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const token = code.trim();
+  const verifyToken = async (tokenValue: string) => {
+    if (busy) return;
+    const token = tokenValue.trim();
     if (token.length !== 6) {
       setError(t('auth.err.invalidCode'));
       return;
@@ -105,6 +98,11 @@ export default function PasswordResetFlow({
     } finally {
       setBusy(false);
     }
+  };
+
+  const verifyCode = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void verifyToken(code);
   };
 
   const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
@@ -138,11 +136,6 @@ export default function PasswordResetFlow({
     } finally {
       setBusy(false);
     }
-  };
-
-  const resend = async () => {
-    if (resendIn > 0 || busy) return;
-    await requestCode();
   };
 
   return (
@@ -183,10 +176,11 @@ export default function PasswordResetFlow({
             disabled={busy}
             autoFocus
             error={error || undefined}
-            label={t('login.labelEmailCode')}
-            onResend={() => void resend()}
-            resendSecondsLeft={resendIn}
+            onResend={() => requestCode()}
             resendDisabled={busy}
+            onComplete={(next) => {
+              if (!busy) void verifyToken(next);
+            }}
           />
           <button className="primary-button" type="submit" disabled={busy || code.length !== 6}>
             {busy ? t('tfa.verifying') : t('auth.verifyCode')}
