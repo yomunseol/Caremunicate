@@ -113,6 +113,17 @@ export default function OnboardingWizard() {
           ? t('onboarding.plan_hospital')
           : plan.name;
 
+  const reportSaveError = (error: unknown) => {
+    const detail = error as { message?: string; details?: string; hint?: string };
+    console.error(
+      'Supabase Profile Update Error:',
+      detail.message,
+      detail.details,
+      detail.hint,
+    );
+    setError(detail.message || t('onboarding.error'));
+  };
+
   const complete = async () => {
     if (!user || !form.role || !form.plan || !form.fullName.trim() || busy) return;
     setBusy(true);
@@ -142,15 +153,13 @@ export default function OnboardingWizard() {
         .upsert(payload, { onConflict: 'user_id' });
 
       if (saveError) {
-        console.error('Profile Save Error:', saveError);
-        setError(t('onboarding.error'));
+        reportSaveError(saveError);
         return;
       }
 
       setStep(4);
     } catch (caught) {
-      console.error('Profile Save Error:', caught);
-      setError(t('onboarding.error'));
+      reportSaveError(caught);
     } finally {
       setBusy(false);
     }
