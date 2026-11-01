@@ -97,6 +97,8 @@ const CATEGORIES: Array<{ value: Category; labelKey: string }> = [
   { value: 'doctors', labelKey: 'places.catDoctor' },
 ];
 
+const ALL_CATEGORIES = CATEGORIES.map((item) => item.value);
+
 type CarePlacesProps = {
   /** Dashboard role (profiles.role). Drives the role-aware heading. */
   role?: string;
@@ -148,14 +150,14 @@ type NearbyResponse = {
 const fetchOverpassNearby = async (
   at: LatLon,
   radius: number,
-  category: Category,
+  categories: Category[],
   signal: AbortSignal,
 ): Promise<NearbyResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
     radius: String(radius),
-    category,
+    categories: categories.join(','),
   });
 
   const response = await fetch(`/api/overpass?${params.toString()}`, {
@@ -288,7 +290,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // Provider accounts (doctor / department / hospital) get the network heading.
   const titleKey = isProvider(effectiveRole) ? 'places.titleDoctor' : 'places.titlePatient';
 
-  const [category, setCategory] = useState<Category>('hospital');
+  const [selectedCategories, setSelectedCategories] = useState<Category[]>([]);
+  const [filter, setFilter] = useState('');
   const [results, setResults] = useState<PlaceView[]>([]);
   const [center, setCenter] = useState<LatLon | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -311,8 +314,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [wide, setWide] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
-  /** The last search (centre + category), so Retry can repeat it exactly. */
-  const lastSearchRef = useRef<{ at: LatLon; category: Category } | null>(null);
+  /** The last search (centre + selected categories), so Retry repeats it. */
+  const lastSearchRef = useRef<{ at: LatLon; categories: Category[] } | null>(null);
 
   const placeName = useCallback(
     (place: PlaceView) => place.name || t('places.eyebrow'),
@@ -352,15 +355,16 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   }, [loadFavorites]);
 
   // ---- Search -------------------------------------------------------------
-  // Category pills → /api/overpass?lat&lon&radius&category. No text path.
+  // Multi-select category pills → /api/overpass?lat&lon&radius&categories.
+  // The filter input is client-side only; it never touches the network.
   const executeSearch = useCallback(
     async (
       at: LatLon,
-      category: Category,
+      categories: Category[],
       load: (signal: AbortSignal) => Promise<PlaceView[]>,
       timeoutMs = OVERPASS_TIMEOUT_MS,
     ) => {
-      lastSearchRef.current = { at, category };
+      lastSearchRef.current = { at, categories };
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -432,11 +436,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [t],
   );
 
-  /** Category → Overpass radial query, backed by the shared DB cache. */
-  const runCategory = useCallback(
-    async (next: Category, at: LatLon) => {
-      setCategory(next);
-      await executeSearch(at, next, async (signal) => {
+  /** Selected categories → one Overpass radial query (with the cascade). */
+  const runCategories = useCallback(
+    async (categories: Category[], at: LatLon) => {
+      const effective = categories.length > 0 ? categories : ALL_CATEGORIES;
+      await executeSearch(at, effective, async (signal) => {
         const toPlaces = (elements: OverpassElement[]) =>
           elements
             .map(elementToPlace)
@@ -447,8 +451,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           const radius = CASCADE_RADII[index];
           if (index > 0) setExpanding(true);
 
-          // Per-browser cache, keyed by category + radius.
-          const localKey = cacheKey(at.lat, at.lon, `${next}-${radius}`);
+          // Per-browser cache, keyed by the selected set + radius.
+          const cacheTag = effective.slice().sort().join('-');
+          const localKey = cacheKey(at.lat, at.lon, `${cacheTag}-${radius}`);
           const local = readCache(localKey);
           if (local !== null && local.length > 0) {
             setExpanding(false);
@@ -457,7 +462,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           }
 
           // The route owns the shared Supabase cache and the direct fallback.
-          const payload = await fetchOverpassNearby(at, radius, next, signal);
+          const payload = await fetchOverpassNearby(at, radius, effective, signal);
           const elements = payload.data?.elements ?? [];
           // Stale cache / warning = live data is down: calm yellow notice; the
           // existing favourites above stay visible and usable.
@@ -530,37 +535,48 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     );
   };
 
-  /** Category click: run at the known centre, or ask for location first. */
+  /** Toggle a category; any change re-queries with the selected set. */
   const handleCategory = (next: Category) => {
-    setCategory(next);
+    const nextSelected = selectedCategories.includes(next)
+      ? selectedCategories.filter((item) => item !== next)
+      : [...selectedCategories, next];
+    setSelectedCategories(nextSelected);
+    const effective = nextSelected.length > 0 ? nextSelected : ALL_CATEGORIES;
     if (center) {
-      void runCategory(next, center);
+      void runCategories(effective, center);
       return;
     }
-    requestLocation((at) => void runCategory(next, at));
+    requestLocation((at) => void runCategories(effective, at));
   };
 
   /** Retry the last search after a failure (inline error action). */
   const retrySearch = () => {
     const last = lastSearchRef.current;
-    if (last) void runCategory(last.category, last.at);
+    if (last) void runCategories(last.categories, last.at);
   };
 
+  // Client-side only: filters the already-fetched array, never the network.
+  const filteredResults = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return results;
+    return results.filter((place) => place.name.toLowerCase().includes(needle));
+  }, [filter, results]);
+
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
-    const selected = results.find((place) => place.placeId === selectedId);
+    const selected = filteredResults.find((place) => place.placeId === selectedId);
     if (selected) return { lat: selected.lat, lon: selected.lon, focusKey: selected.placeId };
     if (center) return { lat: center.lat, lon: center.lon, focusKey: 'me' };
     return { lat: null, lon: null, focusKey: null };
-  }, [results, selectedId, center]);
+  }, [filteredResults, selectedId, center]);
 
   const selectedPlace = useMemo(
-    () => results.find((place) => place.placeId === selectedId) ?? null,
-    [results, selectedId],
+    () => filteredResults.find((place) => place.placeId === selectedId) ?? null,
+    [filteredResults, selectedId],
   );
 
   const resultPoints = useMemo<Array<[number, number]>>(
-    () => results.map((place) => [place.lat, place.lon]),
-    [results],
+    () => filteredResults.map((place) => [place.lat, place.lon]),
+    [filteredResults],
   );
 
   // ---- Favorites toggle ---------------------------------------------------
@@ -744,15 +760,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
       {/* SEARCH — category pills drive Overpass directly (no text, no geocoder). */}
       <div style={styles.section}>
-        <div style={styles.categoryRow} role="group" aria-label={t('places.catAria')}>
+        <div style={styles.categoryRow} role="group" aria-label={t('places.selectCategories')}>
           {CATEGORIES.map((item) => {
-            const active = category === item.value;
+            const active = selectedCategories.includes(item.value);
             return (
               <button
                 key={item.value}
                 type="button"
                 aria-pressed={active}
-                disabled={isLoading && active}
                 style={{ ...styles.categoryPill, ...(active ? styles.categoryPillActive : null) }}
                 onClick={() => handleCategory(item.value)}
               >
@@ -760,9 +775,19 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
               </button>
             );
           })}
+        </div>
+
+        <div style={styles.categoryRow}>
           <button
             type="button"
-            onClick={() => requestLocation((at) => void runCategory(category, at))}
+            onClick={() =>
+              requestLocation((at) =>
+                void runCategories(
+                  selectedCategories.length > 0 ? selectedCategories : ALL_CATEGORIES,
+                  at,
+                ),
+              )
+            }
             disabled={locating}
             aria-pressed={center !== null}
             style={{ ...styles.categoryPill, ...(center ? styles.categoryPillOn : null) }}
@@ -770,6 +795,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             {t('places.nearMe')}
           </button>
         </div>
+
+        <input
+          className="input"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+          placeholder={t('places.filterResults')}
+          aria-label={t('places.filterResults')}
+        />
 
         <p style={styles.locationHint}>
           {center ? t('places.usingLocation') : t('places.needLocation')}
@@ -794,16 +827,16 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             </button>
           </p>
         ) : null}
-        {!isLoading && !error && searched && results.length === 0 ? (
+        {!isLoading && !error && searched && (results.length === 0 || filteredResults.length === 0) ? (
           <p style={styles.muted}>{t('places.noResults')}</p>
         ) : null}
 
-        {!isLoading && !error && results.length > 0 ? (
+        {!isLoading && !error && filteredResults.length > 0 ? (
           <>
             {wide ? (
               <p role="status" style={styles.wideBadge}>{t('places.wideSearch')}</p>
             ) : null}
-            <ul style={styles.results}>{results.map((place) => renderPlaceCard(place, place.placeId))}</ul>
+            <ul style={styles.results}>{filteredResults.map((place) => renderPlaceCard(place, place.placeId))}</ul>
             <p style={styles.attribution}>
               <a
                 href="https://www.openstreetmap.org/copyright"
@@ -850,7 +883,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                 <Popup>{t('places.usingLocation')}</Popup>
               </Marker>
             ) : null}
-            {results.map((place) => (
+            {filteredResults.map((place) => (
               <Marker
                 key={place.placeId}
                 position={[place.lat, place.lon]}

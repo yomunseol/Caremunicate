@@ -95,12 +95,17 @@ export default defineConfig(({ mode }) => {
           ? Math.min(Math.max(radiusRaw, 100), 50_000)
           : 3_000;
 
-        const categoryRaw = (url.searchParams.get('category') ?? '').trim().toLowerCase();
-        const category = CATEGORY_TAGS.has(categoryRaw) ? categoryRaw : '';
+        const rawCategories = (url.searchParams.get('categories') ?? '')
+          .split(',')
+          .map((item) => item.trim().toLowerCase())
+          .filter((item) => CATEGORY_TAGS.has(item));
+        const single = (url.searchParams.get('category') ?? '').trim().toLowerCase();
+        if (single && CATEGORY_TAGS.has(single)) rawCategories.push(single);
+        const categories = [...new Set(rawCategories)].sort();
 
-        const query = category
+        const query = categories.length > 0
           ? `[out:json][timeout:25];
-nwr["amenity"="${category}"](around:${radius},${lat},${lon});
+nwr["amenity"~"^(${categories.join('|')})$"](around:${radius},${lat},${lon});
 out center;`
           : `[out:json][timeout:25];
 (
@@ -110,9 +115,9 @@ out center;`
 out center;`;
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 8_000);
+        const timer = setTimeout(() => controller.abort(), 14_000);
 
-        console.log('Fetching Overpass with 8s timeout...');
+        console.log('Fetching Overpass with 14s timeout...');
         void fetch('https://overpass.kumi.systems/api/interpreter', {
           method: 'POST',
           headers: {

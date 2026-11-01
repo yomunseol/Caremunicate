@@ -24,9 +24,9 @@ export const config = { runtime: 'nodejs' };
 
 const ENDPOINT = 'https://overpass.kumi.systems/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const FETCH_TIMEOUT_MS = 8_000;
-// Under Cloudflare/Vercel's ~10s hard limit.
-const GLOBAL_TIMEOUT_MS = 9_000;
+const FETCH_TIMEOUT_MS = 14_000;
+// Above the fetch budget; the handler catch still answers with clean JSON.
+const GLOBAL_TIMEOUT_MS = 15_000;
 /** Smaller radius = much faster Overpass response. */
 const DEFAULT_RADIUS_M = 3_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
@@ -130,14 +130,20 @@ async function runOverpass(req: ProxyRequest): Promise<Outcome> {
     ? Math.min(Math.max(radiusRaw, 100), 50_000)
     : DEFAULT_RADIUS_M;
 
-  const categoryRaw = asString(req.query?.category).trim().toLowerCase();
-  const category = CATEGORY_TAGS.has(categoryRaw) ? categoryRaw : '';
+  const rawCategories = asString(req.query?.categories)
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => CATEGORY_TAGS.has(item));
+  const single = asString(req.query?.category).trim().toLowerCase();
+  if (single && CATEGORY_TAGS.has(single)) rawCategories.push(single);
+  const categories = [...new Set(rawCategories)].sort();
 
-  // A category click maps to ONE exact amenity tag. With no category, fall back
-  // to the strict medical union for older callers.
-  const query = category
+  // Selected categories map to ONE regex amenity query
+  // (e.g. amenity ~ "^(hospital|pharmacy)$"). With none, fall back to the
+  // strict medical union for older callers.
+  const query = categories.length > 0
     ? `[out:json][timeout:25];
-nwr["amenity"="${category}"](around:${radius},${lat},${lon});
+nwr["amenity"~"^(${categories.join('|')})$"](around:${radius},${lat},${lon});
 out center;`
     : `[out:json][timeout:25];
 (
@@ -146,7 +152,7 @@ out center;`
 );
 out center;`;
 
-  const cacheKey = `${category || 'all'}:${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
+  const cacheKey = `${categories.join('|') || 'all'}:${radius}:${lat.toFixed(2)},${lon.toFixed(2)}`;
 
   // ---- Step 1: fresh cache ----
   if (supabase) {
@@ -168,7 +174,7 @@ out center;`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  console.log('Fetching Overpass with 8s timeout...');
+  console.log('Fetching Overpass with 14s timeout...');
   let live: { elements: unknown[] } | null = null;
   try {
     const upstream = await fetch(ENDPOINT, {
