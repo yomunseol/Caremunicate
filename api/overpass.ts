@@ -5,17 +5,18 @@
 // bounded radial query itself. A missing lat/lon is an immediate 400.
 //
 // RESILIENT: cache first. If the live API fails and we have any older cached
-// row, return it with source 'stale_cache' instead of an error. A 504 is only
+// row, return it with source 'stale_cache' instead of an error. A 408 is only
 // returned when the cache is empty too.
 //
-// The WHOLE route runs under a 9s global deadline (Promise.race) so a hanging
+// The WHOLE route runs under a 16s global deadline (Promise.race) so a hanging
 // Supabase cache or slow upstream can never let Cloudflare/Vercel kill the
 // process and return an HTML 504 page.
 //
 //   GET /api/overpass?lat=<n>&lon=<n>&radius=<m>
 //   -> 200 { data: { elements }, source: 'cache' | 'live' | 'stale_cache', warning? }
 //   -> 400 { error: 'lat and lon are required for Overpass' }
-//   -> 504 { error: 'Search timed out. Please try again.' }
+//   -> 408 { error: 'Map data is temporarily unavailable. Please try again.' }
+//   -> 500 { error: 'Failed to fetch map data' }
 // ---------------------------------------------------------------------------
 
 import { createClient } from '@supabase/supabase-js';
@@ -24,9 +25,9 @@ export const config = { runtime: 'nodejs' };
 
 const ENDPOINT = 'https://overpass.kumi.systems/api/interpreter';
 const USER_AGENT = 'Caremunicate/1.0 (healthcare platform)';
-const FETCH_TIMEOUT_MS = 14_000;
+const FETCH_TIMEOUT_MS = 15_000;
 // Above the fetch budget; the handler catch still answers with clean JSON.
-const GLOBAL_TIMEOUT_MS = 15_000;
+const GLOBAL_TIMEOUT_MS = 16_000;
 /** Smaller radius = much faster Overpass response. */
 const DEFAULT_RADIUS_M = 3_000;
 const CACHE_CONTROL = 'public, s-maxage=600';
@@ -34,7 +35,8 @@ const NO_STORE = 'no-store';
 const AMENITY_REGEX = '^(hospital|clinic|doctors|pharmacy)$';
 const HEALTHCARE_REGEX = '^(hospital|clinic|doctor|pharmacy)$';
 const CATEGORY_TAGS = new Set(['hospital', 'clinic', 'pharmacy', 'doctors']);
-const TIMEOUT_ERROR = 'Search timed out. Please try again.';
+const MAP_UNAVAILABLE = 'Map data is temporarily unavailable. Please try again.';
+const UPSTREAM_FAILED = 'Failed to fetch map data';
 const STALE_WARNING = 'Live search unavailable';
 
 // Server-side Supabase for the shared cache. Either env name works; a missing
@@ -173,8 +175,10 @@ out center;`;
   // ---- Step 2: live fetch ----
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  let timedOut = false;
+  let liveFailed = false;
 
-  console.log('Fetching Overpass with 14s timeout...');
+  console.log('Fetching Overpass with 15s timeout...');
   let live: { elements: unknown[] } | null = null;
   try {
     const upstream = await fetch(ENDPOINT, {
@@ -190,14 +194,24 @@ out center;`;
     });
 
     if (!upstream.ok) {
+      liveFailed = true;
       console.error('Overpass API error:', upstream.status);
     } else {
       const payload = (await upstream.json()) as { elements?: unknown };
       if (hasElements(payload)) live = { elements: dedupeElements(payload.elements) };
-      else console.error('Overpass API error: invalid payload');
+      else {
+        liveFailed = true;
+        console.error('Overpass API error: invalid payload');
+      }
     }
   } catch (error) {
-    console.error('Overpass API error:', error);
+    if ((error as Error)?.name === 'AbortError') {
+      timedOut = true;
+      console.warn('Overpass API request timed out');
+    } else {
+      liveFailed = true;
+      console.error('Overpass API error:', error);
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -222,12 +236,15 @@ out center;`;
     );
   }
 
-  // ---- Step 4: stale cache, then 504 ----
+  // ---- Step 4: stale cache, then a clean 408/500 ----
   const stale = await readStaleCache(cacheKey);
   if (stale) {
     return outcome(200, { data: stale, source: 'stale_cache', warning: STALE_WARNING });
   }
-  return outcome(504, { error: TIMEOUT_ERROR });
+  if (timedOut) {
+    return outcome(408, { error: MAP_UNAVAILABLE });
+  }
+  return outcome(500, { error: liveFailed ? UPSTREAM_FAILED : MAP_UNAVAILABLE });
 }
 
 /** Race `task` against a hard deadline, clearing the timer when either settles. */
@@ -250,9 +267,14 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     if (result.cacheControl) res.setHeader('Cache-Control', result.cacheControl);
     res.status(result.status).json(result.body);
   } catch (error) {
-    // Includes the global 9s deadline: always a clean JSON 504, never HTML.
+    // Includes the global 16s deadline: always clean JSON, never an HTML 504.
     console.error('Overpass Route Error:', error);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.status(504).json({ error: TIMEOUT_ERROR });
+    const message = error instanceof Error ? error.message : '';
+    if (message === 'Global Timeout') {
+      res.status(408).json({ error: MAP_UNAVAILABLE });
+      return;
+    }
+    res.status(500).json({ error: UPSTREAM_FAILED });
   }
 }

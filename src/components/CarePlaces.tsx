@@ -308,9 +308,10 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [favoritesLoading, setFavoritesLoading] = useState(true);
   const [favoritesError, setFavoritesError] = useState('');
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
-  // True when the route fell back to stale cache (or returned 504): show the
-  // calm yellow notice instead of a red error; existing favourites stay above.
+  // True when the route fell back to stale cache: show the stale-data notice.
   const [fallbackNotice, setFallbackNotice] = useState(false);
+  // True on 408/500 (or legacy 504): map data is unavailable; offer Retry.
+  const [mapUnavailable, setMapUnavailable] = useState(false);
   // Cascade feedback: true while trying a wider radius, and true once a wider
   // radius produced the current results.
   const [expanding, setExpanding] = useState(false);
@@ -385,6 +386,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
       setFallbackNotice(false);
+      setMapUnavailable(false);
       setExpanding(false);
       setWide(false);
 
@@ -409,11 +411,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           return;
         }
 
-        // A nearby 504 with no cached data at all: show the calm yellow notice
-        // (the favourites above remain usable), not a red error.
-        if (code === '504') {
-          console.warn('SEARCH_FALLBACK:', caught);
-          setFallbackNotice(true);
+        // A 408/500 (or legacy 504) with no cached data: calm amber notice,
+        // not a red raw error. Favourites above remain usable; Retry is offered.
+        if (code === '408' || code === '500' || code === '504') {
+          console.warn('SEARCH_UNAVAILABLE:', caught);
+          setMapUnavailable(true);
           setResults([]);
           return;
         }
@@ -817,7 +819,14 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
           {center ? t('places.usingLocation') : t('places.needLocation')}
         </p>
 
-        {fallbackNotice ? (
+        {mapUnavailable ? (
+          <p role="status" style={styles.fallbackBanner}>
+            {t('map_data_unavailable')}{' '}
+            <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+              {t('common.retry')}
+            </button>
+          </p>
+        ) : fallbackNotice ? (
           <p role="status" style={styles.fallbackBanner}>
             {t('places.liveSearchUnavailable')}
           </p>

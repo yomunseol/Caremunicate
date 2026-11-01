@@ -66,9 +66,9 @@ out center;`
 out center;`;
 
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 14_000);
+        const timer = setTimeout(() => controller.abort(), 15_000);
 
-        console.log('Fetching Overpass with 14s timeout...');
+        console.log('Fetching Overpass with 15s timeout...');
         void fetch('https://overpass.kumi.systems/api/interpreter', {
           method: 'POST',
           headers: {
@@ -82,15 +82,12 @@ out center;`;
           .then(async (upstream) => {
             if (!upstream.ok) {
               console.error('Overpass API error:', upstream.status);
-              send(res, upstream.status === 429 ? 429 : 500, {
-                error: 'overpass failed',
-                status: upstream.status,
-              });
+              send(res, 500, { error: 'Failed to fetch map data' });
               return;
             }
             const payload = (await upstream.json()) as { elements?: unknown };
             if (!Array.isArray(payload?.elements)) {
-              send(res, 500, { error: 'invalid payload' });
+              send(res, 500, { error: 'Failed to fetch map data' });
               return;
             }
             const seen = new Set<string>();
@@ -107,12 +104,13 @@ out center;`;
           })
           .catch((error: unknown) => {
             const name = error instanceof Error ? error.name : 'err';
-            console.error('Overpass API error:', error);
             if (name === 'AbortError' || name === 'TimeoutError') {
-              send(res, 504, { error: 'Search timed out. Please try again.' });
+              console.warn('Overpass API request timed out');
+              send(res, 408, { error: 'Map data is temporarily unavailable. Please try again.' });
               return;
             }
-            send(res, 500, { error: 'route crash', detail: String(error) });
+            console.error('Overpass API error:', error);
+            send(res, 500, { error: 'Failed to fetch map data' });
           })
           .finally(() => clearTimeout(timer));
       });
