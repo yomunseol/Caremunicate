@@ -36,7 +36,7 @@ const FOCUS_ZOOM = 14;
 const PICK_DEFAULT_ZOOM = 12;
 /** Nearby search fallback when geolocation is unavailable or denied. */
 const FALLBACK_AT: LatLon = { lat: DEFAULT_CENTER[0], lon: DEFAULT_CENTER[1] };
-const RADIUS_OPTIONS = [1_000, 5_000, 10_000, 25_000, 50_000, 100_000] as const;
+const RADIUS_OPTIONS = [1_000, 5_000, 10_000, 25_000, 50_000] as const;
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
 const pinSvg = (fill: string): string => `

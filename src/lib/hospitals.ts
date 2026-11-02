@@ -68,7 +68,7 @@ export async function addHospital(input: {
 
 /**
  * Ask /api/overpass for up to 30 nearby hospitals/clinics/pharmacies.
- * The radius is in metres (route clamps 1km–100km); the route uses
+ * The radius is in metres (route clamps 1km–50km); the route uses
  * `out center qt 30` and caps at 15s. The modal renders results ten at a time.
  */
 export async function searchNearbyHospitals(

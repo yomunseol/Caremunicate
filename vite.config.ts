@@ -18,7 +18,7 @@ const UPSTREAM_FAILED = 'Failed to fetch map data';
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const OVERPASS_DEFAULT_RADIUS_M = 10_000;
 const OVERPASS_MIN_RADIUS_M = 1_000;
-const OVERPASS_MAX_RADIUS_M = 100_000;
+const OVERPASS_MAX_RADIUS_M = 50_000;
 const OVERPASS_TIMEOUT_MS = 15_000;
 const OVERPASS_AMENITY_REGEX = 'hospital|clinic|pharmacy';
 

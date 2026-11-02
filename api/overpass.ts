@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // /api/overpass — fast "nearby hospitals" with `out center qt 30`.
 //
-// The radius is dynamic (1km–100km, clamped) and the server stops after 30
+// The radius is dynamic (1km–50km, clamped) and the server stops after 30
 // results via qt, so the payload stays small and the request returns quickly.
 // The client renders those 30 ten at a time ("Load More").
 //
@@ -17,7 +17,7 @@ export const config = { runtime: 'nodejs' };
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 const DEFAULT_RADIUS_M = 10_000;
 const MIN_RADIUS_M = 1_000;
-const MAX_RADIUS_M = 100_000;
+const MAX_RADIUS_M = 50_000;
 const TIMEOUT_MS = 15_000;
 const AMENITY_REGEX = 'hospital|clinic|pharmacy';
 
