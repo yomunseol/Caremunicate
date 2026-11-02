@@ -542,7 +542,7 @@ export default function HospitalMap() {
               {t('common.cancel')}
             </button>
             <button type="button" className="primary-button" onClick={handleSave}>
-              {t('hospital.save')}
+              {t('hospitals.save')}
             </button>
           </div>
         </div>
@@ -554,7 +554,7 @@ export default function HospitalMap() {
     <section className="section" style={styles.page}>
       <div>
         <p style={styles.eyebrow}>{t('hospital.eyebrow')}</p>
-        <h2 style={styles.title}>{t('hospital.title')}</h2>
+        <h2 style={styles.title}>{t('hospitals.title')}</h2>
         <p style={styles.description}>{t('hospital.description')}</p>
       </div>
 
@@ -576,7 +576,7 @@ export default function HospitalMap() {
         )}
         {provider ? (
           <button type="button" className="primary-button" onClick={() => setFormOpen(true)}>
-            <Plus size={15} aria-hidden="true" /> {t('hospital.addButton')}
+            <Plus size={15} aria-hidden="true" /> {t('hospitals.add_button')}
           </button>
         ) : null}
       </div>
