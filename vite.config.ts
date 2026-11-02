@@ -50,12 +50,12 @@ export default defineConfig(() => {
         );
 
         const query = `
-[out:json][timeout:15];
+[out:json][timeout:10];
 (
   node["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${radius},${lat},${lon});
   way["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${radius},${lat},${lon});
 );
-out center qt 30;`;
+out center qt 8;`;
 
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
@@ -84,7 +84,7 @@ out center qt 30;`;
               }>;
             };
             const results: Array<{ id: number | null; name: string; lat: number; lon: number; type: string }> = [];
-            for (const element of (data.elements ?? []).slice(0, 30)) {
+            for (const element of (data.elements ?? []).slice(0, 8)) {
               const placeLat = Number(element.center?.lat ?? element.lat);
               const placeLon = Number(element.center?.lon ?? element.lon);
               if (!Number.isFinite(placeLat) || !Number.isFinite(placeLon)) continue;

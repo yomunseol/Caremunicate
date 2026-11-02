@@ -1,12 +1,11 @@
 // ---------------------------------------------------------------------------
-// /api/overpass — fast "nearby hospitals" with `out center qt 30`.
+// /api/overpass — fast "nearby hospitals" with `out center qt 8`.
 //
-// The radius is dynamic (1km–50km, clamped) and the server stops after 30
-// results via qt, so the payload stays small and the request returns quickly.
-// The client renders those 30 ten at a time ("Load More").
+// The radius is dynamic (1km–50km, clamped) and the server stops after 8
+// results via qt, so the payload stays tiny and the request returns quickly.
 //
 //   GET /api/overpass?lat=<n>&lon=<n>&radius=<metres>
-//   -> 200 { results: [{ id, name, lat, lon, type }] } (max 30)
+//   -> 200 { results: [{ id, name, lat, lon, type }] } (max 8)
 //   -> 400 { error: 'Missing coordinates' }
 //   -> 408 { error: 'Search timed out' }
 //   -> 500 { error: 'Failed to fetch map data' }
@@ -76,12 +75,12 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
   const radius = Math.max(MIN_RADIUS_M, Math.min(MAX_RADIUS_M, rawRadius));
 
   const query = `
-[out:json][timeout:15];
+[out:json][timeout:10];
 (
   node["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
   way["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
 );
-out center qt 30;`;
+out center qt 8;`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -106,7 +105,7 @@ out center qt 30;`;
     const data = (await response.json()) as { elements?: OverpassElement[] };
     const results: NearbyResult[] = [];
 
-    for (const element of (data.elements ?? []).slice(0, 30)) {
+    for (const element of (data.elements ?? []).slice(0, 8)) {
       const placeLat = Number(element.center?.lat ?? element.lat);
       const placeLon = Number(element.center?.lon ?? element.lon);
       if (!Number.isFinite(placeLat) || !Number.isFinite(placeLon)) continue;

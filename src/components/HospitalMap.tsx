@@ -140,7 +140,7 @@ export default function HospitalMap() {
   const [draftError, setDraftError] = useState('');
 
   const [results, setResults] = useState<NearbyPlace[]>([]);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [visibleCount, setVisibleCount] = useState(8);
   const [selectedRadius, setSelectedRadius] = useState(10_000);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -225,7 +225,7 @@ export default function HospitalMap() {
       setSearchError('');
       setSearched(false);
       setResults([]);
-      setVisibleCount(10);
+      setVisibleCount(8);
 
       try {
         const places = await searchNearbyHospitals(at, radius, controller.signal);
@@ -237,6 +237,13 @@ export default function HospitalMap() {
         if ((error as Error)?.name === 'AbortError') {
           if (timedOut) setSearchError(`${t('places.searchFailed')} (timeout)`);
         } else {
+          const status = (error as Error & { status?: number }).status;
+          if (status === 408) {
+            console.error('HOSPITAL_ERROR:', error);
+            setSearchError(t('hospitals.area_too_dense'));
+            setResults([]);
+            return;
+          }
           console.error('HOSPITAL_ERROR:', error);
           setSearchError(`${t('places.searchFailed')} (${describeError(error)})`);
           setResults([]);
@@ -251,7 +258,7 @@ export default function HospitalMap() {
 
   const handleRadiusChange = (radius: number) => {
     setSelectedRadius(radius);
-    setVisibleCount(10);
+    setVisibleCount(8);
     if (center) {
       void runNearby(center, radius);
       return;
@@ -343,7 +350,7 @@ export default function HospitalMap() {
     setSearchError('');
     setNameError('');
     setDraftError('');
-    setVisibleCount(10);
+    setVisibleCount(8);
     abortRef.current?.abort();
   };
 
@@ -422,10 +429,10 @@ export default function HospitalMap() {
                 {t('hospitals.use_my_location')}
               </button>
             </div>
-            <div style={styles.radiusRow}>
-              <label htmlFor="hospital-radius" style={styles.label}>{t('hospitals.search_radius')}</label>
+            <div className="radius-selector" style={styles.radiusRow}>
+              <label htmlFor="radius" style={styles.label}>{t('hospitals.radius_selector')}</label>
               <select
-                id="hospital-radius"
+                id="radius"
                 className="input"
                 value={selectedRadius}
                 onChange={(event) => handleRadiusChange(Number(event.target.value))}
@@ -481,7 +488,7 @@ export default function HospitalMap() {
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => setVisibleCount((prev) => prev + 10)}
+                    onClick={() => setVisibleCount((prev) => prev + 8)}
                     style={styles.loadMore}
                   >
                     {t('hospitals.load_more')}

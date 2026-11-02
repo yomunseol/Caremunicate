@@ -167,7 +167,7 @@ const fetchPlacesNearby = async (
   // Explicitly treat a timed-out/upstream-failed map as a graceful state; the
   // caller shows the amber notice and keeps the rest of the page interactive.
   if (response.status === 408 || response.status === 500) {
-    throw placesError('map_unavailable', `places responded ${response.status}`);
+    throw placesError(String(response.status), `overpass responded ${response.status}`);
   }
 
   if (!response.ok) {
@@ -313,6 +313,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   const [savingPlaceId, setSavingPlaceId] = useState<string | null>(null);
   // True on 408/500 (or legacy 504): map data is unavailable; offer Retry.
   const [isMapUnavailable, setIsMapUnavailable] = useState(false);
+  const [areaTooDense, setAreaTooDense] = useState(false);
   // Cascade feedback: true while trying a wider radius, and true once a wider
   // radius produced the current results.
   const [expanding, setExpanding] = useState(false);
@@ -387,6 +388,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       setSearched(false);
       setError('');
       setIsMapUnavailable(false);
+      setAreaTooDense(false);
       setExpanding(false);
       setWide(false);
 
@@ -413,13 +415,21 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         // A 408/500 (or legacy 504) with no cached data: calm amber notice,
         // not a red raw error. Favourites above remain usable; Retry is offered.
+        if (code === '408') {
+          console.warn('Overpass search timed out; showing density notice.');
+          setAreaTooDense(true);
+          setIsMapUnavailable(true);
+          setResults([]);
+          return;
+        }
+
         if (
           code === 'map_unavailable' ||
-          code === '408' ||
           code === '500' ||
           code === '504'
         ) {
           console.warn('Map data temporarily unavailable, using graceful fallback.');
+          setAreaTooDense(false);
           setIsMapUnavailable(true);
           setResults([]);
           return;
@@ -822,7 +832,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 
         {isMapUnavailable ? (
           <p role="status" style={styles.fallbackBanner}>
-            {t('map_data_unavailable')}{' '}
+            {t(areaTooDense ? 'hospitals.area_too_dense' : 'map_data_unavailable')}{' '}
             <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
               {t('common.retry')}
             </button>
