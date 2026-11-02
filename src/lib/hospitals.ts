@@ -68,16 +68,18 @@ export async function addHospital(input: {
 
 /**
  * Ask /api/overpass for up to 30 nearby hospitals/clinics/pharmacies.
- * The route uses `out center qt 30` on a 15km radius and caps at 12s; the
- * modal renders these ten at a time via "Load More".
+ * The radius is in metres (route clamps 1km–100km); the route uses
+ * `out center qt 30` and caps at 15s. The modal renders results ten at a time.
  */
 export async function searchNearbyHospitals(
   at: LatLon,
+  radius = 10_000,
   signal?: AbortSignal,
 ): Promise<NearbyPlace[]> {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
+    radius: String(radius),
   });
 
   const response = await fetch(`/api/overpass?${params.toString()}`, {

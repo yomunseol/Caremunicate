@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
 // /api/overpass — fast "nearby hospitals" with `out center qt 30`.
 //
-// Large radius (15km) but the server stops after 30 results via qt, so the
-// payload stays small and the request returns quickly. The client renders
-// those 30 ten at a time ("Load More").
+// The radius is dynamic (1km–100km, clamped) and the server stops after 30
+// results via qt, so the payload stays small and the request returns quickly.
+// The client renders those 30 ten at a time ("Load More").
 //
-//   GET /api/overpass?lat=<n>&lon=<n>
+//   GET /api/overpass?lat=<n>&lon=<n>&radius=<metres>
 //   -> 200 { results: [{ id, name, lat, lon, type }] } (max 30)
 //   -> 400 { error: 'Missing coordinates' }
 //   -> 408 { error: 'Search timed out' }
@@ -15,8 +15,10 @@
 export const config = { runtime: 'nodejs' };
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
-const RADIUS_M = 15_000;
-const TIMEOUT_MS = 12_000;
+const DEFAULT_RADIUS_M = 10_000;
+const MIN_RADIUS_M = 1_000;
+const MAX_RADIUS_M = 100_000;
+const TIMEOUT_MS = 15_000;
 const AMENITY_REGEX = 'hospital|clinic|pharmacy';
 
 type ProxyRequest = {
@@ -70,11 +72,14 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     return;
   }
 
+  const rawRadius = Number(asString(req.query?.radius)) || DEFAULT_RADIUS_M;
+  const radius = Math.max(MIN_RADIUS_M, Math.min(MAX_RADIUS_M, rawRadius));
+
   const query = `
-[out:json][timeout:10];
+[out:json][timeout:15];
 (
-  node["amenity"~"${AMENITY_REGEX}"](around:${RADIUS_M},${lat},${lon});
-  way["amenity"~"${AMENITY_REGEX}"](around:${RADIUS_M},${lat},${lon});
+  node["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
+  way["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
 );
 out center qt 30;`;
 

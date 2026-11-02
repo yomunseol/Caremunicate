@@ -36,6 +36,7 @@ const FOCUS_ZOOM = 14;
 const PICK_DEFAULT_ZOOM = 12;
 /** Nearby search fallback when geolocation is unavailable or denied. */
 const FALLBACK_AT: LatLon = { lat: DEFAULT_CENTER[0], lon: DEFAULT_CENTER[1] };
+const RADIUS_OPTIONS = [1_000, 5_000, 10_000, 25_000, 50_000, 100_000] as const;
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
 const pinSvg = (fill: string): string => `
@@ -140,6 +141,7 @@ export default function HospitalMap() {
 
   const [results, setResults] = useState<NearbyPlace[]>([]);
   const [visibleCount, setVisibleCount] = useState(10);
+  const [selectedRadius, setSelectedRadius] = useState(10_000);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -207,7 +209,7 @@ export default function HospitalMap() {
   const openedSearchRef = useRef(false);
 
   const runNearby = useCallback(
-    async (at: LatLon) => {
+    async (at: LatLon, radius = selectedRadius) => {
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
@@ -226,7 +228,7 @@ export default function HospitalMap() {
       setVisibleCount(10);
 
       try {
-        const places = await searchNearbyHospitals(at, controller.signal);
+        const places = await searchNearbyHospitals(at, radius, controller.signal);
         if (abortRef.current !== controller) return;
         setResults(places);
         setSearched(true);
@@ -244,8 +246,25 @@ export default function HospitalMap() {
         if (abortRef.current === controller) setSearching(false);
       }
     },
-    [t],
+    [t, selectedRadius],
   );
+
+  const handleRadiusChange = (radius: number) => {
+    setSelectedRadius(radius);
+    setVisibleCount(10);
+    if (center) {
+      void runNearby(center, radius);
+      return;
+    }
+    requestLocation(
+      (at) => {
+        void runNearby(at, radius);
+      },
+      () => {
+        void runNearby(FALLBACK_AT, radius);
+      },
+    );
+  };
 
   const searchNearby = () => {
     if (center) {
@@ -402,6 +421,23 @@ export default function HospitalMap() {
                 <LocateFixed size={15} aria-hidden="true" />
                 {t('hospitals.use_my_location')}
               </button>
+            </div>
+            <div style={styles.radiusRow}>
+              <label htmlFor="hospital-radius" style={styles.label}>{t('hospitals.search_radius')}</label>
+              <select
+                id="hospital-radius"
+                className="input"
+                value={selectedRadius}
+                onChange={(event) => handleRadiusChange(Number(event.target.value))}
+                disabled={searching}
+                style={styles.radiusSelect}
+              >
+                {RADIUS_OPTIONS.map((radius) => (
+                  <option key={radius} value={radius}>
+                    {t(`hospitals.radius_${radius / 1000}km`)}
+                  </option>
+                ))}
+              </select>
             </div>
             {geoError ? <p role="alert" style={styles.error}>{geoError}</p> : null}
             {searchError ? (
@@ -692,6 +728,8 @@ const styles: Record<string, CSSProperties> = {
   resultCopy: { display: 'grid', gap: '0.1rem', minWidth: 0, textAlign: 'start' },
   resultAddress: { color: '#557b76', fontSize: '0.74rem', lineHeight: 1.3, overflowWrap: 'anywhere' },
   loadMore: { justifySelf: 'center', marginBlockStart: '0.35rem', fontSize: '0.8rem' },
+  radiusRow: { display: 'grid', gap: '0.3rem', maxWidth: '16rem' },
+  radiusSelect: { maxWidth: '16rem' },
   pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },
