@@ -20,9 +20,9 @@ import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
 
 // ---------------------------------------------------------------------------
-// Care Places — OpenStreetMap tiles with Mapbox Searchbox nearby POIs.
+// Care Places — OpenStreetMap tiles with Overpass nearby POIs.
 //
-//   Search : category pills → /api/places (Mapbox Searchbox medical).
+//   Search : category pills → /api/overpass (categories filter client-side).
 //   Tiles  : OpenStreetMap raster tiles — free forever, no key.
 //   Routing: Google Maps directions links — free, keyless, opens in a new tab.
 //
@@ -30,9 +30,9 @@ import { useLang } from '../i18n';
 // a category without one asks for location first.
 // ---------------------------------------------------------------------------
 
-/** Near-me search radius; the backend accepts up to 5km. */
+/** Near-me search radius; the Overpass route accepts 1–50km. */
 const CASCADE_RADII = [2_000] as const;
-/** Client guard, above the route's 8s Mapbox budget so its 408 wins the race. */
+/** Client guard, above the route's 15s Overpass budget so its 408 wins the race. */
 const PLACES_TIMEOUT_MS = 16_000;
 /** Geolocation must resolve or fail within 5s, or the UI reports a timeout. */
 const GEOLOCATION_TIMEOUT_MS = 5_000;
@@ -55,10 +55,12 @@ L.Icon.Default.mergeOptions({
 type OsmElementType = 'node' | 'way' | 'relation';
 
 type PlaceResult = {
-  id?: string;
+  id?: string | number;
   name?: string;
   lat?: number;
   lon?: number;
+  type?: string;
+  /** Legacy field still present in cached/favourite rows. */
   category?: string;
   address?: string;
 };
@@ -145,21 +147,19 @@ const readFailure = async (
   }
 };
 
-/** Category pills → the Mapbox-backed places route. */
+/** Category pills → the Overpass route; category filtering is client-side. */
 const fetchPlacesNearby = async (
   at: LatLon,
   radius: number,
-  categories: Category[],
   signal: AbortSignal,
 ): Promise<PlacesResponse> => {
   const params = new URLSearchParams({
     lat: String(at.lat),
     lon: String(at.lon),
     radius: String(radius),
-    categories: categories.join(','),
   });
 
-  const response = await fetch(`/api/places?${params.toString()}`, {
+  const response = await fetch(`/api/overpass?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     signal,
   });
@@ -220,11 +220,15 @@ const resultToPlace = (result: PlaceResult): PlaceView | null => {
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
   const name = (result.name ?? '').trim();
+  const placeId =
+    result.id != null && String(result.id).trim()
+      ? String(result.id)
+      : `${lat.toFixed(5)},${lon.toFixed(5)}`;
   return {
-    placeId: result.id || `${lat.toFixed(5)},${lon.toFixed(5)}`,
+    placeId,
     osmType: 'node',
     name,
-    amenity: result.category ?? '',
+    amenity: result.type ?? result.category ?? '',
     address: result.address ?? '',
     lat,
     lon,
@@ -356,8 +360,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   }, [loadFavorites]);
 
   // ---- Search -------------------------------------------------------------
-  // Multi-select category pills → /api/places?lat&lon&radius&categories.
-  // The filter input is client-side only; it never touches the network.
+  // Multi-select category pills → /api/overpass?lat&lon&radius.
+  // Category and text filters are client-side; neither touches the network.
   const executeSearch = useCallback(
     async (
       at: LatLon,
@@ -442,7 +446,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
     [t],
   );
 
-  /** Selected categories → one Mapbox nearby query. */
+  /** Selected categories → one Overpass nearby query; filtering is client-side. */
   const runCategories = useCallback(
     async (categories: Category[], at: LatLon) => {
       const effective = categories.length > 0 ? categories : ALL_CATEGORIES;
@@ -461,7 +465,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             return local;
           }
 
-          const payload = await fetchPlacesNearby(at, radius, effective, signal);
+          const payload = await fetchPlacesNearby(at, radius, signal);
           const places = (payload.results ?? [])
             .map(resultToPlace)
             .filter((place): place is PlaceView => place !== null);
@@ -554,14 +558,17 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   // Both the results list and the Leaflet markers read filteredResults.
   const filteredResults = useMemo(() => {
     const lowerQuery = searchQuery.trim().toLowerCase();
-    if (!lowerQuery) return results;
     return results.filter((place) => {
+      if (selectedCategories.length > 0 && !selectedCategories.includes(place.amenity as Category)) {
+        return false;
+      }
+      if (!lowerQuery) return true;
       const names = [place.name, place.tags?.name, place.tags?.['name:en']];
       return names.some(
         (value) => typeof value === 'string' && value.toLowerCase().includes(lowerQuery),
       );
     });
-  }, [results, searchQuery]);
+  }, [results, searchQuery, selectedCategories]);
 
   const focusLatLng = useMemo<{ lat: number | null; lon: number | null; focusKey: string | null }>(() => {
     const selected = filteredResults.find((place) => place.placeId === selectedId);
@@ -672,7 +679,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
             <strong style={styles.cardName}>{placeName(place)}</strong>
             {renderStar(place)}
           </span>
-          {place.address ? <span style={styles.cardAddress}>{place.address}</span> : null}
+          {place.address ? (
+            <span style={styles.cardAddress}>{place.address}</span>
+          ) : place.amenity ? (
+            <span style={styles.cardAddress}>{place.amenity}</span>
+          ) : null}
           <span style={styles.cardFooter}>
             <a
               href={directionsUrl(place)}
@@ -759,7 +770,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         )}
       </div>
 
-      {/* SEARCH — category pills drive /api/places (Mapbox Searchbox). */}
+      {/* SEARCH — category pills filter /api/overpass results client-side. */}
       <div style={styles.section}>
         <div style={styles.categoryRow} role="group" aria-label={t('places.selectCategories')}>
           {CATEGORIES.map((item) => {
@@ -899,6 +910,11 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
                     <>
                       <br />
                       {place.address}
+                    </>
+                  ) : place.amenity ? (
+                    <>
+                      <br />
+                      {place.amenity}
                     </>
                   ) : null}
                   <br />

@@ -4,13 +4,13 @@ import { supabase } from './supabase';
 // Hospitals: the community map backed by public.hospitals, plus the nearby
 // Overpass search that feeds the Add Hospital modal.
 //
-// The modal uses /api/overpass (qt 30, 15km) for nearby facilities. Care
-// Places' category discovery still goes through /api/places (Mapbox).
+// The modal uses /api/overpass (qt 30, 50km) for nearby facilities. Care Places
+// uses the same /api/overpass route; it is the only map API.
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-export const SEARCH_TIMEOUT_MS = 13_000;
+export const SEARCH_TIMEOUT_MS = 16_000;
 
 export type Hospital = {
   id: string;
