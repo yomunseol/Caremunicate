@@ -5,20 +5,16 @@ import { MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 're
 import { LocateFixed, MapPin, Plus, Search, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useRole } from '../context/RoleContext';
-import { useToast } from '../context/ToastContext';
 import { isProvider } from '../lib/roles';
 import { describeError } from '../lib/errors';
 import { useLang } from '../i18n';
-import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { geocodeInBackground } from '../lib/geocode';
 import {
   SEARCH_TIMEOUT_MS,
-  addHospital,
   listHospitals,
-  searchPlacesByQuery,
+  searchNearbyHospitals,
   type Hospital,
   type LatLon,
-  type SearchPlace,
+  type NearbyPlace,
 } from '../lib/hospitals';
 
 // ---------------------------------------------------------------------------
@@ -38,6 +34,8 @@ const DEFAULT_ZOOM = 10;
 const FOCUS_ZOOM = 14;
 /** The modal's pick map opens on a city-level view, not the country view. */
 const PICK_DEFAULT_ZOOM = 12;
+/** Nearby search fallback when geolocation is unavailable or denied. */
+const FALLBACK_AT: LatLon = { lat: DEFAULT_CENTER[0], lon: DEFAULT_CENTER[1] };
 
 /** The pin: a mint teardrop with a white disc and a mint medical cross. */
 const pinSvg = (fill: string): string => `
@@ -124,8 +122,7 @@ function PickOnMap({ onPick }: { onPick: (lat: number, lon: number) => void }) {
 
 export default function HospitalMap() {
   const { user } = useAuth();
-  const { notify } = useToast();
-  const { t, tString } = useLang();
+  const { t } = useLang();
 
   // Adding a hospital is a provider action (doctor / department / hospital).
   const { provider } = useRole();
@@ -138,13 +135,11 @@ export default function HospitalMap() {
   const [name, setName] = useState('');
   const [draft, setDraft] = useState<LatLon | null>(null);
   const [osmId, setOsmId] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState('');
   const [draftError, setDraftError] = useState('');
 
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchPlace[]>([]);
-  const [searchAddress, setSearchAddress] = useState('');
+  const [results, setResults] = useState<NearbyPlace[]>([]);
+  const [visibleCount, setVisibleCount] = useState(10);
   const [searching, setSearching] = useState(false);
   const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -178,9 +173,13 @@ export default function HospitalMap() {
     void load();
   }, [load]);
 
-  const requestLocation = (onSuccess?: (at: LatLon) => void) => {
+  const requestLocation = (
+    onSuccess?: (at: LatLon) => void,
+    onFailure?: () => void,
+  ) => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setGeoError(t('places.locationUnavailable'));
+      onFailure?.();
       return;
     }
 
@@ -198,21 +197,21 @@ export default function HospitalMap() {
         console.log('HOSPITAL_ERROR:', error);
         setGeoError(error.message || t('places.locationDenied'));
         setLocating(false);
+        onFailure?.();
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 },
     );
   };
 
   const abortRef = useRef<AbortController | null>(null);
-  const lastSearchRef = useRef<string | null>(null);
+  const openedSearchRef = useRef(false);
 
-  const runSearch = useCallback(
-    async (needle: string) => {
+  const runNearby = useCallback(
+    async (at: LatLon) => {
       // Supersede any in-flight request so only the newest one settles state.
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-      lastSearchRef.current = needle;
 
       let timedOut = false;
       const timeoutId = window.setTimeout(() => {
@@ -223,9 +222,11 @@ export default function HospitalMap() {
       setSearching(true);
       setSearchError('');
       setSearched(false);
+      setResults([]);
+      setVisibleCount(10);
 
       try {
-        const places = await searchPlacesByQuery(needle, controller.signal);
+        const places = await searchNearbyHospitals(at, controller.signal);
         if (abortRef.current !== controller) return;
         setResults(places);
         setSearched(true);
@@ -246,33 +247,59 @@ export default function HospitalMap() {
     [t],
   );
 
+  const searchNearby = () => {
+    if (center) {
+      void runNearby(center);
+      return;
+    }
+    requestLocation(
+      (at) => {
+        void runNearby(at);
+      },
+      () => {
+        void runNearby(FALLBACK_AT);
+      },
+    );
+  };
+
   const retrySearch = () => {
-    const last = lastSearchRef.current;
-    if (last) void runSearch(last);
+    if (center) void runNearby(center);
+    else searchNearby();
   };
 
-  const handleSearch = () => {
-    const needle = query.trim();
-    if (!needle) return;
-    void runSearch(needle);
-  };
-
-  // Debounced live search (400ms) — typing no longer waits for a button press,
-  // and rapid keystrokes collapse into one places request.
-  const debouncedQuery = useDebouncedValue(query, 400);
+  // Auto-load nearby facilities once when the modal opens. The browser may ask
+  // for location permission; "Use my location" and "Search Nearby" are the
+  // explicit fallbacks if it is denied.
   useEffect(() => {
-    const needle = debouncedQuery.trim();
-    if (!needle) return;
-    void runSearch(needle);
-  }, [debouncedQuery, runSearch]);
+    if (!formOpen) {
+      openedSearchRef.current = false;
+      return;
+    }
+    if (openedSearchRef.current) return;
+    openedSearchRef.current = true;
+    if (center) {
+      void runNearby(center);
+      return;
+    }
+    requestLocation(
+      (at) => {
+        void runNearby(at);
+      },
+      () => {
+        void runNearby(FALLBACK_AT);
+      },
+    );
+    // requestLocation is intentionally not a dependency: it is a stable event
+    // handler and including it would restart the effect on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formOpen, center, runNearby]);
 
   // Abort any in-flight search on unmount.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  const pickResult = (place: SearchPlace) => {
+  const pickResult = (place: NearbyPlace) => {
     setDraft({ lat: place.lat, lon: place.lon });
-    setOsmId(null);
-    setSearchAddress(place.address ?? '');
+    setOsmId(place.id != null ? String(place.id) : null);
     setDraftError('');
     if (!name.trim()) setName(place.name);
     setFocus({ lat: place.lat, lon: place.lon, key: `${place.lat},${place.lon}` });
@@ -284,7 +311,6 @@ export default function HospitalMap() {
     setDraft({ lat, lon });
     // A hand-placed pin is not tied to an OSM element.
     setOsmId(null);
-    setSearchAddress('');
     setDraftError('');
   };
 
@@ -293,45 +319,31 @@ export default function HospitalMap() {
     setName('');
     setDraft(null);
     setOsmId(null);
-    setQuery('');
     setResults([]);
     setSearched(false);
     setSearchError('');
-    setSearchAddress('');
     setNameError('');
     setDraftError('');
+    setVisibleCount(10);
+    abortRef.current?.abort();
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const trimmed = name.trim();
     const nextNameError = trimmed ? '' : t('hospital.nameRequired');
     const nextDraftError = draft ? '' : t('hospital.locationRequired');
     setNameError(nextNameError);
     setDraftError(nextDraftError);
-    if (nextNameError || nextDraftError || !draft || !user) return;
+    if (nextNameError || nextDraftError || !draft) return;
 
-    setSaving(true);
-    try {
-      const row = await addHospital({
-        name: trimmed,
-        latitude: draft.lat,
-        longitude: draft.lon,
-        osmId,
-        userId: user.id,
-      });
-      closeForm();
-      notify(tString('hospital.added', { name: row.name }), 'success');
-      // Coordinate repair is strictly post-save: never blocks the modal close,
-      // the toast, or the list refresh. onlyIfMissing preserves a picked pin.
-      void geocodeInBackground(trimmed, row.id, { onlyIfMissing: true });
-      await load();
-      setFocus({ lat: row.latitude, lon: row.longitude, key: row.id });
-    } catch (error) {
-      console.error('HOSPITAL_ERROR:', error);
-      notify(`${t('hospital.addError')} (${describeError(error)})`, 'error');
-    } finally {
-      setSaving(false);
-    }
+    // UI-only run: no Supabase insert. Persistence is wired manually later.
+    console.log('HOSPITAL_SAVE_PAYLOAD:', {
+      name: trimmed,
+      latitude: draft.lat,
+      longitude: draft.lon,
+      osm_id: osmId,
+    });
+    closeForm();
   };
 
   const modal =
@@ -359,42 +371,36 @@ export default function HospitalMap() {
           </div>
 
           <div style={styles.field}>
-            <label htmlFor="hospital-search" style={styles.label}>{t('hospital.searchLabel')}</label>
             <div style={styles.searchRow}>
-              <input
-                id="hospital-search"
-                className="input"
-                value={query}
-                placeholder={t('hospitals.search_placeholder')}
-                autoComplete="off"
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    event.preventDefault();
-                    handleSearch();
-                  }
-                }}
-              />
               <button
                 type="button"
                 className="ghost-button"
-                onClick={handleSearch}
-                disabled={searching}
+                onClick={searchNearby}
+                disabled={searching || locating}
                 style={styles.searchButton}
               >
                 <Search size={15} aria-hidden="true" />
-                {searching ? t('places.searching') : t('hospitals.search_button')}
+                {searching ? t('places.searching') : t('hospitals.search_nearby')}
               </button>
               <button
                 type="button"
                 className="ghost-button"
-                onClick={() => requestLocation()}
+                onClick={() =>
+                  requestLocation(
+                    (at) => {
+                      void runNearby(at);
+                    },
+                    () => {
+                      void runNearby(FALLBACK_AT);
+                    },
+                  )
+                }
                 disabled={locating}
                 aria-pressed={center !== null}
                 style={styles.searchButton}
               >
                 <LocateFixed size={15} aria-hidden="true" />
-                {t('hospital.useMyLocation')}
+                {t('hospitals.use_my_location')}
               </button>
             </div>
             {geoError ? <p role="alert" style={styles.error}>{geoError}</p> : null}
@@ -413,10 +419,10 @@ export default function HospitalMap() {
               <>
                 <p style={styles.hint}>{t('hospitals.select_result')}</p>
                 <ul style={styles.results}>
-                  {results.map((place) => {
+                  {results.slice(0, visibleCount).map((place) => {
                     const active = draft?.lat === place.lat && draft?.lon === place.lon;
                     return (
-                      <li key={`${place.lat},${place.lon}`}>
+                      <li key={place.id ?? `${place.lat},${place.lon}`}>
                         <button
                           type="button"
                           style={{
@@ -428,13 +434,23 @@ export default function HospitalMap() {
                           <MapPin size={15} aria-hidden="true" />
                           <span style={styles.resultCopy}>
                             <span>{place.name}</span>
-                            {place.address ? <small style={styles.resultAddress}>{place.address}</small> : null}
+                            {place.type ? <small style={styles.resultAddress}>{place.type}</small> : null}
                           </span>
                         </button>
                       </li>
                     );
                   })}
                 </ul>
+                {visibleCount < results.length ? (
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => setVisibleCount((prev) => prev + 10)}
+                    style={styles.loadMore}
+                  >
+                    {t('hospitals.load_more')}
+                  </button>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -473,7 +489,7 @@ export default function HospitalMap() {
                 <MapFocus target={focus} />
               </MapContainer>
             </div>
-            <p style={styles.hint}>{t('hospital.pickHint')}</p>
+            <p style={styles.hint}>{t('hospitals.click_map')}</p>
             <p style={styles.muted}>
               <strong>{t('hospital.selectedLocation')}: </strong>
               {draft ? (
@@ -482,7 +498,6 @@ export default function HospitalMap() {
                 t('hospital.noLocation')
               )}
             </p>
-            {searchAddress ? <p style={styles.muted}>{searchAddress}</p> : null}
             {draftError ? <p role="alert" style={styles.error}>{draftError}</p> : null}
           </div>
 
@@ -490,8 +505,8 @@ export default function HospitalMap() {
             <button type="button" className="ghost-button" onClick={closeForm}>
               {t('common.cancel')}
             </button>
-            <button type="button" className="primary-button" onClick={() => void handleSave()} disabled={saving}>
-              {saving ? t('hospital.saving') : t('hospital.save')}
+            <button type="button" className="primary-button" onClick={handleSave}>
+              {t('hospital.save')}
             </button>
           </div>
         </div>
@@ -562,7 +577,7 @@ export default function HospitalMap() {
       </div>
 
       {!loading && !loadError && hospitals.length === 0 ? (
-        <p style={styles.muted}>{t('hospital.empty')}</p>
+        <p style={styles.muted}>{t('hospitals.no_hospitals')}</p>
       ) : null}
 
       {/* Filtered to nothing: say so rather than show a blank list. */}
@@ -676,6 +691,7 @@ const styles: Record<string, CSSProperties> = {
   },
   resultCopy: { display: 'grid', gap: '0.1rem', minWidth: 0, textAlign: 'start' },
   resultAddress: { color: '#557b76', fontSize: '0.74rem', lineHeight: 1.3, overflowWrap: 'anywhere' },
+  loadMore: { justifySelf: 'center', marginBlockStart: '0.35rem', fontSize: '0.8rem' },
   pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },

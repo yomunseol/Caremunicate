@@ -1,16 +1,16 @@
 import { supabase } from './supabase';
 
 // ---------------------------------------------------------------------------
-// Hospitals: the community map backed by public.hospitals, plus the location
-// search that feeds it.
+// Hospitals: the community map backed by public.hospitals, plus the nearby
+// Overpass search that feeds the Add Hospital modal.
 //
-// The modal's search and Care Places' nearby search both go through
-// /api/places (Mapbox). A centre point is still required for "Near me".
+// The modal uses /api/overpass (qt 30, 15km) for nearby facilities. Care
+// Places' category discovery still goes through /api/places (Mapbox).
 // ---------------------------------------------------------------------------
 
 const HOSPITAL_COLUMNS = 'id, name, latitude, longitude, osm_id, added_by';
 
-export const SEARCH_TIMEOUT_MS = 9_000;
+export const SEARCH_TIMEOUT_MS = 13_000;
 
 export type Hospital = {
   id: string;
@@ -23,11 +23,12 @@ export type Hospital = {
 
 export type LatLon = { lat: number; lon: number };
 
-export type SearchPlace = {
+export type NearbyPlace = {
+  id: number | null;
   name: string;
-  address: string;
   lat: number;
   lon: number;
+  type: string;
 };
 
 /** Every hospital, alphabetical. Throws on a PostgREST error. */
@@ -66,35 +67,30 @@ export async function addHospital(input: {
 }
 
 /**
- * Characters that would break the search query or the regex itself. Non-Latin
- * text (Korean, Arabic, Hebrew, …) is preserved — only syntax characters are
- * dropped.
+ * Ask /api/overpass for up to 30 nearby hospitals/clinics/pharmacies.
+ * The route uses `out center qt 30` on a 15km radius and caps at 12s; the
+ * modal renders these ten at a time via "Load More".
  */
-const sanitizeQuery = (value: string): string =>
-  value.replace(/["'\\|{}[\];]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
-
-/**
- * Search Mapbox Geocoding through /api/places for a hospital or address.
- * The caller owns the abort signal; the route itself caps at 8s.
- */
-export async function searchPlacesByQuery(
-  query: string,
+export async function searchNearbyHospitals(
+  at: LatLon,
   signal?: AbortSignal,
-): Promise<SearchPlace[]> {
-  const needle = sanitizeQuery(query);
-  if (!needle) return [];
+): Promise<NearbyPlace[]> {
+  const params = new URLSearchParams({
+    lat: String(at.lat),
+    lon: String(at.lon),
+  });
 
-  const response = await fetch(`/api/places?q=${encodeURIComponent(needle)}`, {
+  const response = await fetch(`/api/overpass?${params.toString()}`, {
     headers: { Accept: 'application/json' },
     signal,
   });
 
   if (!response.ok) {
-    throw new Error(`Places ${response.status}`);
+    throw new Error(`Overpass ${response.status}`);
   }
 
-  const payload = (await response.json()) as { results?: SearchPlace[] };
-  return (payload.results ?? []).filter(
-    (place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)),
-  );
+  const payload = (await response.json()) as { results?: NearbyPlace[] };
+  return (payload.results ?? [])
+    .filter((place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)))
+    .slice(0, 30);
 }

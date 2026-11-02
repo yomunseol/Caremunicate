@@ -15,6 +15,10 @@ const MAX_RADIUS_M = 5_000;
 const TIMEOUT_MS = 8_000;
 const MAP_UNAVAILABLE = 'Map data is temporarily unavailable. Please try again.';
 const UPSTREAM_FAILED = 'Failed to fetch map data';
+const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_RADIUS_M = 15_000;
+const OVERPASS_TIMEOUT_MS = 12_000;
+const OVERPASS_AMENITY_REGEX = 'hospital|clinic|pharmacy';
 
 type MapboxFeature = {
   geometry?: { coordinates?: [number, number] };
@@ -167,6 +171,85 @@ export default defineConfig(({ mode }) => {
             }
             console.error('Places API error:', error);
             send(res, 500, { error: UPSTREAM_FAILED });
+          })
+          .finally(() => clearTimeout(timer));
+      });
+
+      server.middlewares.use('/api/overpass', (req, res) => {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const latRaw = (url.searchParams.get('lat') ?? '').trim();
+        const lonRaw = (url.searchParams.get('lon') ?? '').trim();
+
+        if (!latRaw || !lonRaw) {
+          send(res, 400, { error: 'Missing coordinates' });
+          return;
+        }
+
+        const lat = Number(latRaw);
+        const lon = Number(lonRaw);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          send(res, 400, { error: 'Missing coordinates' });
+          return;
+        }
+
+        const query = `
+[out:json][timeout:10];
+(
+  node["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${OVERPASS_RADIUS_M},${lat},${lon});
+  way["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${OVERPASS_RADIUS_M},${lat},${lon});
+);
+out center qt 30;`;
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
+
+        void fetch(OVERPASS_URL, {
+          method: 'POST',
+          body: new URLSearchParams({ data: query }),
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'User-Agent': 'Caremunicate/1.0 (healthcare platform)',
+            Accept: 'application/json',
+          },
+        })
+          .then(async (upstream) => {
+            if (!upstream.ok) {
+              throw new Error(`Overpass API error: ${upstream.status}`);
+            }
+            const data = (await upstream.json()) as {
+              elements?: Array<{
+                id?: number;
+                lat?: number;
+                lon?: number;
+                center?: { lat: number; lon: number };
+                tags?: Record<string, string>;
+              }>;
+            };
+            const results: Array<{ id: number | null; name: string; lat: number; lon: number; type: string }> = [];
+            for (const element of (data.elements ?? []).slice(0, 30)) {
+              const placeLat = Number(element.center?.lat ?? element.lat);
+              const placeLon = Number(element.center?.lon ?? element.lon);
+              if (!Number.isFinite(placeLat) || !Number.isFinite(placeLon)) continue;
+              const tags = element.tags ?? {};
+              results.push({
+                id: element.id ?? null,
+                name: tags.name || tags['name:en'] || 'Unknown Facility',
+                lat: placeLat,
+                lon: placeLon,
+                type: tags.amenity || 'medical',
+              });
+            }
+            send(res, 200, { results });
+          })
+          .catch((error: unknown) => {
+            const name = error instanceof Error ? error.name : 'err';
+            if (name === 'AbortError' || name === 'TimeoutError') {
+              send(res, 408, { error: 'Search timed out' });
+              return;
+            }
+            console.error('Overpass API error:', error);
+            send(res, 500, { error: 'Failed to fetch map data' });
           })
           .finally(() => clearTimeout(timer));
       });
