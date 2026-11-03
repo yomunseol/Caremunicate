@@ -1,11 +1,11 @@
 // ---------------------------------------------------------------------------
-// /api/overpass — fast "nearby hospitals" with `out center qt 8`.
+// /api/overpass — fast "nearby hospitals" with `out center qt 24`.
 //
-// The radius is dynamic (1km–50km, clamped) and the server stops after 8
-// results via qt, so the payload stays tiny and the request returns quickly.
+// The radius is dynamic (1km–50km, clamped) and the server stops after 24
+// results via qt, so the payload stays small while still allowing Load More.
 //
 //   GET /api/overpass?lat=<n>&lon=<n>&radius=<metres>
-//   -> 200 { results: [{ id, name, lat, lon, type }] } (max 8)
+//   -> 200 { results: [{ id, name, lat, lon, type }] } (max 24)
 //   -> 400 { error: 'Missing coordinates' }
 //   -> 408 { error: 'Search timed out' }
 //   -> 500 { error: 'Failed to fetch map data' }
@@ -13,7 +13,7 @@
 
 export const config = { runtime: 'nodejs' };
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_URL = 'https://overpass.kumi.systems/api/interpreter';
 const DEFAULT_RADIUS_M = 10_000;
 const MIN_RADIUS_M = 1_000;
 const MAX_RADIUS_M = 50_000;
@@ -57,6 +57,8 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
     return;
   }
 
+  console.log('Using Overpass endpoint:', OVERPASS_URL);
+
   const latRaw = asString(req.query?.lat).trim();
   const lonRaw = asString(req.query?.lon).trim();
   if (!latRaw || !lonRaw) {
@@ -80,7 +82,7 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
   node["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
   way["amenity"~"${AMENITY_REGEX}"](around:${radius},${lat},${lon});
 );
-out center qt 8;`;
+out center qt 24;`;
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -105,7 +107,7 @@ out center qt 8;`;
     const data = (await response.json()) as { elements?: OverpassElement[] };
     const results: NearbyResult[] = [];
 
-    for (const element of (data.elements ?? []).slice(0, 8)) {
+    for (const element of (data.elements ?? []).slice(0, 24)) {
       const placeLat = Number(element.center?.lat ?? element.lat);
       const placeLon = Number(element.center?.lon ?? element.lon);
       if (!Number.isFinite(placeLat) || !Number.isFinite(placeLon)) continue;

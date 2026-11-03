@@ -8,7 +8,7 @@ import type { ServerResponse } from 'node:http';
 // The browser calls /api/overpass; this mirrors the Vercel function.
 // ---------------------------------------------------------------------------
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
+const OVERPASS_URL = 'https://overpass.kumi.systems/api/interpreter';
 const OVERPASS_DEFAULT_RADIUS_M = 10_000;
 const OVERPASS_MIN_RADIUS_M = 1_000;
 const OVERPASS_MAX_RADIUS_M = 50_000;
@@ -28,6 +28,7 @@ export default defineConfig(() => {
 
       server.middlewares.use('/api/overpass', (req, res) => {
         const url = new URL(req.url ?? '/', 'http://localhost');
+        console.log('Using Overpass endpoint:', OVERPASS_URL);
         const latRaw = (url.searchParams.get('lat') ?? '').trim();
         const lonRaw = (url.searchParams.get('lon') ?? '').trim();
 
@@ -55,7 +56,7 @@ export default defineConfig(() => {
   node["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${radius},${lat},${lon});
   way["amenity"~"${OVERPASS_AMENITY_REGEX}"](around:${radius},${lat},${lon});
 );
-out center qt 8;`;
+out center qt 24;`;
 
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
@@ -84,7 +85,7 @@ out center qt 8;`;
               }>;
             };
             const results: Array<{ id: number | null; name: string; lat: number; lon: number; type: string }> = [];
-            for (const element of (data.elements ?? []).slice(0, 8)) {
+            for (const element of (data.elements ?? []).slice(0, 24)) {
               const placeLat = Number(element.center?.lat ?? element.lat);
               const placeLon = Number(element.center?.lon ?? element.lon);
               if (!Number.isFinite(placeLat) || !Number.isFinite(placeLon)) continue;

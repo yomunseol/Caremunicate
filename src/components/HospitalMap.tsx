@@ -488,7 +488,9 @@ export default function HospitalMap() {
                   <button
                     type="button"
                     className="ghost-button"
-                    onClick={() => setVisibleCount((prev) => prev + 8)}
+                    onClick={() =>
+                      setVisibleCount((prev) => Math.min(prev + 8, results.length))
+                    }
                     style={styles.loadMore}
                   >
                     {t('hospitals.load_more')}

@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 // Hospitals: the community map backed by public.hospitals, plus the nearby
 // Overpass search that feeds the Add Hospital modal.
 //
-// The modal uses /api/overpass (qt 8, 50km) for nearby facilities. Care Places
+// The modal uses /api/overpass (qt 24, 50km) for nearby facilities. Care Places
 // uses the same /api/overpass route; it is the only map API.
 // ---------------------------------------------------------------------------
 
@@ -67,9 +67,9 @@ export async function addHospital(input: {
 }
 
 /**
- * Ask /api/overpass for up to 8 nearby hospitals/clinics/pharmacies.
+ * Ask /api/overpass for up to 24 nearby hospitals/clinics/pharmacies.
  * The radius is in metres (route clamps 1km–50km); the route uses
- * `out center qt 8` and caps at 15s.
+ * `out center qt 24` and caps at 15s. The modal shows 8 at a time.
  */
 export async function searchNearbyHospitals(
   at: LatLon,
@@ -96,5 +96,5 @@ export async function searchNearbyHospitals(
   const payload = (await response.json()) as { results?: NearbyPlace[] };
   return (payload.results ?? [])
     .filter((place) => Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon)))
-    .slice(0, 8);
+    .slice(0, 24);
 }
