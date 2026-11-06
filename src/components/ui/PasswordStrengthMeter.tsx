@@ -12,7 +12,7 @@ const STAGES: Record<PasswordStage, StageConfig> = {
   critical: { width: 20, color: '#ef4444' },
   weak: { width: 40, color: '#f97316' },
   moderate: { width: 60, color: '#eab308' },
-  strong: { width: 80, color: '#047857' },
+  strong: { width: 80, color: '#22c55e' },
   resilient: { width: 100, color: '#10b981' },
 };
 
@@ -63,6 +63,8 @@ type PasswordStrengthMeterProps = {
 
 export default function PasswordStrengthMeter({ password }: PasswordStrengthMeterProps) {
   const { t } = useLang();
+  if (!password || password.length === 0) return null;
+
   const stage = getPasswordStage(password);
   const config = STAGES[stage];
   const label = t(`password.${stage}`);
@@ -86,7 +88,8 @@ export default function PasswordStrengthMeter({ password }: PasswordStrengthMete
             ...styles.fill,
             width: `${config.width}%`,
             background: config.color,
-            boxShadow: `0 0 8px ${config.color}`,
+            color: config.color,
+            filter: `drop-shadow(0 0 6px ${config.color})`,
           }}
         />
       </div>
@@ -119,7 +122,7 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     borderRadius: 999,
     transition:
-      'width 200ms ease-out, background-color 200ms ease-out, box-shadow 200ms ease-out',
+      'width 175ms ease-out, background-color 175ms ease-out, filter 175ms ease-out',
   },
   label: {
     fontSize: '0.72rem',
