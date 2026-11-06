@@ -261,6 +261,7 @@ function App() {
     role: 'patient',
   });
   const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
+  const [signupSubmitted, setSignupSubmitted] = useState(false);
   // Fields the user has blurred/edited — only show inline errors for these so
   // the form doesn't scream at a brand-new visitor.
   const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
@@ -529,19 +530,8 @@ function App() {
     return nextErrors;
   };
 
-  // The submit button is disabled until every rule passes. Re-evaluated on
-  // every render (cheap string checks) with no memoization needed — avoids a
-  // stale closure over signupValues that a useMemo dep array could introduce.
-  const signupIsValid =
-    !getFullNameError(signupValues.fullName) &&
-    !getEmailError(signupValues.email) &&
-    (authRole !== 'doctor' || Boolean(signupValues.specialty.trim())) &&
-    (authRole !== 'doctor' || Boolean(signupValues.clinic.trim())) &&
-    (authRole !== 'department' || Boolean(signupValues.departmentName.trim())) &&
-    (authRole !== 'hospital' || Boolean(signupValues.hospitalName.trim())) &&
-    (authRole !== 'hospital' || Boolean(signupValues.addressRegion.trim())) &&
-    !getPasswordError(signupValues.password) &&
-    !getConfirmPasswordError(signupValues.confirmPassword);
+  // The form validates on submit; the button stays clickable so a weak
+  // password can surface the meter's Moderate requirement error.
 
   // The unified meter's stage gates submission at Moderate. Re-evaluated on
   // every render, exactly like the rest of the form checks.
@@ -549,6 +539,7 @@ function App() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSignupSubmitted(true);
 
     const nextErrors = validateSignupForm();
     setSignupErrors(nextErrors);
@@ -1266,7 +1257,10 @@ function App() {
                         {showFieldError('password') ? <span className="field-error">{signupErrors.password}</span> : null}
 
                         {/* Unified strength meter, shared with both reset flows. */}
-                        <PasswordStrengthMeter password={signupValues.password} />
+                        <PasswordStrengthMeter
+                          password={signupValues.password}
+                          isSubmitted={signupSubmitted}
+                        />
                       </div>
 
                       <div className="field-wrap">
@@ -1321,7 +1315,7 @@ function App() {
                       <button
                         className="primary-button"
                         type="submit"
-                        disabled={isAuthLoading || !signupIsValid}
+                        disabled={isAuthLoading}
                         title={!passwordRulesMet ? t('auth.passwordWeak') : undefined}
                       >
                         {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}

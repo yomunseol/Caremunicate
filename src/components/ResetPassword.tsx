@@ -29,6 +29,7 @@ export default function ResetPassword() {
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
 
   // Wait up to SESSION_GRACE_MS for the recovery session, watching both the
   // one-shot read and the auth-state stream so neither side of the race is lost.
@@ -76,6 +77,7 @@ export default function ResetPassword() {
     hasSession && isPasswordAtLeastModerate(password) && confirmPassword.length > 0 && !mismatch && !busy;
 
   const submit = async () => {
+    setSubmitted(true);
     if (!canSubmit) return;
     setBusy(true);
     setError('');
@@ -148,7 +150,7 @@ export default function ResetPassword() {
                 onChange={(event) => setPassword(event.target.value)}
                 disabled={busy}
               />
-              <PasswordStrengthMeter password={password} />
+              <PasswordStrengthMeter password={password} isSubmitted={submitted} />
             </div>
 
             <div style={styles.field}>
@@ -172,7 +174,7 @@ export default function ResetPassword() {
             <button
               type="button"
               className="primary-button"
-              disabled={!canSubmit}
+              disabled={busy}
               aria-busy={busy}
               onClick={() => void submit()}
             >

@@ -59,47 +59,57 @@ export const isPasswordAtLeastModerate = (password: string): boolean => {
 
 type PasswordStrengthMeterProps = {
   password: string;
+  isSubmitted?: boolean;
 };
 
-export default function PasswordStrengthMeter({ password }: PasswordStrengthMeterProps) {
+export default function PasswordStrengthMeter({
+  password,
+  isSubmitted = false,
+}: PasswordStrengthMeterProps) {
   const { t } = useLang();
   if (!password || password.length === 0) return null;
 
   const stage = getPasswordStage(password);
   const config = STAGES[stage];
   const label = t(`password.${stage}`);
+  const showError = isSubmitted && !isPasswordAtLeastModerate(password);
 
   return (
-    <div className="password-strength-meter" style={styles.wrap}>
-      <div
-        className="password-strength-meter__track"
-        style={styles.track}
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={config.width}
-        aria-valuetext={label}
-        aria-label={label}
-      >
+    <>
+      <div className="password-strength-meter" style={styles.wrap}>
+        <div
+          className="password-strength-meter__track"
+          style={styles.track}
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={config.width}
+          aria-valuetext={label}
+          aria-label={label}
+        >
+          <span
+            className="password-strength-meter__fill"
+            data-stage={stage}
+            style={{
+              ...styles.fill,
+              width: `${config.width}%`,
+              background: config.color,
+            }}
+          />
+        </div>
         <span
-          className="password-strength-meter__fill"
-          data-stage={stage}
-          style={{
-            ...styles.fill,
-            width: `${config.width}%`,
-            background: config.color,
-            color: config.color,
-            filter: `drop-shadow(0 0 6px ${config.color})`,
-          }}
-        />
+          className="password-strength-meter__label"
+          style={{ ...styles.label, color: config.color }}
+        >
+          {label}
+        </span>
       </div>
-      <span
-        className="password-strength-meter__label"
-        style={{ ...styles.label, color: config.color }}
-      >
-        {label}
-      </span>
-    </div>
+      {showError ? (
+        <p className="password-strength-meter__error" role="alert" style={styles.error}>
+          {t('password.min_requirement_error')}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -122,12 +132,20 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     borderRadius: 999,
     transition:
-      'width 175ms ease-out, background-color 175ms ease-out, filter 175ms ease-out',
+      'width 175ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 175ms cubic-bezier(0.2, 0.8, 0.2, 1)',
   },
   label: {
     fontSize: '0.72rem',
     fontWeight: 800,
     letterSpacing: '0.02em',
     whiteSpace: 'nowrap',
+  },
+  error: {
+    margin: '0.35rem 0 0',
+    color: '#ef4444',
+    fontSize: '0.74rem',
+    fontWeight: 600,
+    lineHeight: 1.4,
+    animation: 'password-strength-fade-in 200ms ease-out',
   },
 };

@@ -888,6 +888,7 @@ const translations = {
     'password.moderate': 'Moderate',
     'password.strong': 'Strong',
     'password.resilient': 'Resilient',
+    'password.min_requirement_error': 'Minimum password requirement is Moderate and has not been met.',
     'reset.success': "Password updated. Taking you to your dashboard…",
   },
 
@@ -1738,6 +1739,7 @@ const translations = {
     'password.moderate': 'Moyen',
     'password.strong': 'Fort',
     'password.resilient': 'Résistant',
+    'password.min_requirement_error': 'L\'exigence minimale du mot de passe est « Moyen » et n\'est pas remplie.',
     'reset.success': "Mot de passe mis à jour. Redirection vers votre tableau de bord…",
   },
 
@@ -2583,6 +2585,7 @@ const translations = {
     'password.moderate': 'Moderada',
     'password.strong': 'Fuerte',
     'password.resilient': 'Resiliente',
+    'password.min_requirement_error': 'El requisito mínimo de contraseña es «Moderada» y no se ha cumplido.',
     'reset.success': "Contraseña actualizada. Te llevamos a tu panel…",
   },
 
@@ -3413,6 +3416,7 @@ const translations = {
     'password.moderate': '보통',
     'password.strong': '강력',
     'password.resilient': '최상',
+    'password.min_requirement_error': '최소 비밀번호 요구 사항은 \'보통(Moderate)\'이며 충족되지 않았습니다.',
     'reset.success': "비밀번호가 변경되었습니다. 대시보드로 이동합니다…",
   },
 
@@ -4236,6 +4240,7 @@ const translations = {
     'password.moderate': '中等',
     'password.strong': '强',
     'password.resilient': '极强',
+    'password.min_requirement_error': '密码最低要求为“中等”，尚未满足。',
     'reset.success': "密码已更新。正在前往您的控制台…",
   },
 
@@ -5080,6 +5085,7 @@ const translations = {
     'password.moderate': 'Moderada',
     'password.strong': 'Forte',
     'password.resilient': 'Resiliente',
+    'password.min_requirement_error': 'O requisito mínimo da palavra-passe é «Moderada» e não foi cumprido.',
     'reset.success': "Senha atualizada. Levando você ao seu painel…",
   },
 
@@ -5928,6 +5934,7 @@ const translations = {
     'password.moderate': 'Mäßig',
     'password.strong': 'Stark',
     'password.resilient': 'Widerstandsfähig',
+    'password.min_requirement_error': 'Die Mindestanforderung an das Passwort ist „Mäßig“ und wurde nicht erfüllt.',
     'reset.success': "Passwort aktualisiert. Du wirst zu deinem Dashboard weitergeleitet…",
   },
 
@@ -6772,6 +6779,7 @@ const translations = {
     'password.moderate': 'Moderata',
     'password.strong': 'Forte',
     'password.resilient': 'Resiliente',
+    'password.min_requirement_error': 'Il requisito minimo della password è «Moderata» e non è stato soddisfatto.',
     'reset.success': "Password aggiornata. Ti stiamo portando alla tua dashboard…",
   },
 
@@ -7610,6 +7618,7 @@ const translations = {
     'password.moderate': 'متوسط',
     'password.strong': 'قوي',
     'password.resilient': 'مقاوم',
+    'password.min_requirement_error': 'الحد الأدنى لمتطلبات كلمة المرور هو «متوسط» ولم يتم استيفاؤه.',
     'reset.success': "تم تحديث كلمة المرور. جارٍ نقلك إلى لوحة التحكم…",
   },
 
@@ -8440,6 +8449,7 @@ const translations = {
     'password.moderate': 'בינוני',
     'password.strong': 'חזק',
     'password.resilient': 'עמיד',
+    'password.min_requirement_error': 'דרישת הסיסמה המינימלית היא \'בינוני\' והיא לא עומדת בה.',
     'reset.success': "הסיסמה עודכנה. מעבירים אותך ללוח הבקרה…",
   },
 };

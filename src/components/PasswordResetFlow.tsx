@@ -34,6 +34,7 @@ export default function PasswordResetFlow({
   const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -111,6 +112,7 @@ export default function PasswordResetFlow({
 
   const updatePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setSubmitted(true);
     if (!canSubmit) return;
 
     setBusy(true);
@@ -213,7 +215,7 @@ export default function PasswordResetFlow({
             onChange={(event) => setPassword(event.target.value)}
             disabled={busy}
           />
-          <PasswordStrengthMeter password={password} />
+          <PasswordStrengthMeter password={password} isSubmitted={submitted} />
           <input
             className="input"
             type="password"
@@ -225,7 +227,7 @@ export default function PasswordResetFlow({
             disabled={busy}
           />
           {mismatch ? <p className="field-error" role="alert">{t('auth.err.passwordMismatch')}</p> : null}
-          <button className="primary-button" type="submit" disabled={!canSubmit}>
+          <button className="primary-button" type="submit" disabled={busy}>
             {busy ? t('tfa.verifying') : t('auth.resetPassword')}
           </button>
           <button className="ghost-button" type="button" onClick={onCancel} disabled={busy}>
