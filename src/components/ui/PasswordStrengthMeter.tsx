@@ -9,10 +9,10 @@ type StageConfig = {
 };
 
 const STAGES: Record<PasswordStage, StageConfig> = {
-  critical: { width: 10, color: '#ef4444' },
-  weak: { width: 30, color: '#f97316' },
-  moderate: { width: 50, color: '#eab308' },
-  strong: { width: 75, color: '#84cc16' },
+  critical: { width: 20, color: '#ef4444' },
+  weak: { width: 40, color: '#f97316' },
+  moderate: { width: 60, color: '#eab308' },
+  strong: { width: 80, color: '#047857' },
   resilient: { width: 100, color: '#10b981' },
 };
 
@@ -86,7 +86,7 @@ export default function PasswordStrengthMeter({ password }: PasswordStrengthMete
             ...styles.fill,
             width: `${config.width}%`,
             background: config.color,
-            boxShadow: stage === 'resilient' ? '0 0 12px rgba(16, 185, 129, 0.65)' : 'none',
+            boxShadow: `0 0 8px ${config.color}`,
           }}
         />
       </div>
@@ -119,7 +119,7 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     borderRadius: 999,
     transition:
-      'width 500ms ease-in-out, background-color 500ms ease-in-out, box-shadow 500ms ease-in-out',
+      'width 200ms ease-out, background-color 200ms ease-out, box-shadow 200ms ease-out',
   },
   label: {
     fontSize: '0.72rem',
