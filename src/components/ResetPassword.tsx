@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
+import PasswordStrengthMeter, { isPasswordAtLeastModerate } from './ui/PasswordStrengthMeter';
 
 // ---------------------------------------------------------------------------
 // /reset-password — where a Supabase recovery email lands.
@@ -14,15 +15,8 @@ import { useLang } from '../i18n';
 // written with updateUser(), and a failed write is recorded in public.email_log.
 // ---------------------------------------------------------------------------
 
-/** Same floor as signup, so the two screens cannot disagree. */
-const MIN_LENGTH = 8;
 /** How long to wait for the client to exchange the fragment tokens. */
 const SESSION_GRACE_MS = 3000;
-
-type Strength = 0 | 1 | 2 | 3 | 4;
-
-const strengthColor = (strength: Strength): string =>
-  strength >= 3 ? '#216e5d' : strength === 2 ? '#b8860b' : '#9c3636';
 
 export default function ResetPassword() {
   const { t, locale } = useLang();
@@ -77,22 +71,9 @@ export default function ResetPassword() {
     };
   }, []);
 
-  // 0–4: length, mixed case, digit, special — mirrors the signup rules.
-  const strength = useMemo<Strength>(() => {
-    let score = 0;
-    if (password.length >= MIN_LENGTH) score += 1;
-    if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1;
-    if (/\d/.test(password)) score += 1;
-    if (/[!@#$%^&*]/.test(password)) score += 1;
-    return score as Strength;
-  }, [password]);
-
-  const strengthLabel =
-    strength >= 3 ? t('reset.strength.strong') : strength === 2 ? t('reset.strength.fair') : t('reset.strength.weak');
-
   const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
   const canSubmit =
-    hasSession && password.length >= MIN_LENGTH && confirmPassword.length > 0 && !mismatch && !busy;
+    hasSession && isPasswordAtLeastModerate(password) && confirmPassword.length > 0 && !mismatch && !busy;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -167,26 +148,7 @@ export default function ResetPassword() {
                 onChange={(event) => setPassword(event.target.value)}
                 disabled={busy}
               />
-              <div style={styles.strengthRow}>
-                <div
-                  style={styles.strengthTrack}
-                  role="img"
-                  aria-label={`${t('auth.password')}: ${strengthLabel}`}
-                >
-                  {[0, 1, 2, 3].map((segment) => (
-                    <span
-                      key={segment}
-                      style={{
-                        ...styles.strengthSegment,
-                        background: segment < strength ? strengthColor(strength) : '#e2ece9',
-                      }}
-                    />
-                  ))}
-                </div>
-                <span style={{ ...styles.strengthLabel, color: strengthColor(strength) }}>
-                  {strengthLabel}
-                </span>
-              </div>
+              <PasswordStrengthMeter password={password} />
             </div>
 
             <div style={styles.field}>
@@ -243,10 +205,6 @@ const styles: Record<string, CSSProperties> = {
   title: { margin: 0, fontSize: '1.15rem' },
   field: { display: 'grid', gap: '0.4rem' },
   label: { fontSize: '0.75rem', fontWeight: 700, color: '#216e5d', letterSpacing: '0.04em' },
-  strengthRow: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
-  strengthTrack: { display: 'flex', flex: 1, gap: '0.25rem' },
-  strengthSegment: { height: '6px', flex: 1, borderRadius: '999px', transition: 'background 0.15s ease' },
-  strengthLabel: { fontSize: '0.72rem', fontWeight: 700, whiteSpace: 'nowrap' },
   error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.88rem' },
   success: { margin: 0, color: '#216e5d', fontWeight: 700, fontSize: '0.9rem' },
 };

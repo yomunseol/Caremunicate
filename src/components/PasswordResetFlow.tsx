@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 import CodePanel from './CodePanel';
-import PasswordStrengthMeter, { passwordMeetsRules } from './PasswordStrengthMeter';
+import PasswordStrengthMeter, { isPasswordAtLeastModerate } from './ui/PasswordStrengthMeter';
 
 // ---------------------------------------------------------------------------
 // Forgot-password, 3 steps, all on the login screen (no route change):
@@ -107,7 +107,7 @@ export default function PasswordResetFlow({
 
   const mismatch = confirmPassword.length > 0 && confirmPassword !== password;
   const canSubmit =
-    passwordMeetsRules(password) && confirmPassword.length > 0 && !mismatch && !busy;
+    isPasswordAtLeastModerate(password) && confirmPassword.length > 0 && !mismatch && !busy;
 
   const updatePassword = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

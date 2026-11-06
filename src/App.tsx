@@ -6,7 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import TwoFactorSetup from './components/TwoFactorSetup';
 import PasswordAuth from './components/PasswordAuth';
 import SignupVerify from './components/SignupVerify';
-import PasswordStrengthMeter, { passwordMeetsRules } from './components/PasswordStrengthMeter';
+import PasswordStrengthMeter, { isPasswordAtLeastModerate } from './components/ui/PasswordStrengthMeter';
 import ChatWindow from './components/ChatWindow';
 import ErrorBoundary from './components/ErrorBoundary';
 import FloatingChatWidget from './components/FloatingChatWidget';
@@ -232,9 +232,6 @@ type UserProfile = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
-// Aggregate requirement for submit-time validation (all five rules).
-const passwordPattern =
-  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*]).{8,}$/;
 
 function App() {
   const { user: authUser, pending2FA, signOut } = useAuth();
@@ -468,7 +465,7 @@ function App() {
 
   const getPasswordError = (value: string) => {
     if (!value) return t('auth.err.passwordRequired');
-    if (!passwordPattern.test(value)) {
+    if (!isPasswordAtLeastModerate(value)) {
       return t('auth.err.passwordRules');
     }
     return '';
@@ -546,9 +543,9 @@ function App() {
     !getPasswordError(signupValues.password) &&
     !getConfirmPasswordError(signupValues.confirmPassword);
 
-  // The shared meter owns the five rules and their markup, so signup and the
-  // password-reset step can never disagree.
-  const passwordRulesMet = passwordMeetsRules(signupValues.password);
+  // The unified meter's stage gates submission at Moderate. Re-evaluated on
+  // every render, exactly like the rest of the form checks.
+  const passwordRulesMet = isPasswordAtLeastModerate(signupValues.password);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1268,8 +1265,7 @@ function App() {
                         />
                         {showFieldError('password') ? <span className="field-error">{signupErrors.password}</span> : null}
 
-                        {/* Real-time password requirements checklist, shared with
-                            the password-reset flow. */}
+                        {/* Unified strength meter, shared with both reset flows. */}
                         <PasswordStrengthMeter password={signupValues.password} />
                       </div>
 
