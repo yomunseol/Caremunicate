@@ -510,6 +510,86 @@ img {
   transform: scale(0.99);
 }
 
+/* ===========================================================================
+   Slim action buttons — the navbar proportions, applied app-wide.
+   Every action button lands on the same 40px pill; oversized variants and
+   their full-width/46px calendar overrides are intentionally retired.
+   =========================================================================== */
+.ghost-button,
+.primary-button,
+.secondary-button,
+.slim-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding-block: 0;
+  padding-inline: 1rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  width: auto;
+}
+
+.slim-button {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    transform 200ms var(--ease-smooth),
+    box-shadow 200ms var(--ease-smooth),
+    border-color 200ms var(--ease-smooth),
+    background 200ms var(--ease-smooth),
+    color 200ms var(--ease-smooth);
+}
+
+.slim-button--secondary {
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--accent-strong);
+  border-color: rgba(15, 58, 50, 0.12);
+}
+
+.slim-button--secondary:not(:disabled):hover {
+  background: #fff;
+  border-color: rgba(62, 169, 133, 0.28);
+  box-shadow: var(--shadow-soft);
+}
+
+.slim-button--primary {
+  background: linear-gradient(120deg, #48b58f, #7adab1);
+  color: var(--button-text);
+  box-shadow: 0 2px 10px -4px rgba(62, 169, 133, 0.35);
+}
+
+.slim-button--primary:not(:disabled):hover {
+  box-shadow: 0 4px 14px -6px rgba(62, 169, 133, 0.4), var(--shadow-soft);
+}
+
+.slim-button--ghost {
+  background: transparent;
+  color: var(--accent-strong);
+  border-color: transparent;
+}
+
+.slim-button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.slim-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.care-plan-dialog .slim-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+}
+
 .main-content {
   padding: clamp(1.25rem, 3.5vw, 2.5rem);
 }
@@ -2939,16 +3019,10 @@ img {
 .cal-muted { margin: 0; color: var(--text-muted, #557b76); font-size: 0.86rem; }
 
 /* ---- Sidebar: Create + mini month ---------------------------------------- */
-.cal-sidebar { display: grid; gap: 1rem; }
-
-.cal-create {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.45rem;
-  min-height: 46px;
-  border-radius: 999px;
-  font-weight: 800;
+.cal-sidebar {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
 }
 
 .cal-mini { display: grid; gap: 0.35rem; }
@@ -3029,7 +3103,6 @@ img {
 
 .cal-pager { display: inline-flex; align-items: center; gap: 0.1rem; }
 .cal-range { font-size: 1.02rem; font-weight: 800; color: var(--text, #133b35); }
-.cal-toolbar-create { min-height: 38px; border-radius: 999px; }
 
 .cal-segmented {
   margin-inline-start: auto;
@@ -3624,7 +3697,7 @@ img {
 
 /* Mobile: 48px targets and a scrollable grid. */
 @media (max-width: 720px) {
-  .cal-seg, .cal-today, .cal-toolbar-create, .cal-icon-btn { min-height: 44px; }
+  .cal-seg, .cal-today, .cal-icon-btn { min-height: 44px; }
   .cal-timegrid-body { max-height: 68vh; -webkit-overflow-scrolling: touch; }
   .cal-month-cell { min-height: 5rem; }
 }

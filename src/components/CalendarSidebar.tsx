@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useLang } from '../i18n';
+import SlimButton from './ui/SlimButton';
 import { addDays, startOfDay } from '../lib/calendarLayout';
 import { formatMonth, localDayKey, weekStartsOn } from '../lib/appointments';
 
@@ -50,9 +51,9 @@ export default function CalendarSidebar({
   return (
     <aside className="cal-sidebar">
       {showCreate ? (
-        <button type="button" className="primary-button cal-create" onClick={onCreate}>
+        <SlimButton variant="primary" onClick={onCreate}>
           <Plus size={16} aria-hidden="true" /> {t('cal.create')}
-        </button>
+        </SlimButton>
       ) : null}
 
       <div className="cal-mini">

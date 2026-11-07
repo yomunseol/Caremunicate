@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import CareChecklist from './CareChecklist';
 import CreateCarePlanModal from './CreateCarePlanModal';
+import SlimButton from './ui/SlimButton';
 
 // ---------------------------------------------------------------------------
 // #care — the patient's own Care Plans checklist (all active tasks).
@@ -35,14 +36,9 @@ export default function MyCare() {
           }}
         >
           <div className="eyebrow" style={{ margin: 0 }}>{t('care.myCare')}</div>
-          <button
-            type="button"
-            className="primary-button"
-            style={{ width: 'auto', padding: '0.5rem 0.95rem', fontSize: '0.82rem' }}
-            onClick={() => setCreating(true)}
-          >
+          <SlimButton variant="primary" onClick={() => setCreating(true)}>
             <Plus size={15} aria-hidden="true" /> {t('care.createPlan')}
-          </button>
+          </SlimButton>
         </div>
         <CareChecklist key={refreshKey} patientId={user.id} />
       </div>

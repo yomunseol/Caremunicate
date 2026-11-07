@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Plus } from 'lucide-react';
 import { useLang } from '../i18n';
 import CreateCarePlanModal from './CreateCarePlanModal';
+import SlimButton from './ui/SlimButton';
 import { dayKey } from '../lib/time';
 import {
   complianceForTask,
@@ -55,9 +56,9 @@ export default function CarePlanPanel({ patientId }: CarePlanPanelProps) {
 
   return (
     <div style={styles.wrap}>
-      <button type="button" className="primary-button" style={styles.create} onClick={() => setCreating(true)}>
+      <SlimButton variant="primary" style={styles.create} onClick={() => setCreating(true)}>
         <Plus size={15} aria-hidden="true" /> {t('care.createPlan')}
-      </button>
+      </SlimButton>
 
       {loading ? (
         <p className="care-muted" aria-busy="true">{t('places.searching')}</p>

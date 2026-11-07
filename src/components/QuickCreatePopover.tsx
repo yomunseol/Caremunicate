@@ -6,6 +6,7 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 import { describeError } from '../lib/errors';
 import { supabase } from '../lib/supabase';
 import { slotDate } from '../lib/time';
+import SlimButton from './ui/SlimButton';
 import {
   createAppointment,
   createAppointmentRoom,
@@ -511,12 +512,12 @@ export default function QuickCreatePopover({
       ) : null}
 
       <div className="cal-popover-actions">
-        <button type="button" className="ghost-button" onClick={onClose}>
+        <SlimButton variant="secondary" onClick={onClose}>
           {t('common.cancel')}
-        </button>
-        <button type="submit" className="primary-button" disabled={!canCreate} aria-busy={saving}>
+        </SlimButton>
+        <SlimButton type="submit" variant="primary" disabled={!canCreate} aria-busy={saving}>
           {t('cal.create')}
-        </button>
+        </SlimButton>
       </div>
     </form>
   );

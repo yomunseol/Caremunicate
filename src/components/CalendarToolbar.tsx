@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useLang } from '../i18n';
+import SlimButton from './ui/SlimButton';
 
 // ---------------------------------------------------------------------------
 // The Google-style top bar: Today, ‹ ›, the range label, then the view switcher
@@ -69,9 +70,9 @@ export default function CalendarToolbar({
       <span className="cal-range" aria-live="polite">{label}</span>
 
       {showCreate ? (
-        <button type="button" className="primary-button cal-toolbar-create" onClick={onCreate}>
+        <SlimButton variant="primary" onClick={onCreate}>
           <Plus size={15} aria-hidden="true" /> {t('cal.create')}
-        </button>
+        </SlimButton>
       ) : null}
 
       {/* Segmented control: Week / Month / Schedule — no duplicate tab. */}

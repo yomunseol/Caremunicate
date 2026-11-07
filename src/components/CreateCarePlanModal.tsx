@@ -6,6 +6,7 @@ import { useLang } from '../i18n';
 import { supabase } from '../lib/supabase';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { createCarePlan, type Frequency, type GoalUnit, type NewTask } from '../lib/carePlans';
+import SlimButton from './ui/SlimButton';
 
 // ---------------------------------------------------------------------------
 // Create Care Plan — a portaled dialog (a `.panel` ancestor carries an
@@ -211,18 +212,17 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
         ) : null}
 
         <div style={styles.actions}>
-          <button type="button" className="ghost-button" onClick={onClose}>
+          <SlimButton variant="secondary" onClick={onClose}>
             {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            className="primary-button"
+          </SlimButton>
+          <SlimButton
+            variant="primary"
             disabled={saving}
             aria-busy={saving}
             onClick={() => void save()}
           >
             {t('care.save')}
-          </button>
+          </SlimButton>
         </div>
       </div>
     </div>,
