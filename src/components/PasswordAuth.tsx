@@ -50,7 +50,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const goToProfile = () => {
     setPending2FA(false);
     console.log('Redirecting to dashboard now');
-    window.location.href = '/#profile';
+    window.location.href = '/dashboard';
   };
 
   // Sends (or resends) the email code through the first-party CR3 path. The
@@ -284,7 +284,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       // React state that may not have flushed after the async auth flow.
       setPending2FA(false);
       console.log('Redirecting to dashboard now');
-      window.location.href = '/#profile';
+      window.location.href = '/dashboard';
     } catch (caughtError) {
       console.error('Verification attempt error:', caughtError);
       setError(caughtError instanceof Error ? caughtError.message : t('login.err.unableVerify'));

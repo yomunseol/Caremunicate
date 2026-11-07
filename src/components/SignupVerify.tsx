@@ -89,6 +89,7 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
         onChange={setCode}
         disabled={busy}
         autoFocus
+        label={t('auth.enter_otp')}
         error={error || undefined}
         onResend={resend}
         resendDisabled={busy}
@@ -98,7 +99,7 @@ export default function SignupVerify({ email, onVerified, onBack }: SignupVerify
       />
 
       <button className="primary-button" type="submit" disabled={busy || code.length !== 6}>
-        {busy ? t('tfa.verifying') : t('auth.verifyEmail')}
+        {busy ? t('tfa.verifying') : t('auth.verify_button')}
       </button>
 
       <button className="ghost-button" type="button" onClick={onBack} disabled={busy}>

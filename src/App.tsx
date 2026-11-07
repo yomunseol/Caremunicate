@@ -597,48 +597,14 @@ function App() {
       if (error) throw error;
       await recordAuthAttempt(signupEmail, true);
 
-      if (!data.session) {
-        // Email confirmation is required: park on the verify screen until the
-        // 6-digit code creates a session. Nothing can be written under RLS yet;
-        // the role travels in the sign-up metadata until then.
-        setPendingVerifyEmail(signupEmail);
-        return;
+      // OTP is mandatory on first signup. If Supabase auto-created a session
+      // (email confirmation disabled), discard it so the user must verify the
+      // emailed code before becoming authenticated.
+      if (data.session) {
+        await supabase.auth.signOut({ scope: 'local' });
       }
-
-      // Signup resolved with a session: surface the success banner.
-      setShowSuccess(true);
-
-      // Persist the selected role onto profiles now that we have a session.
-      if (data.user) {
-        const { error: profileError } = await supabase
-          .from('profiles')
-          .upsert(
-            {
-              user_id: data.user.id,
-              role: authRole,
-              plan: signupPlan,
-              // New accounts go through the onboarding wizard; the wizard
-              // flips this to true. Existing rows default to true in the
-              // founder SQL so they are not forced through it.
-              onboarding_complete: false,
-              username: signupValues.fullName.trim(),
-              // Doctor directory fields live on profiles so other users can read
-              // them (auth metadata is private). Only doctors carry these.
-              ...(authRole === 'doctor' ? {
-                specialty: signupValues.specialty.trim() || null,
-                clinic: signupValues.clinic.trim() || null,
-              } : {}),
-            },
-            { onConflict: 'user_id' },
-          );
-
-        console.log('Sign-up profile write:', { role: authRole, error: profileError });
-        if (profileError) console.error('SIGNUP PROFILE ERROR:', profileError);
-      }
-
-      setAuthMessageType('success');
-      setAuthMessage(t('auth.msg.ready'));
-      navigate('profile');
+      setPendingVerifyEmail(signupEmail);
+      return;
     } catch (error) {
       await recordAuthAttempt(signupEmail, false);
       setAuthMessageType('error');
@@ -1103,7 +1069,7 @@ function App() {
                 <div className="eyebrow">{authMode === 'signup' ? t('auth.signupEyebrow') : t('auth.loginEyebrow')}</div>
                 <h2>
                   {pendingVerifyEmail
-                    ? t('auth.verifyEmail')
+                    ? t('auth.verify_email_title')
                     : authMode === 'signup'
                       ? isProvider(authRole)
                         ? t('auth.titleDoctorSignup')
@@ -1112,7 +1078,7 @@ function App() {
                 </h2>
                 <p className="auth-copy">
                   {pendingVerifyEmail
-                    ? t('auth.verifyEmailDesc', { email: pendingVerifyEmail })
+                    ? t('auth.otp_sent_message')
                     : authMode === 'signup'
                       ? isProvider(authRole)
                         ? t('auth.copyDoctorSignup')
@@ -1125,7 +1091,7 @@ function App() {
                     <SignupVerify
                       email={pendingVerifyEmail}
                       onVerified={() => {
-                        window.location.href = '/#profile';
+                        window.location.href = '/dashboard';
                       }}
                       onBack={() => openAuth('login')}
                     />
