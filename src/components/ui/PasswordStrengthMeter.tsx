@@ -73,6 +73,7 @@ export default function PasswordStrengthMeter({
   const config = STAGES[stage];
   const label = t(`password.${stage}`);
   const showError = isSubmitted && !isPasswordAtLeastModerate(password);
+  const isStrong = stage === 'strong' || stage === 'resilient';
 
   return (
     <>
@@ -94,6 +95,8 @@ export default function PasswordStrengthMeter({
               ...styles.fill,
               width: `${config.width}%`,
               background: config.color,
+              color: config.color,
+              filter: isStrong ? 'drop-shadow(0 0 6px currentColor)' : 'none',
             }}
           />
         </div>
@@ -132,13 +135,14 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     borderRadius: 999,
     transition:
-      'width 175ms cubic-bezier(0.16, 1, 0.3, 1), background-color 175ms cubic-bezier(0.16, 1, 0.3, 1)',
+      'width 500ms cubic-bezier(0.16, 1, 0.3, 1), background-color 500ms cubic-bezier(0.16, 1, 0.3, 1), filter 500ms cubic-bezier(0.16, 1, 0.3, 1)',
   },
   label: {
     fontSize: '0.72rem',
     fontWeight: 800,
     letterSpacing: '0.02em',
     whiteSpace: 'nowrap',
+    transition: 'color 500ms cubic-bezier(0.16, 1, 0.3, 1)',
   },
   error: {
     margin: '0.35rem 0 0',
