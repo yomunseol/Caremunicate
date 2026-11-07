@@ -30,7 +30,6 @@ import PricingSection, {
   isProviderPlan,
   normalizePlanId,
   planFamilyOf,
-  planForRole,
   type Plan,
   type PlanFamily,
   type PlanId,
@@ -210,7 +209,6 @@ const getInitialPlan = (): PlanId | null => {
 };
 
 type SignupFormValues = {
-  fullName: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -247,7 +245,6 @@ function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('signup');
   const [authRole, setAuthRole] = useState<AuthRole>('patient');
   const [signupValues, setSignupValues] = useState<SignupFormValues>({
-    fullName: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -459,11 +456,6 @@ function App() {
     return '';
   };
 
-  const getFullNameError = (value: string) => {
-    if (!value.trim()) return t('auth.err.fullName');
-    return '';
-  };
-
   const getConfirmPasswordError = (value: string) => {
     if (!value) return t('auth.err.confirmRequired');
     if (value !== signupValues.password) return t('auth.err.passwordMismatch');
@@ -472,11 +464,6 @@ function App() {
 
   const validateSignupForm = () => {
     const nextErrors: Record<string, string> = {};
-
-    const fullNameError = getFullNameError(signupValues.fullName);
-    if (fullNameError) {
-      nextErrors.fullName = fullNameError;
-    }
 
     const emailError = getEmailError(signupValues.email);
     if (emailError) {
@@ -561,37 +548,10 @@ function App() {
     setAuthMessage('');
     setShowSuccess(false);
 
-    // Plan mirrors the role for providers; patients land on basic (or the
-    // patient tier they picked on the pricing page).
-    const signupPlan: PlanId = isProvider(authRole)
-      ? planForRole(authRole)
-      : selectedPlan && !isProviderPlan(selectedPlan)
-        ? selectedPlan
-        : 'basic';
-
     try {
       const { data, error } = await supabase.auth.signUp({
         email: signupValues.email.trim(),
         password: signupValues.password,
-        options: {
-          data: {
-            fullName: signupValues.fullName.trim(),
-            role: authRole,
-            ...(authRole === 'doctor' ? {
-              specialty: signupValues.specialty.trim(),
-              clinic: signupValues.clinic.trim(),
-            } : {}),
-            ...(authRole === 'department' ? {
-              departmentName: signupValues.departmentName.trim(),
-              parentHospital: signupValues.parentHospital.trim(),
-            } : {}),
-            ...(authRole === 'hospital' ? {
-              hospitalName: signupValues.hospitalName.trim(),
-              addressRegion: signupValues.addressRegion.trim(),
-            } : {}),
-            plan: signupPlan,
-          },
-        },
       });
 
       if (error) throw error;
@@ -1129,42 +1089,23 @@ function App() {
                     ) : null}
                     {authMessage ? <p className={authMessageType === 'success' ? 'auth-success' : 'field-error'}>{authMessage}</p> : null}
                     <>
-                      <div className="form-row">
-                        <div className="field-wrap">
-                          <input
-                            className="input"
-                            placeholder={t('auth.fullName')}
-                            aria-label={t('auth.fullName')}
-                            value={signupValues.fullName}
-                            onBlur={() => setTouchedFields((previous) => ({ ...previous, fullName: true }))}
-                            onChange={(event) => {
-                              setSignupValues((previous) => ({ ...previous, fullName: event.target.value }));
-                              if (signupErrors.fullName) {
-                                setSignupErrors((previous) => ({ ...previous, fullName: '' }));
-                              }
-                            }}
-                            aria-invalid={showFieldError('fullName')}
-                          />
-                          {showFieldError('fullName') ? <span className="field-error">{signupErrors.fullName}</span> : null}
-                        </div>
-                        <div className="field-wrap">
-                          <input
-                            className="input"
-                            placeholder={t('auth.email')}
-                            type="email"
-                            aria-label={t('auth.email')}
-                            value={signupValues.email}
-                            onBlur={() => setTouchedFields((previous) => ({ ...previous, email: true }))}
-                            onChange={(event) => {
-                              setSignupValues((previous) => ({ ...previous, email: event.target.value }));
-                              if (signupErrors.email) {
-                                setSignupErrors((previous) => ({ ...previous, email: '' }));
-                              }
-                            }}
-                            aria-invalid={showFieldError('email')}
-                          />
-                          {showFieldError('email') ? <span className="field-error">{signupErrors.email}</span> : null}
-                        </div>
+                      <div className="field-wrap">
+                        <input
+                          className="input"
+                          placeholder={t('auth.email')}
+                          type="email"
+                          aria-label={t('auth.email')}
+                          value={signupValues.email}
+                          onBlur={() => setTouchedFields((previous) => ({ ...previous, email: true }))}
+                          onChange={(event) => {
+                            setSignupValues((previous) => ({ ...previous, email: event.target.value }));
+                            if (signupErrors.email) {
+                              setSignupErrors((previous) => ({ ...previous, email: '' }));
+                            }
+                          }}
+                          aria-invalid={showFieldError('email')}
+                        />
+                        {showFieldError('email') ? <span className="field-error">{signupErrors.email}</span> : null}
                       </div>
 
                       {authRole === 'doctor' ? (
