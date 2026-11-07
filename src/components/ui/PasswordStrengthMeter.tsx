@@ -16,27 +16,33 @@ const STAGES: Record<PasswordStage, StageConfig> = {
   resilient: { width: 100, color: '#10b981' },
 };
 
+/** Standard English QWERTY special characters. */
+const standardSpecialCharsRegex = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/;
+/** Anything outside word chars, whitespace, and the standard QWERTY set. */
+const hasBeyondSpecialChars = /[^\w\s!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/;
+
 /**
  * Cr-1 scoring:
  *   critical  <= 4
- *   weak      5–7, or 8–11 without both a number and a special
- *   moderate  8–9 with number + special; 10–11 with number + special
- *             (missing upper/lower keeps it moderate)
- *   strong    10–11 with upper + lower + number + special
- *   resilient >=12, strong baseline, plus unicode/rare OR >=2 specials/numbers
+ *   weak      5–7, or 8–11 without 2 of upper/number/QWERTY-special
+ *   moderate  8–9 with >=2 of [upper, number, standard special]
+ *   strong    10–11 with upper + lower + number + standard special
+ *   resilient >=12, strong baseline, plus beyond-QWERTY chars OR >=2
+ *             standard specials/numbers
  */
 export const getPasswordStage = (password: string): PasswordStage => {
   const length = password.length;
   const hasUpper = /[A-Z]/.test(password);
   const hasLower = /[a-z]/.test(password);
   const hasNumber = /\d/.test(password);
-  const hasSpecial = /[^A-Za-z0-9\s]/.test(password);
-  const hasUnicode = /[^\x00-\x7F]/.test(password);
-  const specialCount = (password.match(/[^A-Za-z0-9\s]/g) ?? []).length;
+  const hasStandardSpecial = standardSpecialCharsRegex.test(password);
+  const hasBeyond = hasBeyondSpecialChars.test(password);
+  const standardSpecialCount = (password.match(new RegExp(standardSpecialCharsRegex.source, 'g')) ?? []).length;
   const numberCount = (password.match(/\d/g) ?? []).length;
 
-  const moderateBaseline = hasNumber && hasSpecial;
-  const strongBaseline = hasUpper && hasLower && hasNumber && hasSpecial;
+  const upperNumberSpecialCount = [hasUpper, hasNumber, hasStandardSpecial].filter(Boolean).length;
+  const moderateBaseline = upperNumberSpecialCount >= 2;
+  const strongBaseline = hasUpper && hasLower && hasNumber && hasStandardSpecial;
 
   if (length <= 4) return 'critical';
   if (length <= 7) return 'weak';
@@ -45,7 +51,7 @@ export const getPasswordStage = (password: string): PasswordStage => {
     if (strongBaseline) return 'strong';
     return moderateBaseline ? 'moderate' : 'weak';
   }
-  if (strongBaseline && (hasUnicode || specialCount >= 2 || numberCount >= 2)) {
+  if (strongBaseline && (hasBeyond || standardSpecialCount >= 2 || numberCount >= 2)) {
     return 'resilient';
   }
   if (strongBaseline) return 'strong';
