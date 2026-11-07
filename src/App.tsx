@@ -553,9 +553,9 @@ function App() {
         email: signupEmail,
         password: signupValues.password,
         options: {
-          // Let the handle_new_user trigger own profile creation. Do not pass
-          // full_name/username here — undefined metadata breaks the insert.
-          data: {},
+          // Let the handle_new_user trigger own profile creation. Only pass the
+          // one value we know exists; undefined metadata breaks the insert.
+          data: { email: signupEmail },
         },
       });
 

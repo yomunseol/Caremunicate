@@ -182,16 +182,37 @@ export const createCarePlan = async (payload: {
   }
 
   // Step C: attach the captured plan_id to every task and insert as one batch.
-  const { error: taskError } = await supabase.from('care_plan_tasks').insert(
-    payload.tasks.map((task) => ({
+  const taskPayload = payload.tasks.map((task) => ({
+    plan_id: planId,
+    task_name: task.task_name,
+    task_type: task.task_type,
+    frequency: task.frequency,
+    duration_value: task.duration_value,
+    // duration_unit is a plain string ('day' | 'week'), never an object.
+    duration_unit: String(task.duration_unit),
+  }));
+
+  console.log('Task Payload:', taskPayload);
+
+  let taskResponse = await supabase.from('care_plan_tasks').insert(taskPayload);
+
+  // The older care-plan schema spells the same columns instruction /
+  // metric_type / goal_count / goal_unit. Retry with those instead of failing
+  // when duration_unit (or another client column) is absent.
+  if (taskResponse.error && schemaMismatch(taskResponse.error.code)) {
+    const legacyPayload = payload.tasks.map((task) => ({
       plan_id: planId,
-      task_name: task.task_name,
-      task_type: task.task_type,
+      instruction: task.task_name,
+      metric_type: task.task_type,
       frequency: task.frequency,
-      duration_value: task.duration_value,
-      duration_unit: task.duration_unit,
-    })),
-  );
+      goal_count: task.duration_value,
+      goal_unit: String(task.duration_unit),
+    }));
+    console.log('Task Payload (legacy):', legacyPayload);
+    taskResponse = await supabase.from('care_plan_tasks').insert(legacyPayload);
+  }
+
+  const { error: taskError } = taskResponse;
 
   if (taskError) {
     console.error('CARE PLAN SAVE ERROR:', taskError.message, taskError.details);
