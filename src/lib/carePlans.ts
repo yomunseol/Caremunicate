@@ -121,24 +121,36 @@ const SAVE_SCHEMA_CODES = new Set([
   '42501', // RLS denial
 ]);
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const createCarePlan = async (payload: {
   patientId: string;
   doctorId: string;
+  userId: string;
   title: string;
   tasks: NewTask[];
 }): Promise<CarePlan | null> => {
+  // The insert policy keys on auth.uid() = user_id, so an empty/invalid id
+  // would be rejected before the row is ever written.
+  if (!UUID_PATTERN.test(payload.userId)) {
+    console.error('CARE PLAN SAVE ERROR:', 'user_id is missing or not a UUID', payload.userId);
+    return null;
+  }
+
   // Step A: insert the plan. Step B: capture its id before touching the tasks.
-  // `user_id` is the creator/owner (the caller), so an insert policy keyed on
-  // auth.uid() = user_id passes for patients and providers alike.
   const basePlan = {
     patient_id: payload.patientId,
     doctor_id: payload.doctorId,
     title: payload.title,
   };
 
+  const insertPayload = { ...basePlan, user_id: payload.userId };
+  console.log('Care Plan Payload:', insertPayload);
+
   let response = await supabase
     .from('care_plans')
-    .insert({ ...basePlan, user_id: payload.doctorId })
+    .insert(insertPayload)
     .select('*')
     .single();
 

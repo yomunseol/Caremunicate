@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Trash2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
+import { supabase } from '../lib/supabase';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { createCarePlan, type Frequency, type GoalUnit, type NewTask } from '../lib/carePlans';
 
@@ -59,8 +60,18 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
 
   const save = async () => {
     if (saving) return;
-    if (!user) {
-      console.error('CARE PLAN SAVE ERROR:', 'No authenticated user', null);
+
+    // Read the authoritative user from Supabase (the context can lag), so
+    // user_id is always a real UUID for the RLS check.
+    const { data: authData, error: authError } = await supabase.auth.getUser();
+    const author = authData?.user ?? user;
+
+    if (authError || !author?.id) {
+      console.error(
+        'CARE PLAN SAVE ERROR:',
+        'No authenticated user',
+        authError?.message ?? null,
+      );
       setError('createFailed');
       return;
     }
@@ -79,7 +90,8 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
     try {
       const plan = await createCarePlan({
         patientId,
-        doctorId: user.id,
+        doctorId: author.id,
+        userId: author.id,
         title: title.trim(),
         tasks,
       });
