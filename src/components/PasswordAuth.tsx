@@ -1,7 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { AuthResponse } from '@supabase/supabase-js';
 import {
-  clearPersistedSupabaseSession,
   resetMemoryAuthClient,
   supabase,
   supabaseMemory,
@@ -35,10 +34,10 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   // The inline "Forgot password?" panel, shown under the password field.
   const [recoveryOpen, setRecoveryOpen] = useState(false);
 
-  // Clear any partially-persisted session from a previous attempt whenever the
-  // component mounts (arriving at the login screen) or the view resets.
+  // Clear only the memory-only trap client. Never sign out the persistent
+  // client here: doing so instantly logs out a valid session restored on the
+  // login screen.
   useEffect(() => {
-    void clearPersistedSupabaseSession();
     void resetMemoryAuthClient();
     setPending2FA(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps

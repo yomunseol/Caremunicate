@@ -43,6 +43,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const restoreSession = async () => {
       const { data, error } = await supabase.auth.getSession();
+      console.log('Current Auth Session:', data.session ? 'EXISTS' : 'NULL');
 
       if (!mounted) return;
 
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+      console.log('Current Auth Session:', nextSession ? 'EXISTS' : 'NULL');
 
       // If the user completed 2FA (real persistent session installed), clear
       // the pending flag so the gated state below reports them as logged in.

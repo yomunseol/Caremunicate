@@ -11,6 +11,7 @@
     "i18n:check": "node scripts/i18n-check.mjs"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.114.0",
     "firebase": "^12.18.0",
     "leaflet": "^1.9.4",
