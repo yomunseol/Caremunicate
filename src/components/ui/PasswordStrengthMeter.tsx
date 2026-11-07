@@ -112,7 +112,7 @@ export default function PasswordStrengthMeter({
         </span>
       </div>
       {showError ? (
-        <p className="password-strength-meter__error" role="alert" style={styles.error}>
+        <p className="password-strength-meter__error field-error" role="alert" style={styles.error}>
           {t('password.min_requirement_error')}
         </p>
       ) : null}
@@ -150,10 +150,6 @@ const styles: Record<string, CSSProperties> = {
   },
   error: {
     margin: '0.35rem 0 0',
-    color: '#ef4444',
-    fontSize: '0.74rem',
-    fontWeight: 600,
-    lineHeight: 1.4,
     animation: 'password-strength-fade-in 200ms ease-out',
   },
 };

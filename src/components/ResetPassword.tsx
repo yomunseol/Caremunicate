@@ -207,6 +207,6 @@ const styles: Record<string, CSSProperties> = {
   title: { margin: 0, fontSize: '1.15rem' },
   field: { display: 'grid', gap: '0.4rem' },
   label: { fontSize: '0.75rem', fontWeight: 700, color: '#216e5d', letterSpacing: '0.04em' },
-  error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.88rem' },
+  error: { margin: 0, color: '#ef4444', fontWeight: 600, fontSize: '0.78rem', lineHeight: 1.4 },
   success: { margin: 0, color: '#216e5d', fontWeight: 700, fontSize: '0.9rem' },
 };

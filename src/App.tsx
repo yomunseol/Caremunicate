@@ -464,14 +464,6 @@ function App() {
     return '';
   };
 
-  const getPasswordError = (value: string) => {
-    if (!value) return t('auth.err.passwordRequired');
-    if (!isPasswordAtLeastModerate(value)) {
-      return t('auth.err.passwordRules');
-    }
-    return '';
-  };
-
   const getConfirmPasswordError = (value: string) => {
     if (!value) return t('auth.err.confirmRequired');
     if (value !== signupValues.password) return t('auth.err.passwordMismatch');
@@ -513,11 +505,6 @@ function App() {
       nextErrors.addressRegion = t('signup.required');
     }
 
-    const passwordError = getPasswordError(signupValues.password);
-    if (passwordError) {
-      nextErrors.password = passwordError;
-    }
-
     const confirmError = getConfirmPasswordError(signupValues.confirmPassword);
     if (confirmError) {
       nextErrors.confirmPassword = confirmError;
@@ -535,7 +522,6 @@ function App() {
 
   // The unified meter's stage gates submission at Moderate. Re-evaluated on
   // every render, exactly like the rest of the form checks.
-  const passwordRulesMet = isPasswordAtLeastModerate(signupValues.password);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -554,6 +540,11 @@ function App() {
 
     if (Object.keys(nextErrors).length > 0) {
       console.log('Validation failed:', nextErrors);
+      return;
+    }
+
+    if (!isPasswordAtLeastModerate(signupValues.password)) {
+      console.log('Validation failed: password below Moderate');
       return;
     }
 
@@ -1254,9 +1245,6 @@ function App() {
                           }}
                           aria-invalid={showFieldError('password')}
                         />
-                        {showFieldError('password') ? <span className="field-error">{signupErrors.password}</span> : null}
-
-                        {/* Unified strength meter, shared with both reset flows. */}
                         <PasswordStrengthMeter
                           password={signupValues.password}
                           isSubmitted={signupSubmitted}
@@ -1316,7 +1304,6 @@ function App() {
                         className="primary-button"
                         type="submit"
                         disabled={isAuthLoading}
-                        title={!passwordRulesMet ? t('auth.passwordWeak') : undefined}
                       >
                         {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}
                       </button>
