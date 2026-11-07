@@ -212,6 +212,20 @@ export const createCarePlan = async (payload: {
     taskResponse = await supabase.from('care_plan_tasks').insert(legacyPayload);
   }
 
+  // Last resort: the live schema has the modern columns but no duration_unit.
+  // Save the task without the unit; reads treat a missing unit as 'day'.
+  if (taskResponse.error && schemaMismatch(taskResponse.error.code)) {
+    const withoutUnit = payload.tasks.map((task) => ({
+      plan_id: planId,
+      task_name: task.task_name,
+      task_type: task.task_type,
+      frequency: task.frequency,
+      duration_value: task.duration_value,
+    }));
+    console.log('Task Payload (no duration_unit):', withoutUnit);
+    taskResponse = await supabase.from('care_plan_tasks').insert(withoutUnit);
+  }
+
   const { error: taskError } = taskResponse;
 
   if (taskError) {
