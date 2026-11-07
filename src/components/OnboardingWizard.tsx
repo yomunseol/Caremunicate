@@ -131,13 +131,25 @@ export default function OnboardingWizard() {
         return;
       }
 
+      const fullName = form.fullName.trim();
+      const emailPrefix = String(user.email ?? '').split('@')[0] ?? '';
+      const derivedUsername =
+        fullName
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '.')
+          .replace(/^\.+|\.+$/g, '')
+          .slice(0, 32) ||
+        emailPrefix.replace(/[^a-zA-Z0-9._-]/g, '').slice(0, 32) ||
+        `user-${user.id.slice(0, 8)}`;
+
+      // Update the trigger-created row. Only columns we know exist are written;
+      // specialty/clinic_name are omitted because a missing column made the
+      // whole save fail and left the name unsaved.
       const payload = {
-        user_id: user.id,
         role: form.role,
         plan: form.plan,
-        full_name: form.fullName,
-        specialty: form.specialty || null,
-        clinic_name: form.clinicName || null,
+        full_name: fullName,
+        username: derivedUsername,
         onboarding_complete: true,
       };
 
@@ -145,7 +157,8 @@ export default function OnboardingWizard() {
 
       const { error } = await supabase
         .from('profiles')
-        .upsert(payload, { onConflict: 'user_id' });
+        .update(payload)
+        .eq('user_id', user.id);
 
       if (error) {
         reportUpsertError(error.message, error.details);

@@ -621,7 +621,10 @@ function App() {
     </div>
   );
 
-  const profileDisplayName = String(profileData?.username ?? userProfile?.fullName ?? currentUser?.email ?? '');
+  const nameFromProfile = typeof profileData?.full_name === 'string' ? profileData.full_name.trim() : '';
+  const usernameFromProfile = typeof profileData?.username === 'string' ? profileData.username.trim() : '';
+  const profileDisplayName =
+    nameFromProfile || usernameFromProfile || userProfile?.fullName || currentUser?.email || 'User';
 
   // Dashboard role. Prefer the persisted profiles.role, falling back to the
   // sign-up metadata.
@@ -1244,7 +1247,11 @@ function App() {
         {route === 'profile' && (
           <ProtectedRoute>
             <section className="section profile-grid">
-            <DashboardOverview role={profileRole} planName={currentPlanOption?.name ?? ''} />
+            <DashboardOverview
+              role={profileRole}
+              planName={currentPlanOption?.name ?? ''}
+              displayName={profileDisplayName}
+            />
 
             <div className="profile-sidebar">
               {/* The dashboard sidebar's entry into the care-plan feature:

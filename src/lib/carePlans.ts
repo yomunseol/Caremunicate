@@ -124,6 +124,12 @@ const SAVE_SCHEMA_CODES = new Set([
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** duration_value / goal_count must reach Postgres as an integer. */
+const positiveInt = (value: number): number => {
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+};
+
 export const createCarePlan = async (payload: {
   patientId: string;
   doctorId: string;
@@ -187,7 +193,7 @@ export const createCarePlan = async (payload: {
     task_name: task.task_name,
     task_type: task.task_type,
     frequency: task.frequency,
-    duration_value: task.duration_value,
+    duration_value: positiveInt(task.duration_value),
     // duration_unit is a plain string ('day' | 'week'), never an object.
     duration_unit: String(task.duration_unit),
   }));
@@ -205,7 +211,7 @@ export const createCarePlan = async (payload: {
       instruction: task.task_name,
       metric_type: task.task_type,
       frequency: task.frequency,
-      goal_count: task.duration_value,
+      goal_count: positiveInt(task.duration_value),
       goal_unit: String(task.duration_unit),
     }));
     console.log('Task Payload (legacy):', legacyPayload);
@@ -220,7 +226,7 @@ export const createCarePlan = async (payload: {
       task_name: task.task_name,
       task_type: task.task_type,
       frequency: task.frequency,
-      duration_value: task.duration_value,
+      duration_value: positiveInt(task.duration_value),
     }));
     console.log('Task Payload (no duration_unit):', withoutUnit);
     taskResponse = await supabase.from('care_plan_tasks').insert(withoutUnit);

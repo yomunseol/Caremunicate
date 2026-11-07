@@ -60,9 +60,15 @@ type DashboardOverviewProps = {
   role?: string;
   /** Localized plan name, read live from profiles.plan by the caller. */
   planName?: string;
+  /** profiles.full_name (or username), read live by the caller. */
+  displayName?: string;
 };
 
-export default function DashboardOverview({ role = '', planName = '' }: DashboardOverviewProps) {
+export default function DashboardOverview({
+  role = '',
+  planName = '',
+  displayName: profileDisplayName = '',
+}: DashboardOverviewProps) {
   const { user } = useAuth();
   const { t } = useLang();
 
@@ -71,7 +77,11 @@ export default function DashboardOverview({ role = '', planName = '' }: Dashboar
   const effectiveRole = (role || profileRole).toLowerCase();
   // Provider-side cards cover doctor, department and hospital accounts.
   const provider = isProvider(effectiveRole);
-  const displayName = String(user?.user_metadata?.fullName ?? user?.email ?? '');
+  const displayName =
+    profileDisplayName ||
+    String(user?.user_metadata?.fullName ?? '') ||
+    user?.email ||
+    'User';
 
   const [overview, setOverview] = useState<Overview>(EMPTY_OVERVIEW);
   const [loading, setLoading] = useState(true);
