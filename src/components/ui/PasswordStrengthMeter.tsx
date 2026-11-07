@@ -73,7 +73,11 @@ export default function PasswordStrengthMeter({
   const config = STAGES[stage];
   const label = t(`password.${stage}`);
   const showError = isSubmitted && !isPasswordAtLeastModerate(password);
-  const isStrong = stage === 'strong' || stage === 'resilient';
+  const glow = stage === 'resilient'
+    ? 'drop-shadow(0 0 6px currentColor)'
+    : stage === 'strong'
+      ? 'drop-shadow(0 0 3px currentColor)'
+      : 'none';
 
   return (
     <>
@@ -96,7 +100,7 @@ export default function PasswordStrengthMeter({
               width: `${config.width}%`,
               background: config.color,
               color: config.color,
-              filter: isStrong ? 'drop-shadow(0 0 6px currentColor)' : 'none',
+              filter: glow,
             }}
           />
         </div>
