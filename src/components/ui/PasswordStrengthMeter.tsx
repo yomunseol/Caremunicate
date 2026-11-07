@@ -132,7 +132,7 @@ const styles: Record<string, CSSProperties> = {
     height: '100%',
     borderRadius: 999,
     transition:
-      'width 175ms cubic-bezier(0.2, 0.8, 0.2, 1), background-color 175ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+      'width 175ms cubic-bezier(0.16, 1, 0.3, 1), background-color 175ms cubic-bezier(0.16, 1, 0.3, 1)',
   },
   label: {
     fontSize: '0.72rem',
