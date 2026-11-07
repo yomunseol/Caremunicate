@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import type { Factor } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
+import CodePanel from './CodePanel';
 
 type TwoFactorMethod = 'none' | 'email' | 'app';
 
@@ -41,33 +42,6 @@ const descriptionStyle = {
   color: '#557b76',
   fontSize: '0.86rem',
   lineHeight: 1.6,
-};
-
-const buttonStyle = {
-  border: 'none',
-  borderRadius: '999px',
-  padding: '0.78rem 1rem',
-  background: 'linear-gradient(120deg, #48b58f, #7adab1)',
-  color: '#072c2a',
-  fontWeight: 700,
-  cursor: 'pointer',
-};
-
-const secondaryButtonStyle = {
-  ...buttonStyle,
-  border: '1px solid rgba(156, 54, 54, 0.18)',
-  background: 'rgba(156, 54, 54, 0.07)',
-  color: '#9c3636',
-};
-
-const inputStyle = {
-  width: '100%',
-  border: '1px solid rgba(15, 58, 50, 0.12)',
-  borderRadius: '0.8rem',
-  padding: '0.8rem 1rem',
-  background: '#fff',
-  fontSize: '1rem',
-  letterSpacing: '0.08em',
 };
 
 const statusStyle = {
@@ -133,24 +107,6 @@ const noticeStyle = {
   lineHeight: 1.45,
 };
 
-const resendRowStyle = {
-  display: 'flex',
-  gap: '0.5rem',
-  alignItems: 'stretch',
-};
-
-const resendButtonStyle = {
-  border: '1px solid rgba(62, 169, 133, 0.3)',
-  borderRadius: '999px',
-  padding: '0.6rem 0.9rem',
-  background: 'transparent',
-  color: '#216e5d',
-  fontWeight: 700,
-  cursor: 'pointer',
-  fontSize: '0.82rem',
-  whiteSpace: 'nowrap' as const,
-};
-
 function findTotpFactor(factors: Factor[] | undefined): Factor | null {
   return factors?.find((factor) => factor.factor_type === 'totp') ?? null;
 }
@@ -174,8 +130,6 @@ export default function TwoFactorSetup() {
   const [emailCode, setEmailCode] = useState('');
   // Yellow, non-blocking notice when the OTP send fails (never blocks the view).
   const [sendNotice, setSendNotice] = useState('');
-  // Resend cooldown, counted down one second at a time.
-  const [resendIn, setResendIn] = useState(0);
 
   // Load the real state once: a TOTP factor from Supabase MFA, plus the
   // saved profile preference ('email' | 'app' | 'none').
@@ -236,13 +190,6 @@ export default function TwoFactorSetup() {
       cancelled = true;
     };
   }, []);
-
-  // Tick the resend cooldown down to zero.
-  useEffect(() => {
-    if (resendIn <= 0) return;
-    const timer = setTimeout(() => setResendIn((seconds) => seconds - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [resendIn]);
 
   const savePreference = async (value: TwoFactorMethod) => {
     const userId = await getUserId();
@@ -318,7 +265,6 @@ export default function TwoFactorSetup() {
     }
 
     setSendNotice('');
-    setResendIn(30);
     return true;
   };
 
@@ -447,16 +393,16 @@ export default function TwoFactorSetup() {
     setLoading(false);
   };
 
-  // Resend the email code (30s cooldown). Same send path as the radio handler,
-  // so it uses shouldCreateUser: false and never dead-ends on failure.
-  const handleResendEmailCode = async () => {
-    if (resendIn > 0 || loading) return;
+  // Resend the email code. CodePanel owns the cooldown, so this only sends.
+  const handleResendEmailCode = async (): Promise<boolean> => {
+    if (loading) return false;
 
     setLoading(true);
     setError('');
     try {
       const sent = await sendEmailCode();
       if (sent) setMessage(t('tfa.msg.sent'));
+      return sent;
     } finally {
       setLoading(false);
     }
@@ -470,7 +416,6 @@ export default function TwoFactorSetup() {
     setEmailCode('');
     setError('');
     setSendNotice('');
-    setResendIn(0);
     // The unverified factor may still exist server-side; reconcile.
     void (async () => {
       const { data, error: listError } = await supabase.auth.mfa.listFactors();
@@ -497,7 +442,9 @@ export default function TwoFactorSetup() {
         </div>
 
         {loading && <p style={statusStyle}>{t('tfa.checking')}</p>}
-        {error && <p style={errorStyle} role="alert">{error}</p>}
+        {error && !enrolling && !emailEnrolling ? (
+          <p style={errorStyle} role="alert">{error}</p>
+        ) : null}
         {message && <p style={statusStyle}>{message}</p>}
 
         {!enrolling && !emailEnrolling ? (
@@ -551,25 +498,20 @@ export default function TwoFactorSetup() {
               </p>
             </div>
 
-            <input
-              style={inputStyle}
+            <CodePanel
               value={verificationCode}
-              onChange={(event) => setVerificationCode(event.target.value)}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              pattern="[0-9]{6}"
-              placeholder={t('tfa.codePlaceholder')}
-              aria-label={t('tfa.appCodeAria')}
+              onChange={setVerificationCode}
               disabled={loading}
-              required
+              label={t('tfa.appCodeAria')}
+              error={error || undefined}
+              autoFocus
             />
 
-            <button type="submit" style={buttonStyle} disabled={loading}>
+            <button type="submit" className="primary-button" disabled={loading}>
               {loading ? t('tfa.verifying') : t('tfa.verifyEnable')}
             </button>
 
-            <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
+            <button type="button" className="ghost-button" onClick={handleCancelEnroll} disabled={loading}>
               {t('common.cancel')}
             </button>
           </form>
@@ -583,38 +525,22 @@ export default function TwoFactorSetup() {
               {sendNotice ? t('tfa.emailEnterDesc') : t('tfa.emailSentDesc')}
             </p>
 
-            <div style={resendRowStyle}>
-              <input
-                style={{ ...inputStyle, width: 'auto', flex: 1, minWidth: 0 }}
-                value={emailCode}
-                onChange={(event) => setEmailCode(event.target.value)}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                pattern="[0-9]{6}"
-                placeholder={t('tfa.codePlaceholder')}
-                aria-label={t('tfa.emailCodeAria')}
-                disabled={loading}
-                required
-              />
-              <button
-                type="button"
-                style={{
-                  ...resendButtonStyle,
-                  ...(resendIn > 0 || loading ? { opacity: 0.55, cursor: 'not-allowed' as const } : null),
-                }}
-                onClick={() => void handleResendEmailCode()}
-                disabled={resendIn > 0 || loading}
-              >
-                {resendIn > 0 ? t('tfa.resendIn', { seconds: resendIn }) : t('tfa.resend')}
-              </button>
-            </div>
+            <CodePanel
+              value={emailCode}
+              onChange={setEmailCode}
+              disabled={loading}
+              label={t('tfa.emailCodeAria')}
+              error={error || undefined}
+              onResend={handleResendEmailCode}
+              resendDisabled={loading}
+              resendAfterSeconds={30}
+            />
 
-            <button type="submit" style={buttonStyle} disabled={loading}>
+            <button type="submit" className="primary-button" disabled={loading}>
               {loading ? t('tfa.verifying') : t('tfa.verifyEmail')}
             </button>
 
-            <button type="button" style={secondaryButtonStyle} onClick={handleCancelEnroll} disabled={loading}>
+            <button type="button" className="ghost-button" onClick={handleCancelEnroll} disabled={loading}>
               {t('common.cancel')}
             </button>
           </form>

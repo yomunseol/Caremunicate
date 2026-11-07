@@ -64,19 +64,23 @@ end
 $$;
 
 -- ---------------------------------------------------------------------------
--- 2) care_plans: the patient may create a plan for themselves; the authoring
---    provider keeps the existing path.
+-- 2) care_plans: the creator may insert a plan for themselves (or a patient).
+--    `user_id` is the author: the client writes the caller's id on every save.
 -- ---------------------------------------------------------------------------
+alter table public.care_plans
+  add column if not exists user_id uuid references auth.users (id) on delete cascade;
+
+update public.care_plans
+   set user_id = coalesce(doctor_id, provider_id, patient_id)
+ where user_id is null;
+
 drop policy if exists "care_plans_insert_provider" on public.care_plans;
 drop policy if exists "Users can create care plans" on public.care_plans;
-create policy "care_plans_insert_own_or_provider"
+drop policy if exists "care_plans_insert_own_or_provider" on public.care_plans;
+create policy "Allow users to create care plans"
   on public.care_plans for insert
   to authenticated
-  with check (
-    patient_id = auth.uid()
-    or doctor_id = auth.uid()
-    or provider_id = auth.uid()
-  );
+  with check (auth.uid() = user_id);
 
 drop policy if exists "care_plans_delete_author" on public.care_plans;
 create policy "care_plans_delete_author"

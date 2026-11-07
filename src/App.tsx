@@ -549,9 +549,22 @@ function App() {
     setShowSuccess(false);
 
     try {
+      // The profiles trigger requires a non-empty username; deriving one from
+      // the email local-part avoids the generic "database error saving new
+      // user" raised when the metadata username is missing.
+      const derivedUsername =
+        signupEmail
+          .split('@')[0]
+          ?.replace(/[^a-zA-Z0-9._-]/g, '')
+          .slice(0, 32) || 'caremunicate-user';
+
       const { data, error } = await supabase.auth.signUp({
-        email: signupValues.email.trim(),
+        email: signupEmail,
         password: signupValues.password,
+        options: {
+          // Only defined values — never undefined, which breaks metadata JSON.
+          data: { username: derivedUsername },
+        },
       });
 
       if (error) throw error;

@@ -128,15 +128,31 @@ export const createCarePlan = async (payload: {
   tasks: NewTask[];
 }): Promise<CarePlan | null> => {
   // Step A: insert the plan. Step B: capture its id before touching the tasks.
-  const { data, error: planError } = await supabase
+  // `user_id` is the creator/owner (the caller), so an insert policy keyed on
+  // auth.uid() = user_id passes for patients and providers alike.
+  const basePlan = {
+    patient_id: payload.patientId,
+    doctor_id: payload.doctorId,
+    title: payload.title,
+  };
+
+  let response = await supabase
     .from('care_plans')
-    .insert({
-      patient_id: payload.patientId,
-      doctor_id: payload.doctorId,
-      title: payload.title,
-    })
+    .insert({ ...basePlan, user_id: payload.doctorId })
     .select('*')
     .single();
+
+  // Older schemas may not carry user_id yet — retry without it rather than
+  // failing the whole save.
+  if (
+    response.error &&
+    schemaMismatch(response.error.code) &&
+    /user_id/i.test(response.error.message ?? '')
+  ) {
+    response = await supabase.from('care_plans').insert(basePlan).select('*').single();
+  }
+
+  const { data, error: planError } = response;
 
   if (planError) {
     console.error('CARE PLAN SAVE ERROR:', planError.message, planError.details);

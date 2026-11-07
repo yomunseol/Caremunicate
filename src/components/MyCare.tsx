@@ -24,15 +24,26 @@ export default function MyCare() {
   return (
     <section className="section">
       <div className="panel">
-        <div className="eyebrow">{t('care.myCare')}</div>
-        <button
-          type="button"
-          className="primary-button"
-          style={{ justifySelf: 'start', marginBlockEnd: '0.75rem' }}
-          onClick={() => setCreating(true)}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            flexWrap: 'wrap',
+            marginBlockEnd: '0.75rem',
+          }}
         >
-          <Plus size={15} aria-hidden="true" /> {t('care.createPlan')}
-        </button>
+          <div className="eyebrow" style={{ margin: 0 }}>{t('care.myCare')}</div>
+          <button
+            type="button"
+            className="primary-button"
+            style={{ width: 'auto', padding: '0.5rem 0.95rem', fontSize: '0.82rem' }}
+            onClick={() => setCreating(true)}
+          >
+            <Plus size={15} aria-hidden="true" /> {t('care.createPlan')}
+          </button>
+        </div>
         <CareChecklist key={refreshKey} patientId={user.id} />
       </div>
 
