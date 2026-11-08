@@ -100,7 +100,7 @@ export default function CarePlanPanel({ patientId }: CarePlanPanelProps) {
         <CreateCarePlanModal
           patientId={patientId}
           onClose={() => setCreating(false)}
-          onCreated={() => void load()}
+          onSaved={() => void load()}
         />
       ) : null}
     </div>

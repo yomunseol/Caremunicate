@@ -2465,6 +2465,121 @@ img {
 }
 
 /* ---------------------------------------------------------------------------
+   Compact plan management cards + checklist rows.
+   Keeps care plans from bloating the dashboard grid.
+   --------------------------------------------------------------------------- */
+.care-compact { padding: 14px !important; }
+.care-compact .care-list { gap: 6px; }
+.care-compact .care-task { padding: 8px 10px; gap: 8px; border-radius: 10px; }
+
+.care-plan-card {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  border-radius: 12px;
+  background: #fff;
+}
+
+.care-plan-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.care-plan-card-title {
+  margin: 0;
+  color: var(--text, #133b35);
+  font-size: 0.9rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.care-plan-card-meta { color: var(--text-muted, #557b76); font-size: 0.74rem; }
+
+.care-plan-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.care-plan-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 28px;
+  block-size: 28px;
+  padding: 0;
+  border: 1px solid rgba(15, 58, 50, 0.1);
+  border-radius: 8px;
+  background: #fff;
+  color: #216e5d;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.care-plan-icon-btn:not(:disabled):hover {
+  background: rgba(62, 169, 133, 0.1);
+  border-color: rgba(62, 169, 133, 0.3);
+}
+
+.care-plan-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.care-plan-icon-btn.is-danger { color: #b42318; }
+
+.care-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(62, 169, 133, 0.12);
+  color: #216e5d;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
+
+.care-lock-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text, #133b35);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Task log dialog reuses the care-plan control styling. */
+.task-log-dialog .care-plan-control { inline-size: 100%; }
+
+/* ---------------------------------------------------------------------------
+   Profile settings — change name + delete account.
+   --------------------------------------------------------------------------- */
+.account-settings { display: grid; gap: 10px; }
+.account-settings h3 { margin: 0; font-size: 1rem; }
+.account-settings-row {
+  display: grid;
+  gap: 5px;
+  color: var(--text, #133b35);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+.account-settings-row .input { inline-size: 100%; }
+.account-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.account-danger {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.28);
+  background: rgba(180, 35, 24, 0.06);
+}
+
+.account-danger:not(:disabled):hover {
+  background: rgba(180, 35, 24, 0.12);
+  border-color: rgba(180, 35, 24, 0.42);
+}
+
+/* ---------------------------------------------------------------------------
    Meeting settings / security — switch-style toggles + password rows.
    Logical properties only, so everything mirrors under [dir='rtl'].
    --------------------------------------------------------------------------- */

@@ -298,7 +298,7 @@ export default function DashboardOverview({
         <>
           {/* Today's Checklist leads the patient dashboard — the tasks due today. */}
           {user ? (
-            <div className="panel">
+            <div className="panel care-compact">
               <div className="eyebrow">{t('care.todaysChecklist')}</div>
               <CareChecklist patientId={user.id} onlyToday />
             </div>

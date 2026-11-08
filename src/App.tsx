@@ -43,6 +43,7 @@ import { useLang } from './i18n';
 import ResetPassword from './components/ResetPassword';
 import HelpPage from './components/HelpPage';
 import OnboardingWizard from './components/OnboardingWizard';
+import AccountSettings from './components/AccountSettings';
 
 type RouteKey =
   | 'home'
@@ -1300,6 +1301,10 @@ function App() {
                   {isProvider(profileRole) ? t('care.myPatients') : t('care.myCare')}
                 </button>
               </div>
+
+              <AccountSettings
+                onProfileUpdated={() => setProfileRefreshKey((key) => key + 1)}
+              />
 
               <TwoFactorSetup />
 

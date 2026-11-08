@@ -1,19 +1,27 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Lock, Plus, Trash2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
 import { supabase } from '../lib/supabase';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { createCarePlan, type Frequency, type GoalUnit, type NewTask } from '../lib/carePlans';
+import {
+  createCarePlan,
+  updateCarePlan,
+  type CarePlan,
+  type CarePlanTask,
+  type Frequency,
+  type GoalUnit,
+  type NewTask,
+} from '../lib/carePlans';
 import SlimButton from './ui/SlimButton';
 
 // ---------------------------------------------------------------------------
-// Create Care Plan — a portaled dialog (a `.panel` ancestor carries an
-// animation transform that would otherwise trap a fixed child).
+// Create / edit a Care Plan — a portaled dialog.
 //
-//   title + N task rows (task name · frequency · duration · delete)
-//   Save → insert care_plans, then its care_plan_tasks rows.
+//   title + lock toggle + N task rows (name · frequency · duration · delete)
+//   Save → insert or update care_plans, then its care_plan_tasks rows.
+//   A locked plan opens read-only; unlock it from the plan list first.
 // ---------------------------------------------------------------------------
 
 type Row = NewTask;
@@ -26,19 +34,42 @@ const emptyRow = (): Row => ({
   duration_unit: 'day',
 });
 
+const rowsFromTasks = (tasks: CarePlanTask[] | undefined): Row[] =>
+  tasks && tasks.length > 0
+    ? tasks.map((task) => ({
+        task_name: task.task_name,
+        task_type: task.task_type,
+        frequency: task.frequency,
+        duration_value: task.duration_value,
+        duration_unit: task.duration_unit,
+      }))
+    : [emptyRow()];
+
 type CreateCarePlanModalProps = {
   patientId: string;
+  plan?: CarePlan | null;
+  initialTasks?: CarePlanTask[];
   onClose: () => void;
-  onCreated: () => void;
+  onSaved: () => void;
 };
 
-export default function CreateCarePlanModal({ patientId, onClose, onCreated }: CreateCarePlanModalProps) {
+export default function CreateCarePlanModal({
+  patientId,
+  plan = null,
+  initialTasks,
+  onClose,
+  onSaved,
+}: CreateCarePlanModalProps) {
   const { t } = useLang();
   const { user } = useAuth();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
-  const [title, setTitle] = useState('');
-  const [rows, setRows] = useState<Row[]>([emptyRow()]);
+  const editing = Boolean(plan);
+  const readOnly = Boolean(plan?.locked);
+
+  const [title, setTitle] = useState(plan?.title ?? '');
+  const [locked, setLocked] = useState(Boolean(plan?.locked));
+  const [rows, setRows] = useState<Row[]>(() => rowsFromTasks(initialTasks));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -60,19 +91,13 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
     setRows((previous) => previous.map((row, i) => (i === index ? { ...row, ...next } : row)));
 
   const save = async () => {
-    if (saving) return;
+    if (saving || readOnly) return;
 
-    // Read the authoritative user from Supabase (the context can lag), so
-    // user_id is always a real UUID for the RLS check.
     const { data: authData, error: authError } = await supabase.auth.getUser();
     const author = authData?.user ?? user;
 
     if (authError || !author?.id) {
-      console.error(
-        'CARE PLAN SAVE ERROR:',
-        'No authenticated user',
-        authError?.message ?? null,
-      );
+      console.error('CARE PLAN SAVE ERROR:', 'No authenticated user', authError?.message ?? null);
       setError('createFailed');
       return;
     }
@@ -89,18 +114,32 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
     setSaving(true);
     setError('');
     try {
-      const plan = await createCarePlan({
-        patientId,
-        doctorId: author.id,
-        userId: author.id,
-        title: title.trim(),
-        tasks,
-      });
-      if (!plan) {
-        setError('createFailed');
-        return;
+      if (plan) {
+        const ok = await updateCarePlan({
+          planId: plan.id,
+          title: title.trim(),
+          locked,
+          tasks,
+        });
+        if (!ok) {
+          setError('createFailed');
+          return;
+        }
+      } else {
+        const created = await createCarePlan({
+          patientId,
+          doctorId: author.id,
+          userId: author.id,
+          title: title.trim(),
+          locked,
+          tasks,
+        });
+        if (!created) {
+          setError('createFailed');
+          return;
+        }
       }
-      onCreated();
+      onSaved();
       onClose();
     } catch (saveError) {
       const detail = saveError as { message?: string; details?: string };
@@ -119,11 +158,11 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
         style={styles.card}
         role="dialog"
         aria-modal="true"
-        aria-label={t('care.createPlan')}
+        aria-label={editing ? t('care.editPlan') : t('care.createPlan')}
         onClick={(event) => event.stopPropagation()}
       >
         <header style={styles.head}>
-          <strong>{t('care.createPlan')}</strong>
+          <strong>{editing ? t('care.editPlan') : t('care.createPlan')}</strong>
           <button type="button" className="ghost-button" aria-label={t('common.close')} onClick={onClose}>
             <X size={15} aria-hidden="true" />
           </button>
@@ -135,8 +174,20 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
             className="input care-plan-control"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            disabled={readOnly}
             autoFocus
           />
+        </label>
+
+        <label className="care-lock-row">
+          <input
+            type="checkbox"
+            checked={locked}
+            disabled={readOnly}
+            onChange={(event) => setLocked(event.target.checked)}
+          />
+          <Lock size={14} aria-hidden="true" />
+          <span>{readOnly ? t('care.locked') : t('care.lockPlan')}</span>
         </label>
 
         <div style={styles.taskList}>
@@ -147,12 +198,14 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                 value={row.task_name}
                 placeholder={t('task_name')}
                 aria-label={t('task_name')}
+                disabled={readOnly}
                 onChange={(event) => patch(index, { task_name: event.target.value })}
               />
               <select
                 className="select care-plan-control care-task-frequency"
                 value={row.frequency}
                 aria-label={t('care.frequency')}
+                disabled={readOnly}
                 onChange={(event) => patch(index, { frequency: event.target.value as Frequency })}
               >
                 <option value="daily">{t('care.freqDaily')}</option>
@@ -166,6 +219,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                   max={31}
                   value={row.duration_value}
                   aria-label={t('duration')}
+                  disabled={readOnly}
                   onChange={(event) =>
                     patch(index, {
                       duration_value: Math.min(31, Math.max(1, Number(event.target.value) || 1)),
@@ -176,9 +230,8 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                   className="select care-plan-control care-duration-unit"
                   value={row.duration_unit}
                   aria-label={t('duration')}
-                  onChange={(event) =>
-                    patch(index, { duration_unit: event.target.value as GoalUnit })
-                  }
+                  disabled={readOnly}
+                  onChange={(event) => patch(index, { duration_unit: event.target.value as GoalUnit })}
                 >
                   <option value="day">{t('care.goalDays')}</option>
                   <option value="week">{t('care.goalWeeks')}</option>
@@ -188,6 +241,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
                 type="button"
                 className="care-remove"
                 aria-label={t('common.close')}
+                disabled={readOnly}
                 onClick={() => setRows((previous) => previous.filter((_, i) => i !== index))}
               >
                 <Trash2 size={15} aria-hidden="true" />
@@ -200,6 +254,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
           type="button"
           className="ghost-button"
           style={styles.addTask}
+          disabled={readOnly}
           onClick={() => setRows((previous) => [...previous, emptyRow()])}
         >
           <Plus size={15} aria-hidden="true" /> {t('care.addTask')}
@@ -217,7 +272,7 @@ export default function CreateCarePlanModal({ patientId, onClose, onCreated }: C
           </SlimButton>
           <SlimButton
             variant="primary"
-            disabled={saving}
+            disabled={saving || readOnly}
             aria-busy={saving}
             onClick={() => void save()}
           >
@@ -243,12 +298,12 @@ const styles: Record<string, CSSProperties> = {
   },
   card: {
     display: 'grid',
-    gap: '0.9rem',
+    gap: '0.7rem',
     width: 'min(44rem, 100%)',
     maxHeight: '90vh',
     overflowY: 'auto',
-    padding: '1.25rem',
-    borderRadius: '1.35rem',
+    padding: '1rem',
+    borderRadius: '1.2rem',
     background: '#f7fdf9',
     border: '1px solid var(--line, rgba(15, 58, 50, 0.12))',
     boxShadow: '0 28px 64px rgba(6, 26, 22, 0.4)',
@@ -257,6 +312,6 @@ const styles: Record<string, CSSProperties> = {
   field: { display: 'grid', gap: '0.35rem' },
   label: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', fontWeight: 700 },
   taskList: { display: 'grid', gap: '0.6rem' },
-  addTask: { width: '100%', marginBlockStart: '0.75rem' },
+  addTask: { width: '100%', marginBlockStart: '0.5rem' },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', flexWrap: 'wrap' },
 };
