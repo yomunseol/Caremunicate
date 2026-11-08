@@ -194,8 +194,8 @@ export const createCarePlan = async (payload: {
     task_type: task.task_type,
     frequency: task.frequency,
     duration_value: positiveInt(task.duration_value),
-    // duration_unit is a plain string ('day' | 'week'), never an object.
-    duration_unit: String(task.duration_unit),
+    // duration_unit is a lowercase plain string ('day' | 'week'), never an object.
+    duration_unit: String(task.duration_unit).toLowerCase(),
   }));
 
   console.log('Task Payload:', taskPayload);
@@ -212,7 +212,7 @@ export const createCarePlan = async (payload: {
       metric_type: task.task_type,
       frequency: task.frequency,
       goal_count: positiveInt(task.duration_value),
-      goal_unit: String(task.duration_unit),
+      goal_unit: String(task.duration_unit).toLowerCase(),
     }));
     console.log('Task Payload (legacy):', legacyPayload);
     taskResponse = await supabase.from('care_plan_tasks').insert(legacyPayload);
@@ -235,7 +235,7 @@ export const createCarePlan = async (payload: {
   const { error: taskError } = taskResponse;
 
   if (taskError) {
-    console.error('CARE PLAN SAVE ERROR:', taskError.message, taskError.details);
+    console.error('Care Plan Save Error:', taskError);
     // Compensate for the two-step write so a failed task batch does not leave
     // an orphan plan. The care_plans_delete_author policy permits this.
     const { error: cleanupError } = await supabase

@@ -436,6 +436,34 @@ function App() {
     window.history.pushState({}, '', `${routerBasePath()}${hash}`);
   };
 
+  /**
+   * Post-auth landing: incomplete profiles go to /onboarding, everyone else to
+   * /dashboard. Reads the persisted row (keyed on user_id), never metadata.
+   */
+  const routeAfterAuth = async () => {
+    const {
+      data: { user: signedInUser },
+    } = await supabase.auth.getUser();
+
+    if (!signedInUser) {
+      window.location.href = '/login';
+      return;
+    }
+
+    const { data: authProfile } = await supabase
+      .from('profiles')
+      .select('onboarding_complete')
+      .eq('user_id', signedInUser.id)
+      .maybeSingle();
+
+    if (authProfile && authProfile.onboarding_complete !== true) {
+      window.location.href = '/onboarding';
+      return;
+    }
+
+    window.location.href = '/dashboard';
+  };
+
   const openAuth = (mode: AuthMode, role: AuthRole = 'patient') => {
     setAuthMode(mode);
     setAuthRole(role);
@@ -1060,7 +1088,7 @@ function App() {
                     <SignupVerify
                       email={pendingVerifyEmail}
                       onVerified={() => {
-                        window.location.href = '/dashboard';
+                        void routeAfterAuth();
                       }}
                       onBack={() => openAuth('login')}
                     />
@@ -1228,7 +1256,11 @@ function App() {
                   </>
                   )
                 ) : (
-                  <PasswordAuth onAuthenticated={() => navigate('profile')} />
+                  <PasswordAuth
+                    onAuthenticated={() => {
+                      void routeAfterAuth();
+                    }}
+                  />
                 )}
 
                 <div className="auth-benefits">
