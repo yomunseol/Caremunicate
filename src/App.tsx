@@ -581,9 +581,11 @@ function App() {
         email: signupEmail,
         password: signupValues.password,
         options: {
-          // Only the role is guaranteed to exist on profiles. Department /
-          // hospital details are collected later; profiles has no such columns
-          // (it uses hospital_id instead).
+          // Trigger the confirmation email and send the link to the auth
+          // callback. Only the role is written to metadata; department/hospital
+          // details are collected later (profiles uses hospital_id, not those
+          // columns).
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: { role: authRole },
         },
       });

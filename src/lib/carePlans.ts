@@ -81,13 +81,28 @@ export const loadTasksForPlans = async (planIds: string[]): Promise<CarePlanTask
     .from('care_plan_tasks')
     .select('*')
     .in('plan_id', ids)
-    .order('task_name', { ascending: true });
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error('CARE ERROR:', error.message);
     return [];
   }
-  return asRows<CarePlanTask>(data);
+
+  // The live schema stores instruction / metric_type. Normalize both spellings
+  // so the checklist and compliance logic keep their task_name / task_type view.
+  return asRows<Record<string, unknown>>(data).map((row) => {
+    const metric = String(row.task_type ?? row.metric_type ?? 'boolean').toLowerCase();
+    const unitRaw = String(row.duration_unit ?? row.goal_unit ?? 'day').toLowerCase();
+    return {
+      id: String(row.id ?? ''),
+      plan_id: String(row.plan_id ?? ''),
+      task_name: String(row.task_name ?? row.instruction ?? ''),
+      task_type: metric === 'number' ? 'number' : 'boolean',
+      frequency: String(row.frequency ?? 'daily').toLowerCase() === 'weekly' ? 'weekly' : 'daily',
+      duration_value: Number.parseInt(String(row.duration_value ?? row.goal_count ?? 7), 10) || 1,
+      duration_unit: unitRaw === 'week' || unitRaw === 'weeks' ? 'week' : 'day',
+    } as CarePlanTask;
+  });
 };
 
 /** Logs for one patient since a `YYYY-MM-DD` date (inclusive). */
@@ -188,10 +203,11 @@ export const createCarePlan = async (payload: {
   }
 
   // Step C: attach the captured plan_id to every task and insert as one batch.
+  // The live schema uses instruction / metric_type, not task_name / task_type.
   const taskPayload = payload.tasks.map((task) => ({
     plan_id: planId,
-    task_name: task.task_name,
-    task_type: task.task_type,
+    instruction: task.task_name,
+    metric_type: task.task_type,
     frequency: task.frequency,
     duration_value: positiveInt(task.duration_value),
     // duration_unit is a lowercase plain string ('day' | 'week'), never an object.
@@ -202,11 +218,9 @@ export const createCarePlan = async (payload: {
 
   let taskResponse = await supabase.from('care_plan_tasks').insert(taskPayload);
 
-  // The older care-plan schema spells the same columns instruction /
-  // metric_type / goal_count / goal_unit. Retry with those instead of failing
-  // when duration_unit (or another client column) is absent.
+  // Some deployments only carry the legacy goal_count / goal_unit columns.
   if (taskResponse.error && schemaMismatch(taskResponse.error.code)) {
-    const legacyPayload = payload.tasks.map((task) => ({
+    const goalPayload = payload.tasks.map((task) => ({
       plan_id: planId,
       instruction: task.task_name,
       metric_type: task.task_type,
@@ -214,17 +228,16 @@ export const createCarePlan = async (payload: {
       goal_count: positiveInt(task.duration_value),
       goal_unit: String(task.duration_unit).toLowerCase(),
     }));
-    console.log('Task Payload (legacy):', legacyPayload);
-    taskResponse = await supabase.from('care_plan_tasks').insert(legacyPayload);
+    console.log('Task Payload (goal columns):', goalPayload);
+    taskResponse = await supabase.from('care_plan_tasks').insert(goalPayload);
   }
 
-  // Last resort: the live schema has the modern columns but no duration_unit.
-  // Save the task without the unit; reads treat a missing unit as 'day'.
+  // Last resort: duration_unit is still missing. Reads default it to 'day'.
   if (taskResponse.error && schemaMismatch(taskResponse.error.code)) {
     const withoutUnit = payload.tasks.map((task) => ({
       plan_id: planId,
-      task_name: task.task_name,
-      task_type: task.task_type,
+      instruction: task.task_name,
+      metric_type: task.task_type,
       frequency: task.frequency,
       duration_value: positiveInt(task.duration_value),
     }));
