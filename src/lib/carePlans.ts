@@ -137,6 +137,33 @@ export const loadLogs = async (patientId: string, fromDate: string): Promise<Car
   return asRows<CarePlanLog>(data);
 };
 
+export type TaskLogRow = {
+  id: string;
+  task_id: string;
+  created_at: string;
+};
+
+/** The task_logs rows for one user inside [fromISO, toISO]. */
+export const loadTaskLogsForWeek = async (
+  userId: string,
+  fromISO: string,
+  toISO: string,
+): Promise<TaskLogRow[]> => {
+  if (!userId) return [];
+  const { data, error } = await supabase
+    .from('task_logs')
+    .select('id, task_id, created_at')
+    .eq('user_id', userId)
+    .gte('created_at', fromISO)
+    .lte('created_at', toISO);
+
+  if (error) {
+    console.error('CARE ERROR:', error.message);
+    return [];
+  }
+  return asRows<TaskLogRow>(data);
+};
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------

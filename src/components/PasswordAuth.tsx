@@ -312,56 +312,22 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
   const styles = {
     card: {
       width: '100%',
-      padding: '1.4rem',
-      border: '1px solid rgba(62, 169, 133, 0.18)',
-      borderRadius: '1.35rem',
-      background: 'linear-gradient(180deg, rgba(250, 255, 252, 0.98), rgba(238, 249, 244, 0.92))',
-      boxShadow: '0 22px 46px rgba(17, 55, 47, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
       color: '#133b35',
       display: 'grid',
-      gap: '0.85rem',
+      gap: '0.7rem',
     },
-    eyebrow: {
-      margin: 0,
-      color: '#3ea985',
-      fontSize: '0.7rem',
-      fontWeight: 800,
-      letterSpacing: '0.12em',
-      textTransform: 'uppercase',
-    },
-    title: { margin: '0.2rem 0 0', fontSize: '1.15rem', lineHeight: 1.25 },
     description: { margin: 0, color: '#557b76', fontSize: '0.86rem', lineHeight: 1.6 },
     input: {
       width: '100%',
       border: '1px solid rgba(15, 58, 50, 0.12)',
       borderRadius: '0.8rem',
-      padding: '0.8rem 1rem',
+      padding: '0.7rem 0.9rem',
       background: '#fff',
       fontSize: '1rem',
       color: '#133b35',
     },
-    field: { display: 'grid', gap: '0.4rem' },
+    field: { display: 'grid', gap: '0.35rem' },
     label: { fontSize: '0.75rem', fontWeight: 700, color: '#216e5d', letterSpacing: '0.04em' },
-    primaryButton: {
-      border: 'none',
-      borderRadius: '999px',
-      padding: '0.78rem 1rem',
-      background: 'linear-gradient(120deg, #48b58f, #7adab1)',
-      color: '#072c2a',
-      fontWeight: 700,
-      cursor: 'pointer',
-      fontSize: '0.95rem',
-    },
-    ghostButton: {
-      border: '1px solid rgba(62, 169, 133, 0.3)',
-      borderRadius: '999px',
-      padding: '0.6rem 1rem',
-      background: 'transparent',
-      color: '#216e5d',
-      fontWeight: 700,
-      cursor: 'pointer',
-      fontSize: '0.85rem',
-    },
     error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.9rem' },
     message: { margin: 0, color: '#216e5d', fontWeight: 600, fontSize: '0.9rem' },
     notice: {
@@ -422,25 +388,19 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
   return (
     <div style={styles.card} role="form" aria-label={t('login.eyebrow')}>
-      <div>
-        <p style={styles.eyebrow}>{t('login.eyebrow')}</p>
-        <h2 style={styles.title}>
-          {view === 'email_code' ? t('login.titleEmail') : t('login.titleWelcome')}
-        </h2>
+      {view === 'email_code' ? (
         <p style={styles.description}>
-          {view === 'email_code'
-            ? sendNotice
-              ? t('login.descEmailEnter', { email: email.trim() })
-              : t('login.descEmailSent', { email: email.trim() })
-            : t('login.descPassword')}
+          {sendNotice
+            ? t('login.descEmailEnter', { email: email.trim() })
+            : t('login.descEmailSent', { email: email.trim() })}
         </p>
-      </div>
+      ) : null}
 
       {error ? <p style={styles.error} role="alert">{error}</p> : null}
       {message ? <p style={styles.message}>{message}</p> : null}
 
       {view === 'password' ? (
-        <form onSubmit={handlePasswordSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
+        <form onSubmit={handlePasswordSubmit} style={{ display: 'grid', gap: '0.7rem' }}>
           <div style={styles.field}>
             <label style={styles.label} htmlFor="pa-email">{t('login.labelEmail')}</label>
             <input
@@ -478,7 +438,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
             />
           </div>
 
-          <button type="submit" style={styles.primaryButton} disabled={loading}>
+          <button type="submit" className="primary-button" style={{ justifySelf: 'start' }} disabled={loading}>
             {loading ? t('login.signingIn') : t('login.signIn')}
           </button>
 
@@ -514,7 +474,7 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       ) : null}
 
       {view === 'email_code' ? (
-        <form onSubmit={handleEmailCodeSubmit} style={{ display: 'grid', gap: '0.85rem' }}>
+        <form onSubmit={handleEmailCodeSubmit} style={{ display: 'grid', gap: '0.7rem' }}>
           {sendNotice ? <p style={styles.notice} role="status">{sendNotice}</p> : null}
 
           <div style={styles.field}>
@@ -533,11 +493,11 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
             />
           </div>
 
-          <button type="submit" style={styles.primaryButton} disabled={loading}>
+          <button type="submit" className="primary-button" style={{ justifySelf: 'start' }} disabled={loading}>
             {loading ? t('tfa.verifying') : t('login.verifyAndSignIn')}
           </button>
 
-          <button type="button" style={styles.ghostButton} onClick={goBackToPassword} disabled={loading}>
+          <button type="button" className="ghost-button" style={{ justifySelf: 'start' }} onClick={goBackToPassword} disabled={loading}>
             {t('login.changeEmail')}
           </button>
         </form>

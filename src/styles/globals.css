@@ -744,7 +744,7 @@ img {
 .panel,
 .auth-card,
 .profile-card {
-  padding: 1.2rem;
+  padding: 1.25rem;
   transition:
     transform 300ms var(--ease-smooth),
     box-shadow 300ms var(--ease-smooth),
@@ -1465,15 +1465,20 @@ img {
 }
 
 .auth-benefits {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
   border-top: 1px solid rgba(255,255,255,0.1);
 }
 
 .auth-card form {
   display: grid;
-  gap: 0.85rem;
-  margin-top: 1rem;
+  gap: 0.7rem;
+  margin-top: 0.5rem;
+}
+
+/* Auth inputs stay compact, matching the slim control scale. */
+.auth-card .input {
+  padding: 0.65rem 0.9rem;
 }
 
 /* Signup success banner — soft mint background, dark green text. */
@@ -2468,7 +2473,7 @@ img {
    Compact plan management cards + checklist rows.
    Keeps care plans from bloating the dashboard grid.
    --------------------------------------------------------------------------- */
-.care-compact { padding: 14px !important; }
+.care-compact { padding: 1.25rem !important; }
 .care-compact .care-list { gap: 6px; }
 .care-compact .care-task { padding: 8px 10px; gap: 8px; border-radius: 10px; }
 

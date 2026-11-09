@@ -711,12 +711,9 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
   };
 
   return (
-    <section style={styles.panel} aria-labelledby="care-places-heading">
+    <section style={styles.panel} aria-label={t(titleKey)}>
       <div>
-        <p style={styles.eyebrow}>{t('places.eyebrow')}</p>
-        <h3 id="care-places-heading" style={styles.title}>
-          {t(titleKey)}
-        </h3>
+        <p className="eyebrow" style={{ margin: 0 }}>{t('places.eyebrow')}</p>
         <p style={styles.description}>{t('places.description')}</p>
       </div>
 
@@ -962,7 +959,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
 const styles: Record<string, CSSProperties> = {
   panel: {
     width: '100%',
-    padding: '1.4rem',
+    padding: '1.25rem',
     border: '1px solid rgba(62, 169, 133, 0.18)',
     borderRadius: '1.35rem',
     background: 'linear-gradient(180deg, rgba(250, 255, 252, 0.98), rgba(238, 249, 244, 0.92))',

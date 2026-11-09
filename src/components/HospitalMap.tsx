@@ -429,23 +429,6 @@ export default function HospitalMap() {
                 {t('hospitals.use_my_location')}
               </button>
             </div>
-            <div className="radius-selector" style={styles.radiusRow}>
-              <label htmlFor="radius" style={styles.label}>{t('hospitals.radius_selector')}</label>
-              <select
-                id="radius"
-                className="input"
-                value={selectedRadius}
-                onChange={(event) => handleRadiusChange(Number(event.target.value))}
-                disabled={searching}
-                style={styles.radiusSelect}
-              >
-                {RADIUS_OPTIONS.map((radius) => (
-                  <option key={radius} value={radius}>
-                    {t(`hospitals.radius_${radius / 1000}km`)}
-                  </option>
-                ))}
-              </select>
-            </div>
             {geoError ? <p role="alert" style={styles.error}>{geoError}</p> : null}
             {searchError ? (
               <p role="alert" style={styles.error}>
@@ -576,6 +559,20 @@ export default function HospitalMap() {
           aria-label={t('hospital.search')}
           onChange={(event) => setNameQuery(event.target.value)}
         />
+        <select
+          className="input"
+          value={selectedRadius}
+          onChange={(event) => handleRadiusChange(Number(event.target.value))}
+          disabled={searching}
+          aria-label={t('hospitals.radius_selector')}
+          style={styles.radiusInline}
+        >
+          {RADIUS_OPTIONS.map((radius) => (
+            <option key={radius} value={radius}>
+              {t(`hospitals.radius_${radius / 1000}km`)}
+            </option>
+          ))}
+        </select>
         {loading ? (
           <span style={styles.muted} aria-busy="true">{t('hospital.loading')}</span>
         ) : (
@@ -737,8 +734,13 @@ const styles: Record<string, CSSProperties> = {
   resultCopy: { display: 'grid', gap: '0.1rem', minWidth: 0, textAlign: 'start' },
   resultAddress: { color: '#557b76', fontSize: '0.74rem', lineHeight: 1.3, overflowWrap: 'anywhere' },
   loadMore: { justifySelf: 'center', marginBlockStart: '0.35rem', fontSize: '0.8rem' },
-  radiusRow: { display: 'grid', gap: '0.3rem', maxWidth: '16rem' },
-  radiusSelect: { maxWidth: '16rem' },
+  radiusInline: {
+    width: '7.5rem',
+    maxWidth: '7.5rem',
+    flex: '0 0 auto',
+    borderRadius: '999px',
+    paddingInline: '0.9rem',
+  },
   pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: '#557b76', fontSize: '0.76rem', fontStyle: 'italic' },

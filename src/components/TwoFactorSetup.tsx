@@ -9,7 +9,7 @@ type TwoFactorMethod = 'none' | 'email' | 'app';
 
 const settingsCardStyle = {
   width: '100%',
-  padding: '1.4rem',
+  padding: '1.25rem',
   border: '1px solid rgba(62, 169, 133, 0.18)',
   borderRadius: '1.35rem',
   background: 'linear-gradient(180deg, rgba(250, 255, 252, 0.98), rgba(238, 249, 244, 0.92))',
@@ -20,21 +20,6 @@ const settingsCardStyle = {
 const cardContentStyle = {
   display: 'grid',
   gap: '0.85rem',
-};
-
-const eyebrowStyle = {
-  margin: 0,
-  color: '#3ea985',
-  fontSize: '0.7rem',
-  fontWeight: 800,
-  letterSpacing: '0.12em',
-  textTransform: 'uppercase',
-};
-
-const titleStyle = {
-  margin: '0.2rem 0 0',
-  fontSize: '1.15rem',
-  lineHeight: 1.25,
 };
 
 const descriptionStyle = {
@@ -429,13 +414,10 @@ export default function TwoFactorSetup() {
   const active = method !== 'none';
 
   return (
-    <section style={settingsCardStyle} aria-labelledby="two-factor-heading">
+    <section style={settingsCardStyle} aria-label={t('tfa.title')}>
       <div style={cardContentStyle}>
         <div>
-          <p style={eyebrowStyle}>{t('tfa.eyebrow')}</p>
-          <h2 id="two-factor-heading" style={titleStyle}>
-            {t('tfa.title')}
-          </h2>
+          <p className="eyebrow" style={{ margin: 0 }}>{t('tfa.eyebrow')}</p>
           <p style={descriptionStyle}>
             {t('tfa.desc')}
           </p>

@@ -91,7 +91,6 @@ export default function AccountSettings({ onProfileUpdated }: AccountSettingsPro
   return (
     <div className="panel account-settings">
       <div className="eyebrow">{t('account.settingsEyebrow')}</div>
-      <h3>{t('account.settingsTitle')}</h3>
 
       <label className="account-settings-row">
         <span>{t('auth.fullName')}</span>

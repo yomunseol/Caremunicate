@@ -1250,6 +1250,7 @@ function App() {
                       <button
                         className="primary-button"
                         type="submit"
+                        style={{ justifySelf: 'start' }}
                         disabled={isAuthLoading}
                       >
                         {isAuthLoading ? t('auth.creating') : authRole === 'doctor' ? t('auth.createDoctor') : t('common.createAccount')}
@@ -1310,7 +1311,6 @@ function App() {
 
               <div className="panel">
                 <div className="eyebrow">{t('profile.updatesEyebrow')}</div>
-                <h3>{t('profile.updatesTitle')}</h3>
                 <p>{t('profile.updatesCopy')}</p>
               </div>
 

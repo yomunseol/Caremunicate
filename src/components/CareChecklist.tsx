@@ -6,15 +6,14 @@ import { describeError } from '../lib/errors';
 import { dayKey } from '../lib/time';
 import {
   checkOffTask,
-  complianceForTask,
-  loadLogs,
   loadPlansForPatient,
+  loadTaskLogsForWeek,
   loadTasksForPlans,
   logTask,
   logTaskValue,
   type CarePlan,
-  type CarePlanLog,
   type CarePlanTask,
+  type TaskLogRow,
 } from '../lib/carePlans';
 import SlimButton from './ui/SlimButton';
 import TaskLogModal from './TaskLogModal';
@@ -22,9 +21,10 @@ import TaskLogModal from './TaskLogModal';
 // ---------------------------------------------------------------------------
 // The patient checklist — shared by the #care page and the dashboard widget.
 //
-// A checkbox checks the task off for today (last_completed_date) and removes
-// it from the list until tomorrow. "Log" opens a value + note dialog that
-// writes to task_logs and also records the value for compliance.
+// The checkbox checks the task off for today (last_completed_date) and, on the
+// dashboard, removes it until tomorrow. "Log" opens a value + note dialog that
+// writes to task_logs. The weekly counter reads task_logs (Monday–Sunday) and
+// increments optimistically the moment a check-off is written.
 // ---------------------------------------------------------------------------
 
 type CareChecklistProps = {
@@ -35,18 +35,44 @@ type CareChecklistProps = {
 
 const todayKey = (): string => dayKey(new Date(), 'careChecklist');
 
+/** Monday 00:00:00 → Sunday 23:59:59 of the current local week. */
+const currentWeekRange = (): { from: string; to: string } => {
+  const now = new Date();
+  const daysSinceMonday = (now.getDay() + 6) % 7;
+  const monday = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - daysSinceMonday,
+    0,
+    0,
+    0,
+    0,
+  );
+  const sunday = new Date(monday.getTime() + 7 * 86_400_000 - 1);
+  return { from: monday.toISOString(), to: sunday.toISOString() };
+};
+
+/** Local YYYY-MM-DD for a timestamptz (the day a log counts toward). */
+const localDayOf = (iso: string): string => {
+  const date = new Date(iso);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+    date.getDate(),
+  ).padStart(2, '0')}`;
+};
+
 export default function CareChecklist({ patientId, onlyToday = false }: CareChecklistProps) {
-  const { t, locale } = useLang();
+  const { t } = useLang();
   const { notify } = useToast();
 
   const [plans, setPlans] = useState<CarePlan[]>([]);
   const [tasks, setTasks] = useState<CarePlanTask[]>([]);
-  const [logs, setLogs] = useState<CarePlanLog[]>([]);
+  const [taskLogs, setTaskLogs] = useState<TaskLogRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [logTarget, setLogTarget] = useState<CarePlanTask | null>(null);
 
   const today = todayKey();
+  const week = useMemo(() => currentWeekRange(), [today]);
 
   const load = useCallback(async () => {
     if (!patientId) return;
@@ -57,15 +83,14 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
         nextPlans.map((plan) => plan.id),
         onlyToday ? { dueOnly: true, today } : undefined,
       );
-      const weekAgo = dayKey(new Date(Date.now() - 7 * 86_400_000), 'careChecklist');
-      const nextLogs = await loadLogs(patientId, weekAgo);
+      const nextLogs = await loadTaskLogsForWeek(patientId, week.from, week.to);
       setPlans(nextPlans);
       setTasks(nextTasks);
-      setLogs(nextLogs);
+      setTaskLogs(nextLogs);
     } finally {
       setLoading(false);
     }
-  }, [patientId, onlyToday, today]);
+  }, [patientId, onlyToday, today, week.from, week.to]);
 
   useEffect(() => {
     void load();
@@ -81,45 +106,87 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
     [today],
   );
 
+  /** Distinct local days with a task_logs row this week. */
+  const weeklyCount = useCallback(
+    (taskId: string): number =>
+      new Set(
+        taskLogs.filter((row) => row.task_id === taskId).map((row) => localDayOf(row.created_at)),
+      ).size,
+    [taskLogs],
+  );
+
+  /** Keep care_plan_logs in sync for the provider compliance panel. */
   const recordCompliance = useCallback(
     async (task: CarePlanTask, value: string) => {
       const numeric = Number(value);
-      const saved = await logTask({
+      await logTask({
         taskId: task.id,
         patientId,
         valueBoolean:
           task.task_type === 'boolean' ? /^(1|true|yes|y|done)$/i.test(value.trim()) : null,
         valueNumber: task.task_type === 'number' && Number.isFinite(numeric) ? numeric : null,
       });
-      if (!saved) return;
-      setLogs((previous) => [
-        ...previous.filter(
-          (log) => !(log.task_id === task.id && log.log_date === saved.log_date),
-        ),
-        saved,
-      ]);
     },
     [patientId],
   );
 
+  const addOptimisticLog = useCallback((task: CarePlanTask): string => {
+    const id = `optimistic-${task.id}-${today}`;
+    setTaskLogs((previous) => [
+      ...previous,
+      { id, task_id: task.id, created_at: new Date().toISOString() },
+    ]);
+    return id;
+  }, [today]);
+
+  const dropLog = useCallback((id: string) => {
+    setTaskLogs((previous) => previous.filter((row) => row.id !== id));
+  }, []);
+
+  const markDoneLocally = (task: CarePlanTask) => {
+    if (onlyToday) {
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+    } else {
+      setTasks((current) =>
+        current.map((item) =>
+          item.id === task.id ? { ...item, last_completed_date: today } : item,
+        ),
+      );
+    }
+  };
+
   const checkoff = async (task: CarePlanTask) => {
     if (savingId || isDone(task)) return;
     setSavingId(task.id);
-    const previous = tasks;
-    setTasks((current) => current.filter((item) => item.id !== task.id));
+    const previousTasks = tasks;
+
+    // Optimistic: mark done and bump the weekly counter immediately.
+    markDoneLocally(task);
+    const hasLogToday = taskLogs.some(
+      (row) => row.task_id === task.id && localDayOf(row.created_at) === today,
+    );
+    const optimisticId = hasLogToday ? null : addOptimisticLog(task);
+
     try {
       const ok = await checkOffTask(task.id, today);
       if (!ok) {
-        setTasks(previous);
+        setTasks(previousTasks);
+        if (optimisticId) dropLog(optimisticId);
         notify(t('care.checkoffFailed'), 'error');
         return;
+      }
+
+      if (!hasLogToday) {
+        const logged = await logTaskValue({ taskId: task.id, userId: patientId, value: 'done' });
+        if (!logged && optimisticId) dropLog(optimisticId);
       }
       if (task.task_type === 'boolean') {
         await recordCompliance(task, 'true');
       }
       notify(t('care.checkedOff'), 'success');
     } catch (error) {
-      setTasks(previous);
+      setTasks(previousTasks);
+      if (optimisticId) dropLog(optimisticId);
       console.error('CARE ERROR:', error);
       notify(describeError(error), 'error');
     } finally {
@@ -134,9 +201,15 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
         notify(t('care.logFailed'), 'error');
         return false;
       }
+
+      const hasLogToday = taskLogs.some(
+        (row) => row.task_id === task.id && localDayOf(row.created_at) === today,
+      );
+      if (!hasLogToday) addOptimisticLog(task);
+
       await recordCompliance(task, value);
       await checkOffTask(task.id, today);
-      setTasks((current) => current.filter((item) => item.id !== task.id));
+      markDoneLocally(task);
       notify(t('care.logged'), 'success');
       return true;
     } catch (error) {
@@ -169,7 +242,6 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
             <ul className="care-list">
               {planTasks.map((task) => {
                 const done = isDone(task);
-                const compliance = complianceForTask(task, logs, locale);
                 return (
                   <li key={task.id} className={done ? 'care-task is-done' : 'care-task'}>
                     <span style={styles.instruction}>{task.task_name}</span>
@@ -197,9 +269,9 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
 
                     <span style={styles.compliance}>
                       {t('care.compliance', {
-                        done: compliance.done,
-                        target: compliance.target,
-                        unit: t(compliance.unit === 'week' ? 'care.goalWeeks' : 'care.goalDays'),
+                        done: weeklyCount(task.id),
+                        target: 7,
+                        unit: t('care.goalDays'),
                       })}
                     </span>
                   </li>

@@ -452,6 +452,7 @@ export default function DashboardOverview({
           only navigates: everything call-related lives in the /call hub. */}
       <div className="panel">
         <div className="eyebrow">{t('call.callHub')}</div>
+        <p style={styles.muted}>{t('dash.noCalls')}</p>
         <button
           type="button"
           className="ghost-button call-join-trigger"
