@@ -83,6 +83,9 @@ export default async function handler(req: ProxyRequest, res: ProxyResponse): Pr
   const rawRadius = Number(asString(req.query?.radius)) || DEFAULT_RADIUS_M;
   const radius = Math.max(MIN_RADIUS_M, Math.min(MAX_RADIUS_M, rawRadius));
 
+  // Diagnostic: confirms the exact lat/lon + metre radius received from the UI.
+  console.log('Overpass request:', { lat, lon, radius });
+
   const query = `
 [out:json][timeout:10];
 (
@@ -116,6 +119,7 @@ out center qt 24;`;
         const status = response.status;
         // Out of capacity / temporary upstream failure → try the fallback.
         if ((status === 429 || status >= 500) && !isLast) {
+          console.warn('Overpass primary failed; trying fallback:', status);
           lastError = new Error(`Overpass API error: ${status}`);
           continue;
         }
@@ -145,6 +149,7 @@ out center qt 24;`;
       clearTimeout(timeoutId);
       lastError = error;
       if (!isLast) {
+        console.warn('Overpass request failed; trying fallback:', error);
         continue;
       }
       if ((error as Error)?.name === 'AbortError') {

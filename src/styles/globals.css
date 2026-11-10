@@ -1711,6 +1711,32 @@ img {
   box-shadow: 0 0 0 3px var(--ring-brand);
 }
 
+/* Explicit, visible search-radius control on the hospitals page. */
+.map-radius-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.map-radius-label {
+  color: var(--text-muted, #557b76);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.input.map-radius {
+  inline-size: 8rem;
+  min-inline-size: 8rem;
+  block-size: 2.75rem;
+  padding-block: 0;
+  padding-inline: 0.9rem;
+  border-radius: 999px;
+  background: #fff;
+  border: 1px solid rgba(15, 58, 50, 0.14);
+}
+
 /* Chat composer inputs share one visible keyboard focus ring. */
 .chat-input:focus-visible {
   outline: 2px solid var(--accent, #3ea985);

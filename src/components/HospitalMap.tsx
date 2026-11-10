@@ -158,6 +158,11 @@ export default function HospitalMap() {
     ? hospitals.filter((hospital) => hospital.name.toLowerCase().includes(needle))
     : hospitals;
 
+  // Nearby Overpass results, narrowed by the same text filter.
+  const nearbyVisible = needle
+    ? results.filter((place) => place.name.toLowerCase().includes(needle))
+    : results;
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError('');
@@ -226,6 +231,9 @@ export default function HospitalMap() {
       setSearched(false);
       setResults([]);
       setVisibleCount(8);
+
+      // Diagnostic: confirms the exact coordinates + metre radius sent upstream.
+      console.log('HOSPITAL SEARCH:', { lat: at.lat, lon: at.lon, radius });
 
       try {
         const places = await searchNearbyHospitals(at, radius, controller.signal);
@@ -560,20 +568,35 @@ export default function HospitalMap() {
           aria-label={t('hospital.search')}
           onChange={(event) => setNameQuery(event.target.value)}
         />
-        <select
-          className="input"
-          value={selectedRadius}
-          onChange={(event) => handleRadiusChange(Number(event.target.value))}
-          disabled={searching}
-          aria-label={t('hospitals.radius_selector')}
-          style={styles.radiusInline}
+        <div className="map-radius-group">
+          <label className="map-radius-label" htmlFor="hospital-radius">
+            {t('hospitals.radius_selector')}
+          </label>
+          <select
+            id="hospital-radius"
+            className="input map-radius"
+            value={selectedRadius}
+            onChange={(event) => handleRadiusChange(Number(event.target.value))}
+            disabled={searching}
+            aria-label={t('hospitals.radius_selector')}
+          >
+            {RADIUS_OPTIONS.map((radius) => (
+              <option key={radius} value={radius}>
+                {t(`hospitals.radius_${radius / 1000}km`)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={searchNearby}
+          disabled={searching || locating}
+          aria-busy={searching}
         >
-          {RADIUS_OPTIONS.map((radius) => (
-            <option key={radius} value={radius}>
-              {t(`hospitals.radius_${radius / 1000}km`)}
-            </option>
-          ))}
-        </select>
+          <Search size={15} aria-hidden="true" />
+          {searching ? t('places.searching') : t('hospitals.search_nearby')}
+        </button>
         {loading ? (
           <span style={styles.muted} aria-busy="true">{t('hospital.loading')}</span>
         ) : (
@@ -615,9 +638,40 @@ export default function HospitalMap() {
               </Popup>
             </Marker>
           ))}
+          {/* Nearby search results (Overpass) as their own pins. */}
+          {nearbyVisible.map((place) => (
+            <Marker
+              key={`nearby-${place.id ?? `${place.lat},${place.lon}`}`}
+              position={[place.lat, place.lon]}
+              icon={draftIcon}
+            >
+              <Popup>
+                <strong>{place.name}</strong>
+                {place.type ? (
+                  <>
+                    <br />
+                    {place.type}
+                  </>
+                ) : null}
+              </Popup>
+            </Marker>
+          ))}
           <MapFocus target={focus} />
         </MapContainer>
       </div>
+
+      {/* Page-level search feedback (previously only shown inside the Add modal). */}
+      {searchError ? (
+        <p role="alert" style={styles.error}>
+          {searchError}{' '}
+          <button type="button" className="text-action" onClick={retrySearch}>
+            {t('common.retry')}
+          </button>
+        </p>
+      ) : null}
+      {!searching && !searchError && searched && nearbyVisible.length === 0 ? (
+        <p style={styles.muted}>{t('hospital.noResultsHint')}</p>
+      ) : null}
 
       {!loading && !loadError && hospitals.length === 0 ? (
         <p style={styles.muted}>{t('hospitals.no_hospitals')}</p>
@@ -734,13 +788,6 @@ const styles: Record<string, CSSProperties> = {
   resultCopy: { display: 'grid', gap: '0.1rem', minWidth: 0, textAlign: 'start' },
   resultAddress: { color: 'var(--text-muted, #557b76)', fontSize: '0.74rem', lineHeight: 1.3, overflowWrap: 'anywhere' },
   loadMore: { justifySelf: 'center', marginBlockStart: '0.35rem', fontSize: '0.8rem' },
-  radiusInline: {
-    width: '7.5rem',
-    maxWidth: '7.5rem',
-    flex: '0 0 auto',
-    borderRadius: '999px',
-    paddingInline: '0.9rem',
-  },
   pickMapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   pickMapCanvas: { width: '100%', height: 300, borderRadius: '0.8rem', background: '#fff' },
   hint: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.76rem', fontStyle: 'italic' },
