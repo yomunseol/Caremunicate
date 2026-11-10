@@ -222,6 +222,7 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <input
+            className="chat-input"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={loading ? t('chat.loadingConversation') : t('chat.writeMessage')}
@@ -355,7 +356,6 @@ const styles: Record<string, CSSProperties> = {
     padding: '10px 16px',
     fontSize: 15,
     fontFamily: 'inherit',
-    outline: 'none',
   },
   sendButton: {
     border: 'none',

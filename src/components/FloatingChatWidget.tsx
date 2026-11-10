@@ -144,6 +144,7 @@ function ThreadView({
         {sendError ? <p role="alert" style={styles.inlineError}>{sendError}</p> : null}
         <form onSubmit={handleSubmit} style={styles.composerRow}>
           <input
+            className="chat-input"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={loading ? t('chat.loadingMessages') : t('chat.writeMessage')}
@@ -596,7 +597,6 @@ const styles: Record<string, CSSProperties> = {
     padding: '8px 14px',
     fontSize: 14,
     fontFamily: 'inherit',
-    outline: 'none',
   },
   sendButton: {
     display: 'inline-flex',

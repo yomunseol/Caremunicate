@@ -24,6 +24,7 @@
   --shadow-soft: 0 2px 10px -3px rgba(0, 0, 0, 0.06), 0 1px 3px -1px rgba(0, 0, 0, 0.04);
   --border-subtle: rgba(0, 0, 0, 0.04);
   --ring-brand: rgba(5, 150, 105, 0.2);
+  --danger: #9c3636;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -158,6 +159,22 @@ img {
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
+}
+
+/* Touch targets: the 40px desktop pills grow to the 44px minimum on phones. */
+@media (max-width: 640px) {
+  .nav-actions .lang-trigger,
+  .nav-actions .ghost-button,
+  .nav-actions .primary-button,
+  .nav-actions .secondary-button {
+    height: 2.75rem;
+    min-height: 2.75rem;
+  }
+
+  .notif-bell {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
 }
 
 .profile-menu {
@@ -478,14 +495,14 @@ img {
 .secondary-button {
   background: rgba(255, 255, 255, 0.92);
   color: var(--accent-strong);
-  border-color: rgba(15, 58, 50, 0.08);
+  border-color: rgba(15, 58, 50, 0.12);
 }
 
 .ghost-button:not(:disabled):hover,
 .secondary-button:not(:disabled):hover {
   transform: scale(1.01);
   background: rgba(255, 255, 255, 0.98);
-  border-color: rgba(62, 169, 133, 0.22);
+  border-color: rgba(62, 169, 133, 0.28);
   box-shadow: var(--shadow-soft);
 }
 
@@ -587,7 +604,7 @@ img {
 
 .care-plan-dialog .slim-button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+  box-shadow: 0 0 0 3px rgba(62, 169, 133, 0.18);
 }
 
 .main-content {
@@ -1654,6 +1671,12 @@ img {
   box-shadow: 0 0 0 3px var(--ring-brand);
 }
 
+/* Chat composer inputs share one visible keyboard focus ring. */
+.chat-input:focus-visible {
+  outline: 2px solid var(--accent, #3ea985);
+  outline-offset: 1px;
+}
+
 .input[aria-invalid='true'],
 .select[aria-invalid='true'] {
   border-color: rgba(156, 54, 54, 0.75);
@@ -2399,18 +2422,18 @@ img {
 
 .care-plan-dialog .care-plan-control:focus {
   outline: none;
-  border-color: #059669;
-  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+  border-color: var(--accent, #3ea985);
+  box-shadow: 0 0 0 3px rgba(62, 169, 133, 0.18);
 }
 
-.care-plan-dialog .care-plan-control::placeholder { color: #94a3b8; }
+.care-plan-dialog .care-plan-control::placeholder { color: var(--text-muted, #557b76); }
 .care-plan-dialog .care-task-name { flex: 1 1 12rem; min-inline-size: 0; }
 .care-plan-dialog .care-task-frequency { flex: 0 0 8.5rem; inline-size: 8.5rem; }
 
 /* Replace native select arrows with one clean, consistently placed chevron. */
 .care-plan-dialog .select.care-plan-control {
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%2378716c' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23557b76' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.65rem center;
   background-size: 0.75rem;
@@ -2444,19 +2467,19 @@ img {
   border: 0;
   border-radius: 0.5rem;
   background: transparent;
-  color: #94a3b8;
+  color: var(--text-muted, #557b76);
   cursor: pointer;
   transition: color 140ms ease, background 140ms ease;
 }
 .care-plan-dialog .care-remove:hover {
-  color: #b42318;
-  background: rgba(180, 35, 24, 0.08);
+  color: var(--danger, #9c3636);
+  background: rgba(156, 54, 54, 0.08);
 }
 .care-plan-dialog .care-remove:focus-visible,
 .care-plan-dialog .ghost-button:focus-visible,
 .care-plan-dialog .primary-button:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.18);
+  box-shadow: 0 0 0 3px rgba(62, 169, 133, 0.18);
 }
 
 /* Keep the authored number clean: no native spinner circles. */
@@ -2543,7 +2566,7 @@ img {
 }
 
 .care-plan-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.care-plan-icon-btn.is-danger { color: #b42318; }
+.care-plan-icon-btn.is-danger { color: var(--danger, #9c3636); }
 
 .care-lock-badge {
   display: inline-flex;
@@ -2586,14 +2609,14 @@ img {
 .account-settings-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .account-danger {
-  color: #b42318;
-  border-color: rgba(180, 35, 24, 0.28);
-  background: rgba(180, 35, 24, 0.06);
+  color: var(--danger, #9c3636);
+  border-color: rgba(156, 54, 54, 0.28);
+  background: rgba(156, 54, 54, 0.06);
 }
 
 .account-danger:not(:disabled):hover {
-  background: rgba(180, 35, 24, 0.12);
-  border-color: rgba(180, 35, 24, 0.42);
+  background: rgba(156, 54, 54, 0.12);
+  border-color: rgba(156, 54, 54, 0.42);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3812,7 +3835,7 @@ img {
 }
 
 /* Mobile: a bottom sheet — 70vh, rounded top edge, safe-area aware. */
-@media (max-width: 767px) {
+@media (max-width: 720px) {
   .chat-widget-panel {
     position: fixed;
     inset-inline: 0;

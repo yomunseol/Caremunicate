@@ -135,6 +135,7 @@ export function SearchUsers({ onPick }: SearchUsersProps) {
       <div style={styles.searchBox}>
         <Search size={16} style={styles.searchIcon} aria-hidden="true" />
         <input
+          className="chat-input"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={t('chat.searchPlaceholder')}
@@ -214,7 +215,6 @@ const styles: Record<string, CSSProperties> = {
     padding: '9px 36px',
     fontSize: 14,
     fontFamily: 'inherit',
-    outline: 'none',
     background: '#fff',
   },
   spinner: {

@@ -118,7 +118,7 @@ const absoluteTime = (value: unknown, locale: string): string => {
 
 export default function NotificationBell({ role, onNavigate }: NotificationBellProps) {
   const { user } = useAuth();
-  const { t, locale } = useLang();
+  const { t, locale, dir } = useLang();
   const { notify } = useToast();
   const provider = isProvider(role);
 
@@ -176,7 +176,7 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
               // The authoritative time, straight off the appointment row.
               startAt: appointment?.start_at ?? null,
               // 'Patient' ONLY because the lookup could not tell us a name.
-              name: name ?? 'Patient',
+              name: name ?? t('roles.patient'),
               // The host is the appointment owner, under EITHER column name.
               isHost:
                 Boolean(appointment?.host_id ?? appointment?.provider_id) &&
@@ -191,7 +191,7 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
     return () => {
       cancelled = true;
     };
-  }, [items, userId]);
+  }, [items, userId, t]);
 
   useEffect(() => {
     void load();
@@ -214,13 +214,13 @@ export default function NotificationBell({ role, onNavigate }: NotificationBellP
     const rect = button.getBoundingClientRect();
     const width = Math.min(PANEL_WIDTH, window.innerWidth * 0.9);
     // Distance from the viewport's inline-END edge, which mirrors under RTL.
-    const raw = document.documentElement.dir === 'rtl'
+    const raw = dir === 'rtl'
       ? rect.left
       : window.innerWidth - rect.right;
     const max = Math.max(GUTTER, window.innerWidth - width - GUTTER);
     setAnchorEnd(Math.min(Math.max(GUTTER, raw), max));
     setAnchorTop(rect.bottom + GUTTER);
-  }, []);
+  }, [dir]);
 
   useLayoutEffect(() => {
     if (!open) return;
