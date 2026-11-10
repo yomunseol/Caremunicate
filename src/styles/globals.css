@@ -25,6 +25,7 @@
   --border-subtle: rgba(0, 0, 0, 0.04);
   --ring-brand: rgba(62, 169, 133, 0.2);
   --danger: #9c3636;
+  --text-faint: #9db3ad;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -3140,7 +3141,7 @@ img {
 }
 
 .call-hub-muted {
-  color: var(--muted, #6b8b83);
+  color: var(--text-muted, #557b76);
   font-size: 0.8rem;
 }
 
@@ -3231,7 +3232,7 @@ img {
 }
 
 .cal-mini-day:hover { background: var(--cal-mint-soft, rgba(62, 169, 133, 0.16)); }
-.cal-mini-day.is-outside { color: var(--text-muted, #9db3ad); }
+.cal-mini-day.is-outside { color: var(--text-faint, #9db3ad); }
 .cal-mini-day.is-selected { outline: 1.5px solid var(--cal-mint, #3ea985); }
 
 /* Today = a filled mint circle. */
@@ -3524,7 +3525,7 @@ img {
 
 .cal-month-cell:hover { background: rgba(62, 169, 133, 0.04); }
 .cal-month-cell.is-outside { background: rgba(7, 39, 33, 0.015); }
-.cal-month-cell.is-outside .cal-month-date { color: var(--text-muted, #9db3ad); }
+.cal-month-cell.is-outside .cal-month-date { color: var(--text-faint, #9db3ad); }
 
 .cal-month-date {
   display: grid;
