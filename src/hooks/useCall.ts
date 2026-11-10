@@ -24,6 +24,7 @@ import {
   type CallChatEntry,
 } from '../lib/callSessions';
 import { loadCallChat, sendCallChat, subscribeCallChat } from '../lib/callChat';
+import { isProvider } from '../lib/roles';
 
 // ---------------------------------------------------------------------------
 // First-party calling engine over Supabase Realtime broadcast.
@@ -603,6 +604,61 @@ export function useCall(
     kindRef.current = focused.kind;
     setKind(focused.kind);
   }, [incomingCalls, status]);
+
+  /** Queue a ringing call; take over the screen only when idle. */
+  const queueIncoming = useCallback((call: IncomingCall) => {
+    setIncomingCalls((previous) => {
+      if (previous.some((item) => item.roomId === call.roomId && item.from === call.from)) {
+        return previous;
+      }
+      return [...previous, call];
+    });
+    if (statusRef.current === 'idle') {
+      kindRef.current = call.kind;
+      setKind(call.kind);
+      setStatus('incoming');
+    }
+  }, []);
+
+  // Global call inbox. The room channel cannot reach a peer who has not joined
+  // yet, so requests are broadcast to the callee's per-user inbox. Providers
+  // also watch the shared emergency inbox.
+  useEffect(() => {
+    if (!me) return;
+    const channels: ReturnType<typeof supabase.channel>[] = [];
+
+    const handleRequest = ({ payload }: { payload: unknown }) => {
+      const data = payload as Partial<IncomingCall>;
+      if (!data?.roomId || !data.from || data.from === me) return;
+      queueIncoming({
+        roomId: data.roomId,
+        from: data.from,
+        kind: data.kind === 'emergency' ? 'emergency' : 'video',
+        name: data.name,
+      });
+    };
+
+    const personal = supabase.channel(`call-inbox:${me}`, {
+      config: { broadcast: { self: false } },
+    });
+    personal.on('broadcast', { event: 'call:request' }, handleRequest);
+    personal.subscribe();
+    channels.push(personal);
+
+    if (isProvider(myRole)) {
+      const emergency = supabase.channel('call-inbox:emergency', {
+        config: { broadcast: { self: false } },
+      });
+      emergency.on('broadcast', { event: 'call:request' }, handleRequest);
+      emergency.subscribe();
+      channels.push(emergency);
+    }
+
+    return () => {
+      for (const channel of channels) void supabase.removeChannel(channel);
+    };
+  }, [me, myRole, queueIncoming]);
+
   const heartbeat = useRef<number | null>(null);
   const sweeper = useRef<number | null>(null);
   const answerTimer = useRef<number | null>(null);
@@ -1210,23 +1266,13 @@ export function useCall(
           return;
         }
 
-        // Queue every distinct invite. The first rings; extras wait on the
-        // CallDeck stack so several callers can be managed at once.
-        setIncomingCalls((previous) => {
-          if (previous.some((call) => call.roomId === targetRoom && call.from === data.from)) {
-            return previous;
-          }
-          return [
-            ...previous,
-            { roomId: targetRoom, from: data.from, kind: data.kind ?? 'video', name: data.name },
-          ];
+        // A peer already in this room reached us directly; queue the ring.
+        queueIncoming({
+          roomId: targetRoom,
+          from: data.from,
+          kind: data.kind ?? 'video',
+          name: data.name,
         });
-        // Only take over the screen when idle; never mutate a live/ringing call.
-        if (statusRef.current === 'idle') {
-          kindRef.current = data.kind ?? 'video';
-          setKind(data.kind ?? 'video');
-          setStatus('incoming');
-        }
       });
 
       ch.on('broadcast', { event: EV.offer }, ({ payload }) => {
@@ -1367,7 +1413,7 @@ export function useCall(
         }
       });
     },
-    [me, myName, send, applyDescription, closePeer, finish, peerOf],
+    [me, myName, send, applyDescription, closePeer, finish, peerOf, queueIncoming],
   );
 
   // Re-subscribe after a dropped peer connection released the signaling plane.
@@ -1981,6 +2027,43 @@ export function useCall(
     [me, getMedia, attachChannel, startTimers, openSession],
   );
 
+  /** Ring a callee's inbox (or the shared emergency inbox). */
+  const ringInbox = useCallback(
+    async (target: string, roomId: string, nextKind: CallKind) => {
+      const inbox = nextKind === 'emergency' ? 'call-inbox:emergency' : `call-inbox:${target}`;
+      const ch = supabase.channel(inbox, { config: { broadcast: { self: false } } });
+      await new Promise<void>((resolve) => {
+        const timer = window.setTimeout(resolve, 2500);
+        ch.subscribe((subscribeStatus) => {
+          if (subscribeStatus !== 'SUBSCRIBED') return;
+          window.clearTimeout(timer);
+          resolve();
+        });
+      });
+      await ch.send({
+        type: 'broadcast',
+        event: 'call:request',
+        payload: { roomId, from: me, kind: nextKind, name: myName },
+      });
+      window.setTimeout(() => void supabase.removeChannel(ch), 1500);
+    },
+    [me, myName],
+  );
+
+  /** Fire one broadcast on a room's signaling channel from outside it. */
+  const broadcastToRoom = useCallback(
+    (roomKey: string, event: string, payload: Record<string, unknown>) => {
+      const ch = supabase.channel(`call:${roomKey}`, { config: { broadcast: { self: false } } });
+      ch.subscribe((subscribeStatus) => {
+        if (subscribeStatus !== 'SUBSCRIBED') return;
+        void ch
+          .send({ type: 'broadcast', event, payload })
+          .finally(() => window.setTimeout(() => void supabase.removeChannel(ch), 800));
+      });
+    },
+    [],
+  );
+
   const startCall = useCallback(
     async (target: string, nextKind: CallKind = 'video', name?: string) => {
       if (!me || !target) return;
@@ -1994,6 +2077,10 @@ export function useCall(
       const roomKey = resolution.key;
       if (!roomKey) return;
       await joinCall(roomKey, nextKind);
+      // Reach a callee who has not joined the room yet (the room channel can't).
+      void ringInbox(target, roomKey, nextKind).catch((error) =>
+        console.error('CALL ERROR: inbox ring failed', error),
+      );
 
       if (nextKind !== 'emergency') return;
 
@@ -2016,7 +2103,7 @@ export function useCall(
       };
       answerTimer.current = window.setTimeout(() => attempt(1), ANSWER_TIMEOUT_MS);
     },
-    [me, joinCall, send],
+    [me, joinCall, send, ringInbox],
   );
 
   const acceptIncoming = useCallback(
@@ -2042,7 +2129,8 @@ export function useCall(
 
   const declineIncoming = useCallback(
     (call: IncomingCall) => {
-      send(EV.decline, { to: call.from, kind: call.kind });
+      // The decliner is not in the room channel, so signal from a transient one.
+      broadcastToRoom(call.roomId, EV.decline, { from: me, kind: call.kind });
       const remaining = incomingCalls.filter(
         (item) => !(item.roomId === call.roomId && item.from === call.from),
       );
@@ -2052,7 +2140,7 @@ export function useCall(
         finish(null, 'idle');
       }
     },
-    [incomingCalls, send, finish],
+    [incomingCalls, broadcastToRoom, finish, me],
   );
 
   const acceptCall = useCallback(async () => {

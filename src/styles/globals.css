@@ -4410,14 +4410,46 @@ img {
 .call-doc-menu button.is-danger:hover { background: rgba(224, 101, 90, 0.12); }
 
 /* ---- Multi-call deck (header) -------------------------------------------- */
-.call-deck { position: relative; display: inline-flex; }
+.call-deck {
+  position: fixed;
+  inset-block-start: calc(env(safe-area-inset-top, 0px) + 7.5rem);
+  inset-inline-end: 1rem;
+  z-index: 3200;
+}
 
-.call-deck-trigger {
+.call-deck-card {
+  display: grid;
+  gap: 0.6rem;
+  inline-size: min(20rem, calc(100vw - 2rem));
+  padding: 1rem;
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 22px 48px rgba(17, 55, 47, 0.18);
+}
+
+.call-deck.is-emergency .call-deck-card {
+  border-color: rgba(224, 101, 90, 0.5);
+  box-shadow: 0 22px 48px rgba(224, 101, 90, 0.22);
+}
+
+.call-deck.is-emergency .call-deck-title { color: #9c3636; }
+.call-deck.is-emergency .call-deck-front {
+  background: linear-gradient(120deg, #e0655a, #f0a099);
+  color: #4a1610;
+}
+
+.call-deck-stack-trigger {
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
+  text-align: start;
 }
+
+.call-deck-actions { display: flex; gap: 0.5rem; }
+.call-deck-actions > button { flex: 1 1 auto; justify-content: center; }
+.call-deck-more { justify-self: start; font-size: 0.74rem; }
 
 /* Fixed footprint; the extra cards peek out diagonally behind it. */
 .call-deck-stack {
@@ -4464,21 +4496,6 @@ img {
 .call-deck-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .call-deck-kind { flex: 0 0 auto; font-size: 0.7rem; font-weight: 800; opacity: 0.8; white-space: nowrap; }
 
-.call-deck-menu {
-  position: absolute;
-  inset-block-start: calc(100% + 0.6rem);
-  inset-inline-end: 0;
-  z-index: 2000;
-  display: grid;
-  gap: 0.6rem;
-  inline-size: min(22rem, 90vw);
-  padding: 1rem;
-  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
-  border-radius: 1rem;
-  background: #fff;
-  box-shadow: 0 22px 48px rgba(17, 55, 47, 0.18);
-}
-
 .call-deck-title {
   color: var(--accent-strong);
   font-size: 0.72rem;
@@ -4487,7 +4504,22 @@ img {
   text-transform: uppercase;
 }
 
-.call-deck-list { display: grid; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+.call-deck-calling {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.call-deck-list {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding-block-start: 0.6rem;
+  border-block-start: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+}
 .call-deck-row { display: flex; align-items: center; gap: 0.5rem; }
 .call-deck-row-copy { display: grid; gap: 0.1rem; min-inline-size: 0; margin-inline-end: auto; }
 .call-deck-row-copy strong {
@@ -4503,6 +4535,7 @@ img {
 .call-deck-decline {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.3rem;
   border: 0;
   border-radius: 999px;

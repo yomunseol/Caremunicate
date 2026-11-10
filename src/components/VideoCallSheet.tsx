@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CalendarPlus, Hash, Phone, X } from 'lucide-react';
 import { useLang } from '../i18n';
 import { useFocusTrap } from '../hooks/useFocusTrap';
-import { findPersonalRoom, type PersonalRoom } from '../lib/callRooms';
+import { useCallContext } from '../context/CallContext';
 import { isValidWordCode, normalizeCode } from '../lib/wordcode';
 import type { BookableProvider } from './BookingFlow';
 
@@ -27,10 +27,9 @@ type VideoCallSheetProps = {
 
 export default function VideoCallSheet({ careTeam, onClose, onBook }: VideoCallSheetProps) {
   const { t } = useLang();
+  const { startCall } = useCallContext();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
-  const [line, setLine] = useState<PersonalRoom | null>(null);
-  const [checking, setChecking] = useState(false);
   const [code, setCode] = useState('');
 
   useEffect(() => {
@@ -41,26 +40,11 @@ export default function VideoCallSheet({ careTeam, onClose, onBook }: VideoCallS
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  useEffect(() => {
-    if (!careTeam?.userId) return;
-    let cancelled = false;
-    setChecking(true);
-    void (async () => {
-      const room = await findPersonalRoom(careTeam.userId);
-      if (cancelled) return;
-      setLine(room);
-      setChecking(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [careTeam?.userId]);
-
-  const lineOpen = line?.status === 'active' && Boolean(line.code);
-
+  // Ring the care team directly; the callee's inbox shows the call popup.
   const callCareTeam = () => {
-    if (!lineOpen || !line) return;
-    window.location.hash = `#call/${normalizeCode(line.code)}`;
+    if (!careTeam?.userId) return;
+    onClose();
+    void startCall(careTeam.userId, 'video', careTeam.name);
   };
 
   // The button stays disabled until the input is a real 4-word code, so there is
@@ -92,24 +76,19 @@ export default function VideoCallSheet({ careTeam, onClose, onBook }: VideoCallS
         </div>
 
         <div className="sheet-options">
-          {/* 1. The care team's personal line — disabled until it is open. */}
+          {/* 1. Ring the care team — a direct video call request. */}
           <button
             type="button"
             className="sheet-option"
             onClick={callCareTeam}
-            disabled={!lineOpen || checking}
-            aria-busy={checking}
-            title={lineOpen ? undefined : t('call.lineClosed')}
+            disabled={!careTeam}
           >
             <span className="sheet-option-icon" aria-hidden="true">
               <Phone size={17} />
             </span>
             <span className="sheet-option-copy">
               <strong>{t('call.callCareTeam')}</strong>
-              <span className="sheet-option-note">
-                {careTeam?.name ?? t('call.lineClosed')}
-                {lineOpen ? '' : ` · ${t('call.lineClosed')}`}
-              </span>
+              <span className="sheet-option-note">{careTeam?.name ?? t('call.lineClosed')}</span>
             </span>
           </button>
 

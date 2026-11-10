@@ -11,7 +11,6 @@ import {
   MicOff,
   MonitorUp,
   MoreVertical,
-  Phone,
   PhoneOff,
   Settings,
   Smile,
@@ -221,8 +220,6 @@ export default function CallLayer() {
     isHost,
     peerName,
     connectedAt,
-    incoming,
-    incomingCalls,
     peers,
     peerInfo,
     peerStats,
@@ -246,8 +243,6 @@ export default function CallLayer() {
     stage,
     lobby,
     participants,
-    acceptCall,
-    declineCall,
     endCall,
     endForAll,
     toggleMic,
@@ -267,13 +262,12 @@ export default function CallLayer() {
   const { provider: canUseDocs } = useRole();
 
   const emergency = kind === 'emergency';
-  const incomingPhase = status === 'incoming' && Boolean(incoming) && incomingCalls.length === 1;
   const inSession =
     status === 'outgoing' ||
     status === 'connecting' ||
     status === 'active' ||
     status === 'reconnecting';
-  const visible = incomingPhase || inSession || stage === 'prejoin' || stage === 'lobby' || Boolean(notice);
+  const visible = inSession || stage === 'prejoin' || stage === 'lobby' || Boolean(notice);
 
   // ---- local UI state (presentation only) ---------------------------------
   const [view, setView] = useState<'gallery' | 'speaker'>('gallery');
@@ -371,7 +365,7 @@ export default function CallLayer() {
   }, [codeRoom, codeChip]);
 
   // ---- scroll lock ---------------------------------------------------------
-  const locksScroll = incomingPhase || inSession || stage === 'prejoin' || stage === 'lobby';
+  const locksScroll = inSession || stage === 'prejoin' || stage === 'lobby';
   useEffect(() => {
     if (!locksScroll) return;
     const previous = document.body.style.overflow;
@@ -604,7 +598,7 @@ export default function CallLayer() {
     <div
       className="call-layer"
       style={styles.layer}
-      data-call-phase={stage !== 'idle' ? stage : incomingPhase ? 'incoming' : inSession ? status : 'ended'}
+      data-call-phase={stage !== 'idle' ? stage : inSession ? status : 'ended'}
     >
       {stage === 'prejoin' ? <CallPreJoin /> : null}
 
@@ -615,29 +609,6 @@ export default function CallLayer() {
             <div style={styles.modalActions}>
               <button type="button" className="ghost-button" onClick={endCall}>
                 {t('call.leave')}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {incomingPhase ? (
-        <div
-          style={styles.backdrop}
-          role="dialog"
-          aria-modal="true"
-          aria-label={emergency ? t('call.emergencyActive') : t('call.incoming')}
-        >
-          <div style={styles.modal}>
-            <strong style={styles.modalTitle}>{emergency ? t('call.emergencyActive') : t('call.incoming')}</strong>
-            {/* Never fall back to the caller's user id — it is a UUID. */}
-            <p style={styles.modalBody}>{incoming?.name || t('chat.participant')}</p>
-            <div style={styles.modalActions}>
-              <button type="button" style={styles.accept} onClick={() => void acceptCall()}>
-                <Phone size={16} aria-hidden="true" /> {t('call.accept')}
-              </button>
-              <button type="button" className="ghost-button" onClick={declineCall}>
-                <PhoneOff size={16} aria-hidden="true" /> {t('call.decline')}
               </button>
             </div>
           </div>

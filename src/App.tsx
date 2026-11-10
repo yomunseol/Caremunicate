@@ -808,7 +808,6 @@ function App() {
             <>
               {/* Between the language pill and the Calls pill, at every width. */}
               <NotificationBell role={profileRole} onNavigate={(route) => navigate(route)} />
-              <CallDeck />
 
               <button className="ghost-button" type="button" onClick={() => navigate('call')}>
                 {t('call.callHub')}
@@ -1452,6 +1451,8 @@ function App() {
       ) : null}
 
       <FloatingChatWidget />
+
+      <CallDeck />
 
       <footer className="footer">
         <div className="footer-row">
