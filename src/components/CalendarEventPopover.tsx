@@ -65,7 +65,7 @@ export default function CalendarEventPopover({
   onApprove,
   onDecline,
 }: CalendarEventPopoverProps) {
-  const { t, locale } = useLang();
+  const { t, locale, dir } = useLang();
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   const nodeRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,6 +88,8 @@ export default function CalendarEventPopover({
   // canJoin enforces scheduled/confirmed + a real room + the T−10min window.
   const joinable = canJoin(appointment);
   const left = Math.max(MARGIN, Math.min(anchor.x, window.innerWidth - WIDTH - MARGIN));
+  // anchor.x is physical; inset-inline-start is measured from the RIGHT edge in RTL.
+  const inlineStart = dir === 'rtl' ? window.innerWidth - left - WIDTH : left;
   const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - 260));
 
   return (
@@ -100,7 +102,7 @@ export default function CalendarEventPopover({
       role="dialog"
       aria-modal="false"
       aria-label={title}
-      style={{ top, insetInlineStart: left, width: WIDTH }}
+      style={{ top, insetInlineStart: inlineStart, width: WIDTH }}
     >
       <div className="cal-popover-head">
         <span className="cal-popover-title">

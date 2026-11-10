@@ -85,8 +85,8 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
 
 ## Z-scale
 
-contained maps (`isolation: isolate`) < header 1100 < backdrop 1900 <
-dropdown / modal 2000 < CallLayer 3000 < toasts 3500.
+contained maps (`isolation: isolate`) < header 1100 < chat widget 1200 <
+backdrop 1900 < dropdown / modal 2000 < CallLayer 3000 < toasts 3500.
 
 ## i18n / RTL
 

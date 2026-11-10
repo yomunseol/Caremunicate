@@ -82,7 +82,7 @@ export default function QuickCreatePopover({
   onClose,
   onCreated,
 }: QuickCreatePopoverProps) {
-  const { t, tString, locale } = useLang();
+  const { t, tString, locale, dir } = useLang();
   const { notify } = useToast();
   const trapRef = useFocusTrap<HTMLFormElement>(true);
   const nodeRef = useRef<HTMLFormElement | null>(null);
@@ -207,6 +207,8 @@ export default function QuickCreatePopover({
   }, [onClose]);
 
   const left = Math.max(MARGIN, Math.min(anchor.x, window.innerWidth - WIDTH - MARGIN));
+  // anchor.x is physical; inset-inline-start is measured from the RIGHT edge in RTL.
+  const inlineStart = dir === 'rtl' ? window.innerWidth - left - WIDTH : left;
   const top = Math.max(MARGIN, Math.min(anchor.y, window.innerHeight - 360));
 
   /** Writes the default week (Mon–Fri 09:00–18:00) through the CF-1 availability
@@ -328,7 +330,7 @@ export default function QuickCreatePopover({
       role="dialog"
       aria-modal="false"
       aria-label={t('cal.bookAppointment')}
-      style={{ top, insetInlineStart: left, width: WIDTH }}
+      style={{ top, insetInlineStart: inlineStart, width: WIDTH }}
       onSubmit={(event) => void submit(event)}
     >
       <div className="cal-popover-head">

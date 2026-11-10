@@ -388,7 +388,7 @@ const styles: Record<string, CSSProperties> = {
     // Bottom-end corner of the viewport, so it stays the same corner under RTL.
     insetInlineEnd: 16,
     bottom: 16,
-    zIndex: 50,
+    zIndex: 1200,
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-end',
