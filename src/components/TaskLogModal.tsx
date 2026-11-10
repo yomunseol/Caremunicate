@@ -101,7 +101,7 @@ const styles: Record<string, CSSProperties> = {
   backdrop: {
     position: 'fixed',
     inset: 0,
-    zIndex: 2100,
+    zIndex: 2000,
     display: 'grid',
     placeItems: 'center',
     padding: '1rem',

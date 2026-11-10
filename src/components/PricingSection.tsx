@@ -208,6 +208,12 @@ type PricingSectionProps = {
   busyPlan?: PlanId | null;
   /** True when a session exists: CTAs become an info-only "Current plan" chip. */
   authed?: boolean;
+  /**
+   * Restrict the list to one plan family. Null (the default) shows all six —
+   * the public marketing view. An authenticated or onboarding role passes its
+   * own family so it never renders the other family's tiers.
+   */
+  family?: PlanFamily | null;
 };
 
 export default function PricingSection({
@@ -217,9 +223,10 @@ export default function PricingSection({
   currentPlan = null,
   busyPlan = null,
   authed = false,
+  family = null,
 }: PricingSectionProps) {
   const { t } = useLang();
-  const plans = getPlans(t);
+  const plans = getPlans(t).filter((plan) => !family || plan.family === family);
   const busy = busyPlan !== null;
 
   return (

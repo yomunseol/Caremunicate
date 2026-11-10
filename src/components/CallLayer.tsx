@@ -502,8 +502,8 @@ export default function CallLayer() {
 
   // Announce our own mute state for screen readers.
   useEffect(() => {
-    setAnnouncement(muted ? 'Microphone muted' : 'Microphone on');
-  }, [muted]);
+    setAnnouncement(muted ? t('call.micMuted') : t('call.micOn'));
+  }, [muted, t]);
 
   // "?" opens the shortcuts overlay; Escape closes whatever is open.
   useEffect(() => {

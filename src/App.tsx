@@ -999,6 +999,7 @@ function App() {
               currentPlan={currentUser ? currentPlanId : null}
               busyPlan={pendingPlan}
               authed={Boolean(currentUser)}
+              family={currentUser ? roleFamily : null}
             />
 
             <section className="section">
@@ -1390,6 +1391,7 @@ function App() {
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
             authed={Boolean(currentUser)}
+            family={currentUser ? roleFamily : null}
           />
         )}
         </ErrorBoundary>

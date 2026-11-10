@@ -3688,7 +3688,7 @@ img {
 /* ---- Popovers (anchored, never modal) ------------------------------------ */
 .cal-popover {
   position: fixed;
-  z-index: 1200;
+  z-index: 2000;
   display: grid;
   gap: 0.45rem;
   padding: 0.7rem 0.8rem 0.8rem;
@@ -3898,7 +3898,7 @@ img {
 .sheet-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 1400;
+  z-index: 2000;
   display: grid;
   place-items: center;
   padding: 16px;
@@ -4258,7 +4258,7 @@ img {
 .call-doc-modal {
   position: fixed;
   inset: 0;
-  z-index: 1200;
+  z-index: 2000;
   display: grid;
   place-items: center;
   padding: 1rem;
