@@ -393,6 +393,8 @@ export type UseCallResult = {
   /** Epoch ms the call first went active — drives the CallLayer timer. */
   connectedAt: number | null;
   incoming: IncomingCall | null;
+  /** Every ringing call, oldest first; [0] is the focused ring. */
+  incomingCalls: IncomingCall[];
   peers: CallPeer[];
   /** Per-peer name / mic / cam / sharing / hand / connection, keyed by peer id. */
   peerInfo: Record<string, PeerInfo>;
@@ -462,6 +464,9 @@ export type UseCallResult = {
   cancelPrejoin: () => void;
   acceptCall: () => Promise<void>;
   declineCall: () => void;
+  /** Accept/decline one specific ringing call from the CallDeck. */
+  acceptIncoming: (call: IncomingCall) => Promise<void>;
+  declineIncoming: (call: IncomingCall) => void;
   endCall: () => void;
   /** Host only: broadcast call:ended, mark the room ended, and leave. */
   endForAll: () => void;
@@ -507,7 +512,10 @@ export function useCall(
   const [isHost, setIsHost] = useState(false);
   const [peerName, setPeerName] = useState<string | null>(null);
   const [connectedAt, setConnectedAt] = useState<number | null>(null);
-  const [incoming, setIncoming] = useState<IncomingCall | null>(null);
+  // A queue of ringing calls: the first drives the ring modal, any extras are
+  // surfaced by the CallDeck stack (multiple simultaneous callers).
+  const [incomingCalls, setIncomingCalls] = useState<IncomingCall[]>([]);
+  const incoming = incomingCalls[0] ?? null;
   const [peerIds, setPeerIds] = useState<string[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [audioOnly, setAudioOnly] = useState(false);
@@ -587,6 +595,14 @@ export function useCall(
   const kindRef = useRef<CallKind>('video');
   const audioOnlyRef = useRef(false);
   const statusRef = useRef<CallStatus>('idle');
+
+  // As calls leave the queue, keep the focused ring's kind in sync.
+  useEffect(() => {
+    const focused = incomingCalls[0];
+    if (!focused || status !== 'incoming') return;
+    kindRef.current = focused.kind;
+    setKind(focused.kind);
+  }, [incomingCalls, status]);
   const heartbeat = useRef<number | null>(null);
   const sweeper = useRef<number | null>(null);
   const answerTimer = useRef<number | null>(null);
@@ -765,7 +781,7 @@ export function useCall(
   const finish = useCallback(
     (noticeKey: string | null, nextStatus: CallStatus = 'ended') => {
       teardown();
-      setIncoming(null);
+      setIncomingCalls([]);
       setPeerIds([]);
       setLocalStream(null);
       setAudioOnly(false);
@@ -1194,10 +1210,23 @@ export function useCall(
           return;
         }
 
-        kindRef.current = data.kind ?? 'video';
-        setKind(data.kind ?? 'video');
-        setIncoming({ roomId: targetRoom, from: data.from, kind: data.kind ?? 'video', name: data.name });
-        setStatus('incoming');
+        // Queue every distinct invite. The first rings; extras wait on the
+        // CallDeck stack so several callers can be managed at once.
+        setIncomingCalls((previous) => {
+          if (previous.some((call) => call.roomId === targetRoom && call.from === data.from)) {
+            return previous;
+          }
+          return [
+            ...previous,
+            { roomId: targetRoom, from: data.from, kind: data.kind ?? 'video', name: data.name },
+          ];
+        });
+        // Only take over the screen when idle; never mutate a live/ringing call.
+        if (statusRef.current === 'idle') {
+          kindRef.current = data.kind ?? 'video';
+          setKind(data.kind ?? 'video');
+          setStatus('incoming');
+        }
       });
 
       ch.on('broadcast', { event: EV.offer }, ({ payload }) => {
@@ -1554,7 +1583,7 @@ export function useCall(
       setIsHost(Boolean(options?.isHost));
       setKind('video');
       setNotice(null);
-      setIncoming(null);
+      setIncomingCalls([]);
       setPeerName(null);
       setLobbyEnabled(Boolean(options?.lobby));
       setLobby([]);
@@ -1694,7 +1723,7 @@ export function useCall(
     setAudioOnly(false);
     setIsHost(Boolean(todo.options.isHost));
     setNotice(null);
-    setIncoming(null);
+    setIncomingCalls([]);
     setStatus('connecting');
 
     const media = preview.current;
@@ -1933,7 +1962,7 @@ export function useCall(
       setCodeRoom(Boolean(code));
       setPersonal(personal);
       setNotice(null);
-      setIncoming(null);
+      setIncomingCalls([]);
       setStatus('connecting');
       room.current = key;
       setRoomId(key);
@@ -1990,18 +2019,49 @@ export function useCall(
     [me, joinCall, send],
   );
 
+  const acceptIncoming = useCallback(
+    async (call: IncomingCall) => {
+      const remaining = incomingCalls.filter(
+        (item) => !(item.roomId === call.roomId && item.from === call.from),
+      );
+      setIncomingCalls(remaining);
+
+      // One live session at a time: switching away ends the current call first.
+      if (room.current && room.current !== call.roomId) {
+        send(EV.leave, { kind: kindRef.current });
+        finish(null, 'idle');
+      }
+
+      await joinCall(call.roomId, call.kind);
+      // joinCall clears the queue; keep the other pending invites visible.
+      setIncomingCalls(remaining);
+      if (call.name) setPeerName(call.name);
+    },
+    [incomingCalls, joinCall, send, finish],
+  );
+
+  const declineIncoming = useCallback(
+    (call: IncomingCall) => {
+      send(EV.decline, { to: call.from, kind: call.kind });
+      const remaining = incomingCalls.filter(
+        (item) => !(item.roomId === call.roomId && item.from === call.from),
+      );
+      setIncomingCalls(remaining);
+      if (remaining.length === 0 && statusRef.current === 'incoming') {
+        // Nothing left ringing — go idle.
+        finish(null, 'idle');
+      }
+    },
+    [incomingCalls, send, finish],
+  );
+
   const acceptCall = useCallback(async () => {
-    if (!incoming) return;
-    const callerName = incoming.name ?? null;
-    await joinCall(incoming.roomId, incoming.kind);
-    if (callerName) setPeerName(callerName);
-  }, [incoming, joinCall]);
+    if (incoming) await acceptIncoming(incoming);
+  }, [incoming, acceptIncoming]);
 
   const declineCall = useCallback(() => {
-    if (incoming) send(EV.decline, { to: incoming.from, kind: incoming.kind });
-    // Declining is silent for the decliner; the caller sees the notice.
-    finish(null, 'idle');
-  }, [incoming, send, finish]);
+    if (incoming) declineIncoming(incoming);
+  }, [incoming, declineIncoming]);
 
   const endCall = useCallback(() => {
     send(EV.leave, { kind: kindRef.current });
@@ -2441,6 +2501,7 @@ export function useCall(
     peerName,
     connectedAt,
     incoming,
+    incomingCalls,
     peers: list,
     peerInfo,
     localStream,
@@ -2485,6 +2546,8 @@ export function useCall(
     cancelPrejoin,
     acceptCall,
     declineCall,
+    acceptIncoming,
+    declineIncoming,
     endCall,
     endForAll,
     toggleMic,

@@ -222,6 +222,7 @@ export default function CallLayer() {
     peerName,
     connectedAt,
     incoming,
+    incomingCalls,
     peers,
     peerInfo,
     peerStats,
@@ -266,7 +267,7 @@ export default function CallLayer() {
   const { provider: canUseDocs } = useRole();
 
   const emergency = kind === 'emergency';
-  const incomingPhase = status === 'incoming' && Boolean(incoming);
+  const incomingPhase = status === 'incoming' && Boolean(incoming) && incomingCalls.length === 1;
   const inSession =
     status === 'outgoing' ||
     status === 'connecting' ||

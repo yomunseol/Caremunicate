@@ -4403,6 +4403,114 @@ img {
 .call-doc-menu button:hover { background: rgba(62, 169, 133, 0.1); }
 .call-doc-menu button.is-danger { color: #9c3636; }
 .call-doc-menu button.is-danger:hover { background: rgba(224, 101, 90, 0.12); }
+
+/* ---- Multi-call deck (header) -------------------------------------------- */
+.call-deck { position: relative; display: inline-flex; }
+
+.call-deck-trigger {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Fixed footprint; the extra cards peek out diagonally behind it. */
+.call-deck-stack {
+  position: relative;
+  display: block;
+  inline-size: 12.5rem;
+  block-size: 2.5rem;
+}
+
+.call-deck-back,
+.call-deck-front {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  border-radius: 999px;
+}
+
+.call-deck-back {
+  background: #fff;
+  border: 1px solid rgba(62, 169, 133, 0.25);
+  box-shadow: 0 8px 18px rgba(17, 55, 47, 0.1);
+}
+
+/* Second call: ~1cm offset. Third call: doubled. More calls reuse these. */
+.call-deck-back[data-depth='1'] { transform: translate(10px, 10px) scale(0.97); opacity: 0.8; }
+.call-deck-back[data-depth='2'] { transform: translate(20px, 20px) scale(0.94); opacity: 0.55; }
+
+.call-deck-front {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-inline: 0.9rem;
+  background: linear-gradient(120deg, #48b58f, #7adab1);
+  color: #072c2a;
+  font-size: 0.82rem;
+  font-weight: 800;
+  box-shadow: 0 8px 20px rgba(62, 169, 133, 0.32);
+}
+
+.call-deck-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.call-deck-kind { flex: 0 0 auto; font-size: 0.7rem; font-weight: 800; opacity: 0.8; white-space: nowrap; }
+
+.call-deck-menu {
+  position: absolute;
+  inset-block-start: calc(100% + 0.6rem);
+  inset-inline-end: 0;
+  z-index: 2000;
+  display: grid;
+  gap: 0.6rem;
+  inline-size: min(22rem, 90vw);
+  padding: 1rem;
+  border: 1px solid var(--line, rgba(15, 58, 50, 0.12));
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 22px 48px rgba(17, 55, 47, 0.18);
+}
+
+.call-deck-title {
+  color: var(--accent-strong);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.call-deck-list { display: grid; gap: 0.5rem; list-style: none; margin: 0; padding: 0; }
+.call-deck-row { display: flex; align-items: center; gap: 0.5rem; }
+.call-deck-row-copy { display: grid; gap: 0.1rem; min-inline-size: 0; margin-inline-end: auto; }
+.call-deck-row-copy strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: 0.86rem;
+}
+.call-deck-row-copy span { color: var(--text-muted, #557b76); font-size: 0.72rem; }
+
+.call-deck-join,
+.call-deck-decline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.call-deck-join { background: linear-gradient(120deg, #48b58f, #7adab1); color: #072c2a; }
+.call-deck-decline { background: rgba(224, 101, 90, 0.12); color: #9c3636; }
+.call-deck-join:hover { filter: brightness(1.03); }
+.call-deck-decline:hover { background: rgba(224, 101, 90, 0.2); }
 .call-doc-notice {
   display: inline-block;
   justify-self: start;
