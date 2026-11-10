@@ -235,7 +235,7 @@ export default function HospitalMap() {
       } catch (error) {
         if (abortRef.current !== controller) return;
         if ((error as Error)?.name === 'AbortError') {
-          if (timedOut) setSearchError(`${t('places.searchFailed')} (timeout)`);
+          if (timedOut) setSearchError(t('places.searchUnavailable'));
         } else {
           const status = (error as Error & { status?: number }).status;
           if (status === 408) {
@@ -245,7 +245,8 @@ export default function HospitalMap() {
             return;
           }
           console.error('HOSPITAL_ERROR:', error);
-          setSearchError(`${t('places.searchFailed')} (${describeError(error)})`);
+          // Friendly copy; the raw status stays in the console.
+          setSearchError(t('places.searchUnavailable'));
           setResults([]);
         }
       } finally {

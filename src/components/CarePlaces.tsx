@@ -401,14 +401,13 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
       } catch (caught) {
         if (abortRef.current !== controller) return;
         const code = (caught as CodedError)?.code;
-        const detail = (caught as CodedError)?.detail ?? '';
 
         if ((caught as Error)?.name === 'AbortError') {
           // Only a timeout is worth surfacing; a superseded request or an
           // unmount must stay silent.
           if (timedOut) {
             console.error('SEARCH_ERROR:', caught);
-            setError(`${t('places.searchFailed')} (timeout)`);
+            setError(t('places.searchUnavailable'));
           }
           return;
         }
@@ -436,14 +435,8 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         }
 
         console.error('SEARCH_ERROR:', caught);
-        // Always name the raw cause — 429/504/500 plus the proxy detail — never
-        // a bare, silent empty list.
-        const reason = code === '404'
-          ? '404 route missing'
-          : code
-            ? `${code}${detail ? `: ${detail}` : ''}`
-            : '';
-        setError(`${t('places.searchFailed')}${reason ? ` (${reason})` : ''}`);
+        // Friendly, actionable copy — never a raw upstream status in the UI.
+        setError(t('places.searchUnavailable'));
         setResults([]);
       } finally {
         window.clearTimeout(timeoutId);

@@ -448,22 +448,6 @@ export default function DashboardOverview({
         </>
       )}
 
-      {/* The dashboard has exactly ONE call entry, shared by both roles, and it
-          only navigates: everything call-related lives in the /call hub. */}
-      <div className="panel">
-        <div className="eyebrow">{t('call.callHub')}</div>
-        <p style={styles.muted}>{t('dash.noCalls')}</p>
-        <button
-          type="button"
-          className="ghost-button call-join-trigger"
-          onClick={() => {
-            window.location.hash = '#call';
-          }}
-        >
-          {t('call.callHub')}
-        </button>
-      </div>
-
       {sheetOpen ? (
         <VideoCallSheet
           careTeam={careTeam ? { userId: careTeam.userId, name: careTeam.name } : null}
