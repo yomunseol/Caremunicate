@@ -604,7 +604,7 @@ export default function CallHub() {
 
 const styles: Record<string, CSSProperties> = {
   joinForm: { display: 'grid', gap: '0.5rem' },
-  confirmText: { margin: 0, color: '#133b35', fontSize: '0.9rem', lineHeight: 1.5 },
+  confirmText: { margin: 0, color: 'var(--text, #133b35)', fontSize: '0.9rem', lineHeight: 1.5 },
   lineChip: {
     // Light-surface skin; layout comes from .call-code-chip.
     background: 'var(--accent-soft, rgba(62, 169, 133, 0.14))',

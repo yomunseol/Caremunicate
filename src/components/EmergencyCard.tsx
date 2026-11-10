@@ -216,7 +216,7 @@ export default function EmergencyCard() {
 
 const styles: Record<string, CSSProperties> = {
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
-  muted: { margin: 0, color: '#557b76', fontSize: '0.86rem', lineHeight: 1.6 },
+  muted: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.86rem', lineHeight: 1.6 },
   activeText: { margin: 0, color: '#9c3636', fontSize: '0.88rem', fontWeight: 700, lineHeight: 1.5 },
   connectButton: {
     width: '100%',
@@ -257,7 +257,7 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid rgba(224, 101, 90, 0.35)',
     boxShadow: '0 28px 64px rgba(6, 26, 22, 0.35)',
   },
-  dialogTitle: { fontSize: '1.05rem', fontWeight: 800, color: '#133b35' },
+  dialogTitle: { fontSize: '1.05rem', fontWeight: 800, color: 'var(--text, #133b35)' },
   dialogActions: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' },
   // Both buttons share the row and stay full-width-safe down to 320px.
   dialogAction: { flex: '1 1 8rem', minWidth: 0, minHeight: 44, marginTop: 0 },

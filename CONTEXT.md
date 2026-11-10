@@ -113,6 +113,8 @@ backdrop 1900 < dropdown / modal 2000 < CallLayer 3000 < toasts 3500.
 Mint tokens (`--accent`, `--accent-strong`, `--accent-soft`, `--line`, `--shadow`,
 `--text*`). Spacing: 24px card gap, 24px card padding, 12–16px inner. Rounded-2xl
 tiles. Meet skin + Zoom muscles for the call UI.
+Breakpoints (max-width): 380, 480, 640, 720, 820, 980 — reuse these steps, never
+invent a new one.
 
 ## DB summary
 

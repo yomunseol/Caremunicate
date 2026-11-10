@@ -595,7 +595,7 @@ img {
 }
 
 .slim-button:not(:disabled):active {
-  transform: scale(0.98);
+  transform: scale(0.99);
 }
 
 .slim-button:disabled {
@@ -3835,10 +3835,6 @@ img {
 .chat-thread-actions,
 .chat-role-badge { flex: 0 0 auto; }
 .chat-role-badge { font-size: 11px; }
-
-@media (max-width: 480px) {
-  .chat-role-badge { font-size: 10px; padding: 2px 6px; }
-}
 
 /* Mobile: a bottom sheet — 70vh, rounded top edge, safe-area aware. */
 @media (max-width: 720px) {

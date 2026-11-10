@@ -152,7 +152,7 @@ export default function PasswordResetFlow({
             type="email"
             autoComplete="email"
             aria-label={t('login.labelEmail')}
-            placeholder={t('login.phEmail')}
+            placeholder={t('auth.email')}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             disabled={busy}

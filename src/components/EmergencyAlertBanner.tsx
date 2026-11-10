@@ -148,7 +148,7 @@ export default function EmergencyAlertBanner() {
 const styles: Record<string, CSSProperties> = {
   copy: { display: 'grid', gap: '0.2rem', minWidth: 0 },
   title: { display: 'inline-flex', alignItems: 'center', gap: '0.4rem', color: '#9c3636', fontWeight: 800 },
-  meta: { color: '#557b76', fontSize: '0.78rem', lineHeight: 1.45, overflowWrap: 'anywhere' },
+  meta: { color: 'var(--text-muted, #557b76)', fontSize: '0.78rem', lineHeight: 1.45, overflowWrap: 'anywhere' },
   actions: { display: 'flex', gap: '0.5rem', flexWrap: 'wrap' },
   join: {
     display: 'inline-flex',

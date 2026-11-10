@@ -111,13 +111,13 @@ const styles: Record<string, CSSProperties> = {
     fontFamily: 'inherit',
     fontSize: '0.86rem',
     fontWeight: 700,
-    color: '#133b35',
+    color: 'var(--text, #133b35)',
     cursor: 'pointer',
   },
   tabActive: {
     borderColor: 'rgba(62, 169, 133, 0.6)',
     background: 'rgba(62, 169, 133, 0.14)',
-    color: '#216e5d',
+    color: 'var(--accent-strong, #216e5d)',
   },
   overviewLine: { margin: 0, color: 'var(--text, #133b35)' },
 };

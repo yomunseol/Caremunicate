@@ -14,7 +14,7 @@ const settingsCardStyle = {
   borderRadius: '1.35rem',
   background: 'linear-gradient(180deg, rgba(250, 255, 252, 0.98), rgba(238, 249, 244, 0.92))',
   boxShadow: '0 22px 46px rgba(17, 55, 47, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.9)',
-  color: '#133b35',
+  color: 'var(--text, #133b35)',
 };
 
 const cardContentStyle = {
@@ -24,14 +24,14 @@ const cardContentStyle = {
 
 const descriptionStyle = {
   margin: 0,
-  color: '#557b76',
+  color: 'var(--text-muted, #557b76)',
   fontSize: '0.86rem',
   lineHeight: 1.6,
 };
 
 const statusStyle = {
   margin: 0,
-  color: '#216e5d',
+  color: 'var(--accent-strong, #216e5d)',
   fontWeight: 700,
 };
 
@@ -443,10 +443,10 @@ export default function TwoFactorSetup() {
               <span>
                 <strong>{t('tfa.none')}</strong>
                 <br />
-                <small style={{ color: '#557b76' }}>{t('tfa.noneDesc')}</small>
+                <small style={{ color: 'var(--text-muted, #557b76)' }}>{t('tfa.noneDesc')}</small>
               </span>
               {method === 'none' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.current')}</span>
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: 'var(--accent-strong, #216e5d)' }}>{t('tfa.current')}</span>
               ) : null}
             </label>
 
@@ -462,10 +462,10 @@ export default function TwoFactorSetup() {
               <span>
                 <strong>{t('tfa.email')}</strong>
                 <br />
-                <small style={{ color: '#557b76' }}>{t('tfa.emailDesc')}</small>
+                <small style={{ color: 'var(--text-muted, #557b76)' }}>{t('tfa.emailDesc')}</small>
               </span>
               {method === 'email' ? (
-                <span style={{ ...badgeStyle, background: '#e7f0ee', color: '#216e5d' }}>{t('tfa.active')}</span>
+                <span style={{ ...badgeStyle, background: '#e7f0ee', color: 'var(--accent-strong, #216e5d)' }}>{t('tfa.active')}</span>
               ) : null}
             </label>
           </>
@@ -475,7 +475,7 @@ export default function TwoFactorSetup() {
           <form onSubmit={handleVerify} style={{ display: 'grid', gap: '0.9rem' }}>
             <div style={qrCardStyle}>
               <QRCodeSVG value={totpUri} size={180} />
-              <p style={{ margin: 0, color: '#557b76', fontSize: '0.9rem', textAlign: 'center' }}>
+              <p style={{ margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.9rem', textAlign: 'center' }}>
                 {t('tfa.qrHelp')}
               </p>
             </div>

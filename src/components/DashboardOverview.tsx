@@ -372,7 +372,7 @@ export default function DashboardOverview({
                   <CheckCircle2
                     size={16}
                     aria-hidden="true"
-                    style={{ color: step.done ? '#216e5d' : '#b9cdc7', flexShrink: 0 }}
+                    style={{ color: step.done ? 'var(--accent-strong, #216e5d)' : '#b9cdc7', flexShrink: 0 }}
                   />
                   <span style={step.done ? styles.checkDone : styles.checkTodo}>{t(`dash.${step.key}`)}</span>
                 </li>
@@ -491,8 +491,8 @@ export default function DashboardOverview({
 }
 
 const styles: Record<string, CSSProperties> = {
-  muted: { margin: 0, color: '#557b76', fontSize: '0.86rem', lineHeight: 1.6 },
-  hint: { margin: '0.6rem 0 0', color: '#557b76', fontSize: '0.76rem', lineHeight: 1.5 },
+  muted: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.86rem', lineHeight: 1.6 },
+  hint: { margin: '0.6rem 0 0', color: 'var(--text-muted, #557b76)', fontSize: '0.76rem', lineHeight: 1.5 },
   teamRow: { display: 'flex', alignItems: 'center', gap: '0.7rem', flexWrap: 'wrap' },
   avatar: {
     display: 'grid',
@@ -512,7 +512,7 @@ const styles: Record<string, CSSProperties> = {
     paddingInline: '0.5rem',
     borderRadius: '999px',
     background: 'rgba(62, 169, 133, 0.14)',
-    color: '#216e5d',
+    color: 'var(--accent-strong, #216e5d)',
     fontSize: '0.68rem',
     fontWeight: 800,
     textTransform: 'uppercase',
@@ -521,7 +521,7 @@ const styles: Record<string, CSSProperties> = {
   teamActions: { display: 'flex', gap: '0.4rem', flexWrap: 'wrap' },
   actionGrid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '0.5rem' },
   progressHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' },
-  progressLabel: { color: '#216e5d', fontSize: '0.74rem', fontWeight: 700 },
+  progressLabel: { color: 'var(--accent-strong, #216e5d)', fontSize: '0.74rem', fontWeight: 700 },
   progressTrack: {
     height: '0.4rem',
     marginBlock: '0.7rem',
@@ -532,8 +532,8 @@ const styles: Record<string, CSSProperties> = {
   progressFill: { display: 'block', height: '100%', borderRadius: 'inherit', background: 'linear-gradient(120deg, #48b58f, #7adab1)' },
   checklist: { listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '0.45rem' },
   checkRow: { display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.84rem' },
-  checkDone: { color: '#557b76', textDecoration: 'line-through' },
-  checkTodo: { color: '#133b35', fontWeight: 600 },
+  checkDone: { color: 'var(--text-muted, #557b76)', textDecoration: 'line-through' },
+  checkTodo: { color: 'var(--text, #133b35)', fontWeight: 600 },
   statGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.5rem' },
   statTile: {
     display: 'grid',
@@ -545,8 +545,8 @@ const styles: Record<string, CSSProperties> = {
     border: '1px solid rgba(15, 58, 50, 0.1)',
     textAlign: 'center',
   },
-  statValue: { fontSize: '1.35rem', color: '#216e5d' },
-  statLabel: { color: '#557b76', fontSize: '0.68rem', fontWeight: 700, lineHeight: 1.3 },
+  statValue: { fontSize: '1.35rem', color: 'var(--accent-strong, #216e5d)' },
+  statLabel: { color: 'var(--text-muted, #557b76)', fontSize: '0.68rem', fontWeight: 700, lineHeight: 1.3 },
   badgeRow: { display: 'flex', flexWrap: 'wrap', gap: '0.5rem' },
   certCta: { justifySelf: 'start', marginBlockStart: '0.6rem' },
 };
