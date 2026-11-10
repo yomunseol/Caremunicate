@@ -403,8 +403,8 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="next"
-              placeholder={t('login.labelEmail')}
-              aria-label={t('login.labelEmail')}
+              placeholder={t('auth.email')}
+              aria-label={t('auth.email')}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               disabled={loading}

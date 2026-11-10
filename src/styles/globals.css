@@ -1596,11 +1596,16 @@ img {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 2.5rem;
-  min-height: 2.5rem;
+  height: 2.375rem;
+  min-height: 2.375rem;
   padding-block: 0;
   padding-inline: 0.9rem;
   font-size: 0.85rem;
+}
+
+/* No extra vertical padding: border + pill = exactly the 40px submit pill. */
+.auth-mode-toggle {
+  padding: 0;
 }
 
 .mode-button.active,
