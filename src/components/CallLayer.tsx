@@ -574,7 +574,7 @@ export default function CallLayer() {
                 : notice === 'line-closed'
                   ? t('call.lineClosed')
                   : notice === 'continue-in-chat'
-                  ? t('chat.messages')
+                  ? t('call.continueInChat')
                   : notice === 'poor-connection'
                   ? t('call.poorConnection')
                   : t('call.ended');

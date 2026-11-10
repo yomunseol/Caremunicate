@@ -289,6 +289,8 @@ function App() {
   const [pendingPlan, setPendingPlan] = useState<PlanId | null>(null);
   // A plan change that also changes the ROLE, awaiting confirmation.
   const [conversion, setConversion] = useState<{ plan: PlanId; option: Plan } | null>(null);
+  // The explicit "Switch role or plan" entry opens pricing with all families.
+  const [switchMode, setSwitchMode] = useState(false);
   // Bumped after a successful plan write to re-read profiles without a reload.
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   // Signup success banner, shown above the form until dismissed.
@@ -859,11 +861,20 @@ function App() {
                       type="button"
                       onClick={() => {
                         setProfileMenuOpen(false);
+                        setSwitchMode(false);
                         navigate('pricing');
                       }}
                     >
                       <span>{t('header.upgrade')}</span>
                       <span aria-hidden="true">→</span>
+                    </button>
+
+                    <button className="popover-profile-link" type="button" onClick={() => {
+                      setProfileMenuOpen(false);
+                      setSwitchMode(true);
+                      navigate('pricing');
+                    }}>
+                      {t('header.switchRole')}
                     </button>
 
                     <button className="popover-profile-link" type="button" onClick={() => {
@@ -1391,7 +1402,7 @@ function App() {
             currentPlan={currentUser ? currentPlanId : null}
             busyPlan={pendingPlan}
             authed={Boolean(currentUser)}
-            family={currentUser ? roleFamily : null}
+            family={currentUser && !switchMode ? roleFamily : null}
           />
         )}
         </ErrorBoundary>

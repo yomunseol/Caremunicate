@@ -49,8 +49,9 @@ Provider-side gates must use `isProvider(role)`, never `role === 'doctor'`.
   onto the provider family (`LEGACY_PLAN_ALIASES`).
 - Signup lands providers on their role's plan and patients on `basic`.
 - **Display:** a logged-out visitor sees all six tiers (marketing); an
-  authenticated role sees only its own family's tiers, so the pricing list can
-  never render the other family.
+  authenticated role sees only its own family's tiers. The ONE exception is the
+  explicit "Switch role or plan" entry in the profile menu, which opens pricing
+  with all tiers so a cross-family change can be confirmed.
 - The badge is driven by `profiles.plan`, read live from the row. Plan and
   certification are separate concepts and never share a card or a sentence.
 
