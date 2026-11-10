@@ -340,7 +340,8 @@ img {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 0.72rem 0.8rem;
+  height: 2.5rem;
+  padding: 0 0.8rem;
   border-radius: 0.75rem;
   text-align: start;
 }
@@ -364,11 +365,16 @@ img {
 }
 
 .popover-profile-link {
-  margin-top: 0.55rem;
   border: none;
   background: transparent;
   color: var(--text-soft);
   font-size: 0.78rem;
+}
+
+.popover-actions {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
 }
 
 .popover-profile-link:hover {
@@ -594,6 +600,16 @@ img {
   border-color: transparent;
 }
 
+.slim-button--danger {
+  background: linear-gradient(120deg, #e0655a, #f0a099);
+  color: #4a1610;
+  box-shadow: 0 2px 10px -4px rgba(224, 101, 90, 0.35);
+}
+
+.slim-button--danger:not(:disabled):hover {
+  box-shadow: 0 4px 14px -6px rgba(224, 101, 90, 0.45), var(--shadow-soft);
+}
+
 .slim-button:not(:disabled):active {
   transform: scale(0.99);
 }
@@ -601,6 +617,24 @@ img {
 .slim-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* Inline text action (retry links inside notices) — never a pill. */
+.text-action {
+  display: inline;
+  background: none;
+  border: 0;
+  padding: 0;
+  height: auto;
+  min-height: 0;
+  color: var(--accent-strong);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.text-action:hover {
+  color: var(--accent);
 }
 
 .care-plan-dialog .slim-button:focus-visible {
@@ -2365,6 +2399,17 @@ img {
    --------------------------------------------------------------------------- */
 .care-muted { margin: 0; color: var(--text-muted, #557b76); font-size: 0.84rem; }
 
+/* Shared empty state: one calm, centered block inside any panel. */
+.panel-empty {
+  display: block;
+  margin: 0;
+  padding: 16px 8px;
+  text-align: center;
+  color: var(--text-muted, #557b76);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .care-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.55rem; }
 
 .care-task {
@@ -2514,7 +2559,6 @@ img {
    Compact plan management cards + checklist rows.
    Keeps care plans from bloating the dashboard grid.
    --------------------------------------------------------------------------- */
-.care-compact { padding: 1.25rem !important; }
 .care-compact .care-list { gap: 6px; }
 .care-compact .care-task { padding: 8px 10px; gap: 8px; border-radius: 10px; }
 
@@ -4250,7 +4294,7 @@ img {
 .docs-card .thin-list { margin: 0; }
 
 /* Calls hub — My Documents */
-.call-hub-my-docs { display: grid; gap: 0.75rem; margin-top: 1rem; }
+.call-hub-my-docs { display: grid; gap: 0.75rem; }
 .call-docs-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .call-doc-row {
   display: flex;

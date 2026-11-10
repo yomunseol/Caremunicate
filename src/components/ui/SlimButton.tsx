@@ -9,7 +9,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 // shares this silhouette.
 // ---------------------------------------------------------------------------
 
-type SlimButtonVariant = 'primary' | 'secondary' | 'ghost';
+type SlimButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
 type SlimButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;

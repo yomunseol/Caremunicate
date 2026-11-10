@@ -121,7 +121,7 @@ export default function MyCare() {
         {loading ? (
           <p className="care-muted" aria-busy="true">{t('places.searching')}</p>
         ) : plans.length === 0 ? (
-          <p className="care-muted">{t('care.noPlans')}</p>
+          <p className="care-muted panel-empty">{t('care.noPlans')}</p>
         ) : (
           <div style={{ display: 'grid', gap: '8px' }}>
             {plans.map((plan) => {

@@ -63,7 +63,7 @@ export default function CarePlanPanel({ patientId }: CarePlanPanelProps) {
       {loading ? (
         <p className="care-muted" aria-busy="true">{t('places.searching')}</p>
       ) : plans.length === 0 ? (
-        <p className="care-muted">{t('care.noPlans')}</p>
+        <p className="care-muted panel-empty">{t('care.noPlans')}</p>
       ) : (
         plans.map((plan) => {
           const planTasks = tasks.filter((task) => task.plan_id === plan.id);

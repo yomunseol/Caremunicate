@@ -224,11 +224,11 @@ export default function CareChecklist({ patientId, onlyToday = false }: CareChec
   }
 
   if (plans.length === 0) {
-    return <p className="care-muted">{t('care.noPlans')}</p>;
+    return <p className="care-muted panel-empty">{t('care.noPlans')}</p>;
   }
 
   if (onlyToday && dueTasks.length === 0) {
-    return <p className="care-muted">{t('care.nothingDue')}</p>;
+    return <p className="care-muted panel-empty">{t('care.nothingDue')}</p>;
   }
 
   return (

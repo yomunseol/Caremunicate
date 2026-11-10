@@ -43,7 +43,7 @@ export default function PatientsList() {
   if (!provider) {
     return (
       <section className="section">
-        <p className="care-muted">{t('care.providersOnly')}</p>
+        <p className="care-muted panel-empty">{t('care.providersOnly')}</p>
       </section>
     );
   }
@@ -63,7 +63,7 @@ export default function PatientsList() {
         {loading ? (
           <p className="care-muted" aria-busy="true">{t('places.searching')}</p>
         ) : patients.length === 0 ? (
-          <p className="care-muted">{t('care.noPatients')}</p>
+          <p className="care-muted panel-empty">{t('care.noPatients')}</p>
         ) : (
           <ul style={styles.list}>
             {patients.map((patient) => (

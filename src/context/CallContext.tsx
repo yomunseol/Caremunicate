@@ -18,7 +18,12 @@ const CallContext = createContext<UseCallResult | null>(null);
 
 export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const displayName = String(user?.user_metadata?.fullName ?? user?.email ?? '');
+  // Prefer the profile's own name/username; session metadata is only a fallback.
+  const [profileName, setProfileName] = useState('');
+  const sessionName = String(
+    user?.user_metadata?.fullName || user?.user_metadata?.username || '',
+  );
+  const displayName = profileName || sessionName || user?.email || '';
   const [identity, setIdentity] = useState<CallIdentity>({});
 
   useEffect(() => {
@@ -27,23 +32,29 @@ export function CallProvider({ children }: { children: ReactNode }) {
     void (async () => {
       if (!user?.id) {
         setIdentity({});
+        setProfileName('');
         return;
       }
 
       const { data } = await supabase
         .from('profiles')
-        .select('role, verification_status')
+        .select('*')
         .eq('user_id', user.id)
         .maybeSingle();
 
       if (cancelled) return;
-
-      const row = data as { role?: string; verification_status?: string } | null;
+      const row = data as {
+        role?: string;
+        verification_status?: string;
+        username?: string | null;
+        full_name?: string | null;
+      } | null;
       setIdentity({
         role: String(row?.role ?? user.user_metadata?.role ?? ''),
         // Only a literal 'verified' status lights the badge.
         verified: row?.verification_status === 'verified',
       });
+      setProfileName(String(row?.username || row?.full_name || '').trim());
     })();
 
     return () => {

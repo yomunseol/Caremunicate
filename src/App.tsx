@@ -856,33 +856,35 @@ function App() {
                       <div className="plan-meter" aria-hidden="true"><span /></div>
                     </div>
 
-                    <button
-                      className="upgrade-button"
-                      type="button"
-                      onClick={() => {
+                    <div className="popover-actions">
+                      <button
+                        className="upgrade-button"
+                        type="button"
+                        onClick={() => {
+                          setProfileMenuOpen(false);
+                          setSwitchMode(false);
+                          navigate('pricing');
+                        }}
+                      >
+                        <span>{t('header.upgrade')}</span>
+                        <span aria-hidden="true">→</span>
+                      </button>
+
+                      <button className="popover-profile-link" type="button" onClick={() => {
                         setProfileMenuOpen(false);
-                        setSwitchMode(false);
+                        setSwitchMode(true);
                         navigate('pricing');
-                      }}
-                    >
-                      <span>{t('header.upgrade')}</span>
-                      <span aria-hidden="true">→</span>
-                    </button>
+                      }}>
+                        {t('header.switchRole')}
+                      </button>
 
-                    <button className="popover-profile-link" type="button" onClick={() => {
-                      setProfileMenuOpen(false);
-                      setSwitchMode(true);
-                      navigate('pricing');
-                    }}>
-                      {t('header.switchRole')}
-                    </button>
-
-                    <button className="popover-profile-link" type="button" onClick={() => {
-                      setProfileMenuOpen(false);
-                      navigate('profile');
-                    }}>
-                      {t('header.viewProfile')}
-                    </button>
+                      <button className="popover-profile-link" type="button" onClick={() => {
+                        setProfileMenuOpen(false);
+                        navigate('profile');
+                      }}>
+                        {t('header.viewProfile')}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
               </div>

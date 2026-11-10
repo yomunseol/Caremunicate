@@ -830,7 +830,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         {isMapUnavailable ? (
           <p role="status" style={styles.fallbackBanner}>
             {t(areaTooDense ? 'hospitals.area_too_dense' : 'map_data_unavailable')}{' '}
-            <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+            <button type="button" className="text-action" onClick={retrySearch}>
               {t('common.retry')}
             </button>
           </p>
@@ -844,7 +844,7 @@ export default function CarePlaces({ role = '' }: CarePlacesProps) {
         {!isLoading && error ? (
           <p role="alert" style={styles.error}>
             {error}{' '}
-            <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+            <button type="button" className="text-action" onClick={retrySearch}>
               {t('common.retry')}
             </button>
           </p>
@@ -1104,7 +1104,6 @@ const styles: Record<string, CSSProperties> = {
   },
   starButtonSaved: { background: 'rgba(62, 169, 133, 0.16)', color: 'var(--accent-strong, #216e5d)' },
   starButtonBusy: { opacity: 0.55, cursor: 'wait' },
-  retryButton: { padding: '0.1rem 0.55rem', fontSize: '0.76rem', marginInlineStart: '0.4rem' },
   mapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   mapCanvas: { width: '100%', height: 320, borderRadius: '0.9rem', background: '#fff' },
   attribution: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.72rem', textAlign: 'end' },

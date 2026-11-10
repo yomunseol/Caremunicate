@@ -88,7 +88,18 @@ export async function searchNearbyHospitals(
   });
 
   if (!response.ok) {
-    const error = new Error(`Overpass ${response.status}`) as Error & { status?: number };
+    let detail = '';
+    try {
+      const body = (await response.json()) as { error?: unknown; detail?: unknown };
+      const errorText = typeof body?.error === 'string' ? body.error : '';
+      const detailText = typeof body?.detail === 'string' ? body.detail : '';
+      detail = [errorText, detailText].filter(Boolean).join(': ');
+    } catch {
+      // A non-JSON body leaves just the status code, which is still the truth.
+    }
+    const error = new Error(
+      `Overpass ${response.status}${detail ? ` (${detail})` : ''}`,
+    ) as Error & { status?: number };
     error.status = response.status;
     throw error;
   }

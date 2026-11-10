@@ -397,7 +397,7 @@ export default function CallHub() {
         ) : docsError ? (
           <span className="field-error">{t('careDocs.error')}</span>
         ) : myDocs.length === 0 ? (
-          <span className="call-hub-muted">{t('careDocs.none')}</span>
+          <span className="call-hub-muted panel-empty">{t('careDocs.none')}</span>
         ) : (
           <ul className="call-docs-list">
             {myDocs.map((doc) => (

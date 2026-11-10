@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useLang } from '../i18n';
 import { useCallContext } from '../context/CallContext';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import SlimButton from './ui/SlimButton';
 
 // ---------------------------------------------------------------------------
 // Emergency line — patient side.
@@ -158,14 +159,14 @@ export default function EmergencyCard() {
       ) : (
         <>
           <p style={styles.muted}>{t('emergency.subtitle')}</p>
-          <button
-            type="button"
+          <SlimButton
+            variant="danger"
             style={styles.connectButton}
             disabled={isStarting}
             onClick={() => setUiState('confirming')}
           >
             {isStarting ? t('emergency.connecting') : t('emergency.connect')}
-          </button>
+          </SlimButton>
         </>
       )}
 
@@ -189,21 +190,20 @@ export default function EmergencyCard() {
             <p style={styles.muted}>{t('emergency.confirmBody')}</p>
 
             <div style={styles.dialogActions}>
-              <button
-                type="button"
-                className="ghost-button"
+              <SlimButton
+                variant="secondary"
                 style={styles.dialogAction}
                 onClick={() => setUiState('idle')}
               >
                 {t('common.cancel')}
-              </button>
-              <button
-                type="button"
-                style={{ ...styles.connectButton, ...styles.dialogAction }}
+              </SlimButton>
+              <SlimButton
+                variant="danger"
+                style={styles.dialogAction}
                 onClick={() => void startLine()}
               >
                 {t('emergency.connect')}
-              </button>
+              </SlimButton>
             </div>
               </div>
             </div>,
@@ -221,15 +221,6 @@ const styles: Record<string, CSSProperties> = {
   connectButton: {
     width: '100%',
     marginTop: '0.9rem',
-    paddingBlock: '0.95rem',
-    paddingInline: '1rem',
-    border: 'none',
-    borderRadius: '999px',
-    background: 'linear-gradient(120deg, #e0655a, #f0a099)',
-    color: '#4a1610',
-    fontWeight: 800,
-    fontSize: '1rem',
-    cursor: 'pointer',
   },
   backdrop: {
     position: 'fixed',
@@ -260,5 +251,5 @@ const styles: Record<string, CSSProperties> = {
   dialogTitle: { fontSize: '1.05rem', fontWeight: 800, color: 'var(--text, #133b35)' },
   dialogActions: { display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '4px' },
   // Both buttons share the row and stay full-width-safe down to 320px.
-  dialogAction: { flex: '1 1 8rem', minWidth: 0, minHeight: 44, marginTop: 0 },
+  dialogAction: { flex: '1 1 8rem', minWidth: 0, marginTop: 0 },
 };

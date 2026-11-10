@@ -554,6 +554,12 @@ export default function CallLayer() {
   // cols = ceil(sqrt(n)) for the equal gallery grid.
   const galleryColumns = Math.max(1, Math.ceil(Math.sqrt(Math.max(1, remoteIds.length))));
 
+  // The caller's own name, from the profile-backed participant list.
+  const selfName = participants[0]?.name?.trim() ?? '';
+  const callingText = selfName
+    ? tString(emergency ? 'call.emergencyCallingAs' : 'call.callingAs', { name: selfName })
+    : t('call.connecting');
+
   const infoFor = (id: string) => peerInfo[id];
 
   if (!visible || typeof document === 'undefined') return null;
@@ -747,7 +753,7 @@ export default function CallLayer() {
                     />
                   ) : (
                     <p style={styles.stageHint}>
-                      {status === 'reconnecting' ? t('call.reconnecting') : t('call.connecting')}
+                      {status === 'reconnecting' ? t('call.reconnecting') : callingText}
                     </p>
                   )}
                 </div>

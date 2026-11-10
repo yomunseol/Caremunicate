@@ -433,7 +433,7 @@ export default function HospitalMap() {
             {searchError ? (
               <p role="alert" style={styles.error}>
                 {searchError}{' '}
-                <button type="button" className="ghost-button" onClick={retrySearch} style={styles.retryButton}>
+                <button type="button" className="text-action" onClick={retrySearch}>
                   {t('common.retry')}
                 </button>
               </p>
@@ -670,7 +670,6 @@ const styles: Record<string, CSSProperties> = {
   count: { color: 'var(--accent-strong, #216e5d)', fontSize: '0.86rem' },
   muted: { margin: 0, color: 'var(--text-muted, #557b76)', fontSize: '0.84rem', lineHeight: 1.5 },
   error: { margin: 0, color: '#9c3636', fontSize: '0.84rem', fontWeight: 600, lineHeight: 1.5 },
-  retryButton: { padding: '0.1rem 0.55rem', fontSize: '0.76rem', marginInlineStart: '0.4rem' },
   mapWrap: { position: 'relative', isolation: 'isolate', overflow: 'hidden', width: '100%' },
   search: { maxWidth: '22rem' },
   mapCanvas: { width: '100%', height: 500, borderRadius: '1rem', background: '#fff' },
