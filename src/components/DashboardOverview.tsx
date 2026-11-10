@@ -317,14 +317,14 @@ export default function DashboardOverview({
                 </div>
                 <div style={styles.teamActions}>
                   <button type="button" className="ghost-button" onClick={() => openChat(careTeam)}>
-                    <MessageCircle size={15} aria-hidden="true" /> {t('dash.message')}
+                    <MessageCircle size={15} aria-hidden="true" />{t('dash.message')}
                   </button>
                   <button
                     type="button"
                     className="ghost-button"
                     onClick={() => startVideo(careTeam.userId, careTeam.name)}
                   >
-                    <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
+                    <Video size={15} aria-hidden="true" />{t('dash.videoCall')}
                   </button>
                 </div>
               </div>
@@ -341,17 +341,17 @@ export default function DashboardOverview({
             <div style={styles.actionGrid}>
               {/* New chat: opens the messenger with the care team preselected. */}
               <button type="button" className="ghost-button" onClick={() => openChat(careTeam ?? undefined)}>
-                <MessageCircle size={15} aria-hidden="true" /> {t('chat.newChat')}
+                <MessageCircle size={15} aria-hidden="true" />{t('chat.newChat')}
               </button>
               {/* Video call: always enabled — the sheet offers call / join / book. */}
               <button type="button" className="ghost-button" onClick={() => setSheetOpen(true)}>
-                <Video size={15} aria-hidden="true" /> {t('dash.videoCall')}
+                <Video size={15} aria-hidden="true" />{t('dash.videoCall')}
               </button>
               <button type="button" className="ghost-button" onClick={focusCarePlaces}>
-                <ShieldCheck size={15} aria-hidden="true" /> {t('dash.findCare')}
+                <ShieldCheck size={15} aria-hidden="true" />{t('dash.findCare')}
               </button>
               <button type="button" className="ghost-button" onClick={focusFavorites}>
-                <CheckCircle2 size={15} aria-hidden="true" /> {t('places.favorites')}
+                <CheckCircle2 size={15} aria-hidden="true" />{t('places.favorites')}
               </button>
             </div>
           </div>
@@ -422,7 +422,7 @@ export default function DashboardOverview({
                   window.location.hash = '#verify';
                 }}
               >
-                <ShieldCheck size={15} aria-hidden="true" /> {t('verify.getCertified')}
+                <ShieldCheck size={15} aria-hidden="true" />{t('verify.getCertified')}
               </button>
             ) : null}
             {overview.isAdmin ? (
@@ -442,7 +442,7 @@ export default function DashboardOverview({
                 window.location.hash = '#hospitals';
               }}
             >
-              <MapPin size={15} aria-hidden="true" /> {t('hospital.addButton')}
+              <MapPin size={15} aria-hidden="true" />{t('hospital.addButton')}
             </button>
           </div>
         </>

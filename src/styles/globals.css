@@ -1573,6 +1573,18 @@ img {
   font-weight: 700;
 }
 
+/* The Log in / Sign up tabs share the app-wide 40px slim action scale. */
+.auth-mode-toggle .mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding-block: 0;
+  padding-inline: 0.9rem;
+  font-size: 0.85rem;
+}
+
 .mode-button.active,
 .role-button.active {
   background: linear-gradient(120deg, #48b58f, #7adab1);

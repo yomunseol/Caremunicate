@@ -317,15 +317,6 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
       gap: '0.7rem',
     },
     description: { margin: 0, color: '#557b76', fontSize: '0.86rem', lineHeight: 1.6 },
-    input: {
-      width: '100%',
-      border: '1px solid rgba(15, 58, 50, 0.12)',
-      borderRadius: '0.8rem',
-      padding: '0.7rem 0.9rem',
-      background: '#fff',
-      fontSize: '1rem',
-      color: '#133b35',
-    },
     field: { display: 'grid', gap: '0.35rem' },
     label: { fontSize: '0.75rem', fontWeight: 700, color: '#216e5d', letterSpacing: '0.04em' },
     error: { margin: 0, color: '#9c3636', fontWeight: 600, fontSize: '0.9rem' },
@@ -401,11 +392,10 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
 
       {view === 'password' ? (
         <form onSubmit={handlePasswordSubmit} style={{ display: 'grid', gap: '0.7rem' }}>
-          <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-email">{t('login.labelEmail')}</label>
+          <div className="field-wrap">
             <input
               id="pa-email"
-              style={styles.input}
+              className="input"
               type="email"
               inputMode="email"
               autoComplete="email"
@@ -413,7 +403,8 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
               autoCorrect="off"
               spellCheck={false}
               enterKeyHint="next"
-              placeholder={t('login.phEmail')}
+              placeholder={t('login.labelEmail')}
+              aria-label={t('login.labelEmail')}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               disabled={loading}
@@ -421,16 +412,16 @@ export default function PasswordAuth({ onAuthenticated }: PasswordAuthProps) {
             />
           </div>
 
-          <div style={styles.field}>
-            <label style={styles.label} htmlFor="pa-password">{t('login.labelPassword')}</label>
+          <div className="field-wrap">
             <input
               id="pa-password"
-              style={styles.input}
+              className="input"
               type="password"
               autoComplete="current-password"
               autoCapitalize="none"
               enterKeyHint="go"
-              placeholder={t('login.phPassword')}
+              placeholder={t('login.labelPassword')}
+              aria-label={t('login.labelPassword')}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               disabled={loading}
