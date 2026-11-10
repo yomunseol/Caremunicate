@@ -570,11 +570,13 @@ export default function CallLayer() {
             : notice === 'meeting-full'
               ? t('call.meetingFull')
               : notice === 'kicked'
-                ? 'You were removed from the meeting.'
+                ? t('call.kicked')
                 : notice === 'line-closed'
                   ? t('call.lineClosed')
                   : notice === 'continue-in-chat'
                   ? t('chat.messages')
+                  : notice === 'poor-connection'
+                  ? t('call.poorConnection')
                   : t('call.ended');
 
   const selfTileProps = {
@@ -1083,13 +1085,16 @@ export default function CallLayer() {
         </aside>
       ) : null}
 
-      {notice ? (
-        <div style={styles.notice} role="status" aria-live="polite">{noticeText}</div>
-      ) : null}
-
-      {/* Join / leave / hand events. role="status" makes this the announcement. */}
-      {liveToast ? (
-        <div style={styles.notice} role="status" aria-live="polite">{liveToast.text}</div>
+      {notice || liveToast ? (
+        <div style={styles.noticeStack}>
+          {notice ? (
+            <div style={styles.notice} role="status" aria-live="polite">{noticeText}</div>
+          ) : null}
+          {/* Join / leave / hand events. role="status" makes this the announcement. */}
+          {liveToast ? (
+            <div style={styles.notice} role="status" aria-live="polite">{liveToast.text}</div>
+          ) : null}
+        </div>
       ) : null}
 
       {shortcutsOpen ? <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} /> : null}
@@ -1474,11 +1479,18 @@ const styles: Record<string, CSSProperties> = {
   diagName: { fontSize: '0.78rem', overflowWrap: 'anywhere' },
   diagLine: { color: '#cfe9df', fontVariantNumeric: 'tabular-nums', overflowWrap: 'anywhere' },
 
-  notice: {
+  noticeStack: {
     position: 'absolute',
     insetBlockEnd: '5.5rem',
     insetInline: 0,
-    marginInline: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '8px',
+    pointerEvents: 'none',
+  },
+
+  notice: {
     width: 'fit-content',
     textAlign: 'center',
     pointerEvents: 'auto',

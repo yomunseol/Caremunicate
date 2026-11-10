@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } 
 import { Clipboard, Copy, Lock, LockOpen, MoreVertical, Pencil, Trash2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../i18n';
+import { fmtDate } from '../lib/time';
 import {
   ensurePersonalRoom,
   resolveJoin,
@@ -411,11 +412,7 @@ export default function CallHub() {
                     )}
                     {doc.lock_status === 'locked' ? t('careDocs.locked') : t('careDocs.unlocked')}
                     <span aria-hidden="true">·</span>
-                    {new Date(doc.updated_at).toLocaleDateString(locale, {
-                      year: 'numeric',
-                      month: 'short',
-                      day: 'numeric',
-                    })}
+                    {fmtDate(doc.updated_at, locale, 'CallHub')}
                   </span>
                 </button>
 
@@ -500,11 +497,7 @@ export default function CallHub() {
               {viewingDoc.lock_status === 'locked' ? t('careDocs.locked') : t('careDocs.unlocked')}
               <span aria-hidden="true">·</span>
               {t('careDocs.updated')}{' '}
-              {new Date(viewingDoc.updated_at).toLocaleDateString(locale, {
-                year: 'numeric',
-                month: 'short',
-                day: 'numeric',
-              })}
+              {fmtDate(viewingDoc.updated_at, locale, 'CallHub')}
             </span>
 
             <textarea

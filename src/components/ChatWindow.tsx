@@ -5,18 +5,13 @@ import { resolveDisplayName } from '../lib/displayName';
 import { roleLabelKey } from '../lib/roles';
 import { useRealtimeChat } from '../hooks/useRealtimeChat';
 import { useLang } from '../i18n';
+import { fmtTime } from '../lib/time';
 
 interface ParticipantMeta {
   userId: string;
   role: string;
   name: string;
 }
-
-const formatMessageTime = (iso: string): string => {
-  const date = new Date(iso);
-  // 24-hour only: no AM/PM in any locale.
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-};
 
 type ChatWindowProps = {
   conversationId: string;
@@ -64,7 +59,7 @@ async function fetchParticipants(conversationId: string, participantLabel: strin
 
 export default function ChatWindow({ conversationId }: ChatWindowProps) {
   const { user } = useAuth();
-  const { t } = useLang();
+  const { t, locale } = useLang();
   const { messages, loading, error, sendMessage } = useRealtimeChat(conversationId);
 
   const roleLabel = (role: string) => t(roleLabelKey(role));
@@ -210,7 +205,9 @@ export default function ChatWindow({ conversationId }: ChatWindowProps) {
                     <p style={styles.bubbleText}>{message.content}</p>
                   </div>
 
-                  <time style={styles.time}>{formatMessageTime(message.created_at)}</time>
+                  <time style={styles.time} dateTime={message.created_at}>
+                    {fmtTime(message.created_at, locale, 'ChatWindow')}
+                  </time>
                 </div>
               </article>
             );
